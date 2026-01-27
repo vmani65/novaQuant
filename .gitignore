@@ -1,2 +1,26 @@
+# Build artifacts
 target/
 *.jar
+*.class
+
+# Log files
+logs/
+*.log
+
+# Maven
+.m2/
+maven-status/
+
+# IDE
+.idea/
+*.iml
+.vscode/
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Application properties (if contains sensitive data)
+# Uncomment if needed
+# application.properties
+# application.yml
