@@ -59,9 +59,8 @@ public class SignalService {
        Trade liveTrade =openingService.openTrade(signalPrice, type, trade);	       
 	   log.info("Time taken to complete flip is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
 	   doAfterOpenCalc(liveTrade);
-	   tradeRepository.save(liveTrade);
-	   if(closedTrade != null) 
-		   doAfterCloseCalc(closedTrade);	 	   
+	   tradeRepository.save(liveTrade);	    
+	   doAfterCloseCalc(closedTrade);	 	   
 	   return true;
 	}
 	
@@ -79,8 +78,7 @@ public class SignalService {
 	   Instant start = Instant.now();		
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("Time taken to complete trade close is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
-	   if(closedTrade != null) 
-		   doAfterCloseCalc(closedTrade);
+	   doAfterCloseCalc(closedTrade);
 	   return true;
 	}	
 	
@@ -101,16 +99,18 @@ public class SignalService {
 	}
 	
 	private void doAfterCloseCalc(Trade closedTrade) {
-	   try {
-		   Trade t = tradeRepository.findById(closedTrade.getId()).orElse(null);
-		   log.info("Trade(Parent+All Child) used for computing post close calc : " + t);
-		   tradeUtil.setTradeExecutedPrices(t);
-		   computeUtil.calcTradeOutcome(t);
-		   computeUtil.calcPnL(t);
-		   computeUtil.recalculateCapital(t);
-		   tradeRepository.save(t); 
-		} catch (Exception e) {
-			log.error("Exception while performing post trade close calculations ", e);	
-		}
+	   if(closedTrade != null) {
+		   try {
+			   Trade t = tradeRepository.findById(closedTrade.getId()).orElse(null);
+			   log.info("Trade(Parent+All Child) used for computing post close calc : " + t);
+			   tradeUtil.setTradeExecutedPrices(t);
+			   computeUtil.calcTradeOutcome(t);
+			   computeUtil.calcPnL(t);
+			   computeUtil.recalculateCapital(t);
+			   tradeRepository.save(t); 
+			} catch (Exception e) {
+				log.error("Exception while performing post trade close calculations ", e);	
+			}
+	   }	   
 	}
 }
