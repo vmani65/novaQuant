@@ -1,0 +1,113 @@
+2026-01-27 15:16:18.201 [main] INFO  path.to._40c.service.SignalService - Starting SignalService using Java 17.0.10 with PID 14404 (C:\Users\Vinoth M\Downloads\novaquant\target\classes started by Vinoth M in C:\Users\Vinoth M\Downloads\novaquant)
+2026-01-27 15:16:18.207 [main] INFO  path.to._40c.service.SignalService - No active profile set, falling back to 1 default profile: "default"
+2026-01-27 15:16:19.012 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-01-27 15:16:19.108 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 83 ms. Found 6 JPA repository interfaces.
+2026-01-27 15:16:19.736 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-01-27 15:16:19.753 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:19.757 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-01-27 15:16:19.757 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.50]
+2026-01-27 15:16:19.843 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-01-27 15:16:19.843 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1581 ms
+2026-01-27 15:16:20.047 [main] INFO  o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-01-27 15:16:20.128 [main] INFO  org.hibernate.Version - HHH000412: Hibernate ORM core version 6.6.39.Final
+2026-01-27 15:16:20.174 [main] INFO  o.h.c.i.RegionFactoryInitiator - HHH000026: Second-level cache disabled
+2026-01-27 15:16:20.536 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo - No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-01-27 15:16:20.579 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-01-27 15:16:20.690 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.sqlite.jdbc4.JDBC4Connection@1fb6b8fb
+2026-01-27 15:16:20.692 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-01-27 15:16:20.742 [main] INFO  o.hibernate.orm.connections.pooling - HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 3.49.1
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-01-27 15:16:21.803 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-01-27 15:16:21.854 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-01-27 15:16:22.262 [main] INFO  o.s.d.j.r.query.QueryEnhancerFactory - Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-01-27 15:16:23.148 [main] INFO  p.t._40c.controller.SignalController - Starting cache initialization from database...
+2026-01-27 15:16:23.191 [main] INFO  p.t._40c.controller.SignalController - Loaded last trade for strategy: flipMaster
+2026-01-27 15:16:23.191 [main] INFO  p.t._40c.controller.SignalController - Cache initialization complete: 0 signals cached, 1 strategies tracked
+2026-01-27 15:16:23.220 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-01-27 15:16:23.694 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:23.727 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-01-27 15:16:23.737 [main] INFO  path.to._40c.service.SignalService - Started SignalService in 6.224 seconds (process running for 6.688)
+2026-01-27 15:16:23.766 [main] INFO  path.to._40c.service.SignalService - Last Trade: Trade [strategyId=RIDETHETIDE, account=ZERODHAVINOTH, entrySignalPrice=26182.0, exitSignalPrice=null, signalType=LONG, pointsByTrade=null, tradeOutcome=null, startingCapital=null, endingCapital=null, expectedPnL=null, actualPnL=null, brokerage=null, lots=null, diffPercentage=null, tradeStatus=LIVE, tradeOpenDtTime=22-12-2025 09:28:42.662, tradeCloseDtTime=null, lastApiAction=longEntry, lastApiSignalType=CE, statergyName=flipMaster, apiTime="21-Dec-25 09:45:00 PM", message=null, weeklyOrderBook=[BaseChildEntity [tradedSymbol=NFO:NIFTY25DEC25950CE, marginCalcSymbol=NIFTY25DEC25950CE, tdStreamSymbol=null, transactionType=BUY, soldPrice=null, boughtPrice=289.55, ltp=null, expectedPnL=0.0, actualPnL=0.0, diffPercentage=null, moneyness=ATM-200, lotSize=1, quantity=75, marginToTrade=21712.5, tradeStatus=LIVE, tradeOpenBrokerage=33.7, tradeCloseBrokerage=54.4, tradeOpenOrderId=251222220200161, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NIFTY26JAN2625000CE, marginCalcSymbol=NIFTY 26 JAN 2026 25000 CE, tdStreamSymbol=NIFTY26JAN2625000CE, transactionType=BUY, soldPrice=null, boughtPrice=125.5, ltp=130.75, expectedPnL=2625.0, actualPnL=0.0, diffPercentage=+4.18, moneyness=ITM, lotSize=1, quantity=50, marginToTrade=75000.0, tradeStatus=CLOSED, tradeOpenBrokerage=10.5, tradeCloseBrokerage=null, tradeOpenOrderId=20260127001234, tradeCloseOrderId=null, tradeOpenExeStartTime=2026-01-27 09:15:30, tradeOpenExeEndTime=2026-01-27 09:15:32, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null]], monthlyOrderBook=[BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25650PE, marginCalcSymbol=NIFTY25JUL25650PE, tdStreamSymbol=null, transactionType=BUY, soldPrice=323.8, boughtPrice=323.8, ltp=323.8, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ITM-50, lotSize=null, quantity=75, marginToTrade=24285.0, tradeStatus=null, tradeOpenBrokerage=34.81023969, tradeCloseBrokerage=34.81023969, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25650CE, marginCalcSymbol=NIFTY25JUL25650CE, tdStreamSymbol=null, transactionType=SELL, soldPrice=223.0, boughtPrice=223.0, ltp=223.0, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=OTM+50, lotSize=null, quantity=75, marginToTrade=200154.1499999999, tradeStatus=null, tradeOpenBrokerage=47.35675865, tradeCloseBrokerage=47.35675865, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25700PE, marginCalcSymbol=NIFTY25JUL25700PE, tdStreamSymbol=null, transactionType=BUY, soldPrice=348.65, boughtPrice=348.65, ltp=348.65, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ITM, lotSize=null, quantity=75, marginToTrade=26148.75, tradeStatus=null, tradeOpenBrokerage=35.5938235575, tradeCloseBrokerage=35.5938235575, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25700CE, marginCalcSymbol=NIFTY25JUL25700CE, tdStreamSymbol=null, transactionType=SELL, soldPrice=201.6, boughtPrice=201.6, ltp=201.6, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=OTM, lotSize=null, quantity=75, marginToTrade=196570.05000000016, tradeStatus=null, tradeOpenBrokerage=45.07696208, tradeCloseBrokerage=45.07696208, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25750PE, marginCalcSymbol=NIFTY25JUL25750PE, tdStreamSymbol=null, transactionType=BUY, soldPrice=378.85, boughtPrice=378.85, ltp=378.85, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ATM, lotSize=null, quantity=75, marginToTrade=28413.75, tradeStatus=null, tradeOpenBrokerage=36.5461065675, tradeCloseBrokerage=36.5461065675, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25750CE, marginCalcSymbol=NIFTY25JUL25750CE, tdStreamSymbol=null, transactionType=SELL, soldPrice=183.15, boughtPrice=183.15, ltp=183.15, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ATM, lotSize=null, quantity=75, marginToTrade=193027.87500000012, tradeStatus=null, tradeOpenBrokerage=43.1114365325, tradeCloseBrokerage=43.1114365325, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25800PE, marginCalcSymbol=NIFTY25JUL25800PE, tdStreamSymbol=null, transactionType=BUY, soldPrice=409.0, boughtPrice=409.0, ltp=409.0, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=OTM, lotSize=null, quantity=75, marginToTrade=30675.0, tradeStatus=null, tradeOpenBrokerage=37.49681295, tradeCloseBrokerage=37.49681295, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25800CE, marginCalcSymbol=NIFTY25JUL25800CE, tdStreamSymbol=null, transactionType=SELL, soldPrice=163.05, boughtPrice=163.05, ltp=163.05, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ITM, lotSize=null, quantity=75, marginToTrade=189488.47499999986, tradeStatus=null, tradeOpenBrokerage=40.9701322775, tradeCloseBrokerage=40.9701322775, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25850PE, marginCalcSymbol=NIFTY25JUL25850PE, tdStreamSymbol=null, transactionType=BUY, soldPrice=439.85, boughtPrice=439.85, ltp=439.85, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=OTM+50, lotSize=null, quantity=75, marginToTrade=32988.75, tradeStatus=null, tradeOpenBrokerage=38.4695921175, tradeCloseBrokerage=38.4695921175, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null], BaseChildEntity [tradedSymbol=NFO:NIFTY25JUL25850CE, marginCalcSymbol=NIFTY25JUL25850CE, tdStreamSymbol=null, transactionType=SELL, soldPrice=146.95, boughtPrice=146.95, ltp=146.95, expectedPnL=7500.0, actualPnL=0.0, diffPercentage=null, moneyness=ITM-50, lotSize=null, quantity=75, marginToTrade=186066.82500000007, tradeStatus=null, tradeOpenBrokerage=39.2549582225, tradeCloseBrokerage=39.2549582225, tradeOpenOrderId=null, tradeCloseOrderId=null, tradeOpenExeStartTime=null, tradeOpenExeEndTime=null, tradeCloseExeStartTime=null, tradeCloseExeEndTime=null]]]
+2026-01-27 15:16:23.790 [main] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Commencing graceful shutdown. Waiting for active requests to complete
+2026-01-27 15:16:23.791 [tomcat-shutdown] INFO  o.a.coyote.http11.Http11NioProtocol - Pausing ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:24.023 [tomcat-shutdown] INFO  o.s.b.w.e.tomcat.GracefulShutdown - Graceful shutdown complete
+2026-01-27 15:16:24.023 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Stopping ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:24.026 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Closing JPA EntityManagerFactory for persistence unit 'default'
+2026-01-27 15:16:24.030 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown initiated...
+2026-01-27 15:16:24.034 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Shutdown completed.
+2026-01-27 15:16:32.603 [main] INFO  path.to._40c.service.SignalService - Starting SignalService using Java 17.0.10 with PID 13004 (C:\Users\Vinoth M\Downloads\novaquant\target\classes started by Vinoth M in C:\Users\Vinoth M\Downloads\novaquant)
+2026-01-27 15:16:32.608 [main] INFO  path.to._40c.service.SignalService - No active profile set, falling back to 1 default profile: "default"
+2026-01-27 15:16:33.419 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-01-27 15:16:33.519 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 87 ms. Found 6 JPA repository interfaces.
+2026-01-27 15:16:34.129 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-01-27 15:16:34.142 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:34.144 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-01-27 15:16:34.145 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.50]
+2026-01-27 15:16:34.223 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-01-27 15:16:34.224 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1558 ms
+2026-01-27 15:16:34.427 [main] INFO  o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-01-27 15:16:34.493 [main] INFO  org.hibernate.Version - HHH000412: Hibernate ORM core version 6.6.39.Final
+2026-01-27 15:16:34.542 [main] INFO  o.h.c.i.RegionFactoryInitiator - HHH000026: Second-level cache disabled
+2026-01-27 15:16:34.902 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo - No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-01-27 15:16:34.947 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-01-27 15:16:35.076 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.sqlite.jdbc4.JDBC4Connection@7757a37f
+2026-01-27 15:16:35.079 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-01-27 15:16:35.130 [main] INFO  o.hibernate.orm.connections.pooling - HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 3.49.1
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-01-27 15:16:36.313 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-01-27 15:16:36.367 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-01-27 15:16:36.761 [main] INFO  o.s.d.j.r.query.QueryEnhancerFactory - Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-01-27 15:16:37.700 [main] INFO  p.t._40c.controller.SignalController - Starting cache initialization from database...
+2026-01-27 15:16:37.741 [main] INFO  p.t._40c.controller.SignalController - Loaded last trade for strategy: flipMaster
+2026-01-27 15:16:37.741 [main] INFO  p.t._40c.controller.SignalController - Cache initialization complete: 0 signals cached, 1 strategies tracked
+2026-01-27 15:16:37.777 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-01-27 15:16:38.243 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:16:38.270 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-01-27 15:16:38.282 [main] INFO  path.to._40c.service.SignalService - Started SignalService in 6.44 seconds (process running for 7.408)
+2026-01-27 15:23:17.264 [main] INFO  path.to._40c.service.SignalService - Starting SignalService using Java 17.0.10 with PID 28616 (C:\Users\Vinoth M\Downloads\novaquant\target\classes started by Vinoth M in C:\Users\Vinoth M\Downloads\novaquant)
+2026-01-27 15:23:17.269 [main] INFO  path.to._40c.service.SignalService - No active profile set, falling back to 1 default profile: "default"
+2026-01-27 15:23:18.114 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Bootstrapping Spring Data JPA repositories in DEFAULT mode.
+2026-01-27 15:23:18.208 [main] INFO  o.s.d.r.c.RepositoryConfigurationDelegate - Finished Spring Data repository scanning in 80 ms. Found 6 JPA repository interfaces.
+2026-01-27 15:23:18.787 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat initialized with port 8080 (http)
+2026-01-27 15:23:18.799 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Initializing ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:23:18.802 [main] INFO  o.a.catalina.core.StandardService - Starting service [Tomcat]
+2026-01-27 15:23:18.802 [main] INFO  o.a.catalina.core.StandardEngine - Starting Servlet engine: [Apache Tomcat/10.1.50]
+2026-01-27 15:23:18.878 [main] INFO  o.a.c.c.C.[Tomcat].[localhost].[/] - Initializing Spring embedded WebApplicationContext
+2026-01-27 15:23:18.878 [main] INFO  o.s.b.w.s.c.ServletWebServerApplicationContext - Root WebApplicationContext: initialization completed in 1550 ms
+2026-01-27 15:23:19.101 [main] INFO  o.h.jpa.internal.util.LogHelper - HHH000204: Processing PersistenceUnitInfo [name: default]
+2026-01-27 15:23:19.192 [main] INFO  org.hibernate.Version - HHH000412: Hibernate ORM core version 6.6.39.Final
+2026-01-27 15:23:19.241 [main] INFO  o.h.c.i.RegionFactoryInitiator - HHH000026: Second-level cache disabled
+2026-01-27 15:23:19.601 [main] INFO  o.s.o.j.p.SpringPersistenceUnitInfo - No LoadTimeWeaver setup: ignoring JPA class transformer
+2026-01-27 15:23:19.643 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Starting...
+2026-01-27 15:23:19.764 [main] INFO  com.zaxxer.hikari.pool.HikariPool - HikariPool-1 - Added connection org.sqlite.jdbc4.JDBC4Connection@121ddca4
+2026-01-27 15:23:19.766 [main] INFO  com.zaxxer.hikari.HikariDataSource - HikariPool-1 - Start completed.
+2026-01-27 15:23:19.834 [main] INFO  o.hibernate.orm.connections.pooling - HHH10001005: Database info:
+	Database JDBC URL [Connecting through datasource 'HikariDataSource (HikariPool-1)']
+	Database driver: undefined/unknown
+	Database version: 3.49.1
+	Autocommit mode: undefined/unknown
+	Isolation level: undefined/unknown
+	Minimum pool size: undefined/unknown
+	Maximum pool size: undefined/unknown
+2026-01-27 15:23:21.635 [main] INFO  o.h.e.t.j.p.i.JtaPlatformInitiator - HHH000489: No JTA platform available (set 'hibernate.transaction.jta.platform' to enable JTA platform integration)
+2026-01-27 15:23:21.725 [main] INFO  o.s.o.j.LocalContainerEntityManagerFactoryBean - Initialized JPA EntityManagerFactory for persistence unit 'default'
+2026-01-27 15:23:22.297 [main] INFO  o.s.d.j.r.query.QueryEnhancerFactory - Hibernate is in classpath; If applicable, HQL parser will be used.
+2026-01-27 15:23:23.673 [main] INFO  p.t._40c.controller.SignalController - Starting cache initialization from database...
+2026-01-27 15:23:23.731 [main] INFO  p.t._40c.controller.SignalController - Loaded last trade for strategy: flipMaster
+2026-01-27 15:23:23.731 [main] INFO  p.t._40c.controller.SignalController - Cache initialization complete: 0 signals cached, 1 strategies tracked
+2026-01-27 15:23:23.783 [main] WARN  o.s.b.a.o.j.JpaBaseConfiguration$JpaWebConfiguration - spring.jpa.open-in-view is enabled by default. Therefore, database queries may be performed during view rendering. Explicitly configure spring.jpa.open-in-view to disable this warning
+2026-01-27 15:23:24.478 [main] INFO  o.a.coyote.http11.Http11NioProtocol - Starting ProtocolHandler ["http-nio-8080"]
+2026-01-27 15:23:24.537 [main] INFO  o.s.b.w.e.tomcat.TomcatWebServer - Tomcat started on port 8080 (http) with context path '/'
+2026-01-27 15:23:24.557 [main] INFO  path.to._40c.service.SignalService - Started SignalService in 8.04 seconds (process running for 8.793)

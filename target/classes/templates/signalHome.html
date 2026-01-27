@@ -1,0 +1,2478 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>novaQuant • Signal Operations Desk</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+	<link rel="icon" href="/img/favicon.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <style>
+        * { 
+            box-sizing: border-box; 
+            margin: 0;
+            padding: 0;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+            margin: 0;
+            background: #fafbfc;
+            padding: 40px 24px;
+            color: #1f2937;
+            line-height: 1.5;
+        }
+        
+        .container {
+            width: 100%;
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+
+        /* ==================== TOP BAR ==================== */
+        .top-bar {
+            display: flex;
+            align-items: center;
+            gap: 16px;
+            margin-bottom: 32px;
+            padding-bottom: 20px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+        
+        .logo-wrap {
+            width: 48px;
+            height: 48px;
+            border-radius: 8px;
+            background: #111827;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+        
+        .logo-wrap img {
+            width: 36px;
+            height: 36px;
+        }
+        
+        .title-block {
+            flex: 1;
+        }
+        
+        .page-header {
+            font-size: 20px;
+            font-weight: 600;
+            color: #111827;
+            margin-bottom: 2px;
+        }
+        
+        .page-sub {
+            font-size: 14px;
+            color: #6b7280;
+        }
+
+        /* ==================== SECTION GRID ==================== */
+        .section-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+            gap: 20px;
+        }
+
+        /* ==================== SECTION CARDS ==================== */
+        .section-card {
+            background: #ffffff;
+            border-radius: 8px;
+            border: 1px solid #e5e7eb;
+            padding: 20px;
+            display: flex;
+            flex-direction: column;
+            gap: 16px;
+        }
+
+        .section-header {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            padding-bottom: 12px;
+            border-bottom: 1px solid #f3f4f6;
+        }
+        
+        .section-icon {
+            font-size: 20px;
+            line-height: 1;
+        }
+        
+        .section-title {
+            font-weight: 600;
+            font-size: 15px;
+            color: #111827;
+            line-height: 1.3;
+        }
+        
+        .section-subtitle {
+            font-size: 13px;
+            color: #6b7280;
+            margin-top: 2px;
+        }
+
+        /* ==================== FORM ELEMENTS ==================== */
+        .form-group {
+            position: relative;
+        }
+        
+        .form-group i {
+            position: absolute;
+            top: 50%;
+            left: 10px;
+            transform: translateY(-50%);
+            color: #9ca3af;
+            font-size: 14px;
+        }
+        
+        input[type="text"] {
+            width: 100%;
+            max-width: 180px;
+            padding: 10px 10px 10px 32px;
+            border: 1px solid #d1d5db;
+            border-radius: 6px;
+            font-size: 14px;
+            color: #111827;
+            background: #ffffff;
+            font-family: inherit;
+        }
+
+        input[type="text"]:focus {
+            outline: none;
+            border-color: #3b82f6;
+            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+        }
+
+        input[type="text"]::placeholder {
+            color: #9ca3af;
+        }
+
+        /* ==================== BUTTONS ==================== */
+        .action-btn {
+            background: #3b82f6;
+            color: white;
+            padding: 10px 16px;
+            border: none;
+            border-radius: 6px;
+            font-size: 14px;
+            font-weight: 500;
+            cursor: pointer;
+            font-family: inherit;
+            transition: background 0.15s;
+            display: block;
+            margin: 0 auto;
+        }
+        
+        .action-btn:hover {
+            background: #2563eb;
+        }
+
+        .action-btn:active {
+            background: #1d4ed8;
+        }
+        
+        .action-btn:disabled {
+            background: #9ca3af;
+            cursor: not-allowed;
+        }
+        
+        .btn-secondary {
+            background: #6b7280;
+        }
+        
+        .btn-secondary:hover {
+            background: #4b5563;
+        }
+        
+        .btn-danger {
+            background: #dc2626;
+        }
+        
+        .btn-danger:hover {
+            background: #b91c1c;
+        }
+
+        /* ==================== MESSAGES ==================== */
+        .message {
+            font-size: 13px;
+            border-radius: 6px;
+            padding: 10px 12px;
+            border: 1px solid;
+        }
+
+        .success {
+            color: #065f46;
+            background: #d1fae5;
+            border-color: #6ee7b7;
+        }
+
+        .error {
+            color: #991b1b;
+            background: #fee2e2;
+            border-color: #fca5a5;
+        }
+
+        /* ==================== NEEDS ATTENTION ==================== */
+        .needs-attention {
+            border-color: #fca5a5 !important;
+            background: #fef2f2 !important;
+        }
+
+        .needs-attention .section-title {
+            color: #dc2626;
+        }
+
+        /* ==================== READONLY ==================== */
+        .readonly {
+            background: #f9fafb !important;
+            color: #6b7280 !important;
+            cursor: not-allowed;
+        }
+
+        /* ==================== FORM ACTIONS ==================== */
+        .form-actions {
+            display: flex;
+            justify-content: center;
+            gap: 8px;
+            margin-top: 16px;
+        }
+
+        /* ==================== GET URL ==================== */
+        .get-url-container {
+            display: flex;
+            gap: 8px;
+            align-items: center;
+            justify-content: space-between;
+        }
+        
+        .get-url-container input[type="text"] {
+            display: none;
+            padding-left: 10px;
+            flex: 1;
+            max-width: none;
+        }
+        
+        .url-right-section {
+            display: none;
+            flex: 1;
+            gap: 8px;
+            align-items: center;
+        }
+        
+        .copy-icon {
+            background: #f3f4f6;
+            border: 1px solid #d1d5db;
+            cursor: pointer;
+            font-size: 16px;
+            color: #4b5563;
+            padding: 10px;
+            border-radius: 6px;
+            flex-shrink: 0;
+        }
+
+        .copy-icon:hover {
+            background: #e5e7eb;
+        }
+
+        /* ==================== CACHE STATUS ==================== */
+        #cacheStatusDisplay {
+            display: none;
+            margin-top: 12px;
+            padding: 12px;
+            background: #f9fafb;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            max-height: 300px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        #cacheStatusDisplay h4 {
+            font-size: 13px;
+            font-weight: 600;
+            margin: 12px 0 8px 0;
+            padding-bottom: 6px;
+            border-bottom: 1px solid #e5e7eb;
+        }
+
+        #cacheStatusDisplay h4:first-child {
+            margin-top: 0;
+        }
+
+        #cacheStatusDisplay pre {
+            background: #1f2937;
+            color: #10b981;
+            padding: 10px;
+            border-radius: 4px;
+            overflow-x: auto;
+            font-size: 11px;
+            font-family: 'Monaco', 'Courier New', monospace;
+        }
+
+        #cacheStatusDisplay p {
+            margin: 6px 0;
+        }
+
+        #cacheStatusDisplay > div {
+            border: 1px solid #e5e7eb;
+            border-radius: 4px;
+            padding: 8px;
+            margin-bottom: 8px;
+            background: white;
+        }
+
+        .no-data { 
+            font-style: italic; 
+            color: #9ca3af; 
+            text-align: center;
+        }
+
+        /* ==================== NIFTY INSTRUMENTS ==================== */
+        #niftyInstrumentsBox {
+            display: none;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            background: #f9fafb;
+            padding: 12px;
+            max-height: 280px;
+            overflow-y: auto;
+            font-size: 12px;
+        }
+
+        #niftyInstrumentsBox ul {
+            list-style: none;
+            padding: 0;
+            margin: 0;
+        }
+
+        #niftyInstrumentsBox li {
+            padding: 4px 8px;
+            margin: 0;
+            background: transparent;
+            border: none;
+            font-family: 'Monaco', 'Courier New', monospace;
+            font-size: 12px;
+            color: #374151;
+        }
+
+        #niftyInstrumentsBox li:hover {
+            background: #f3f4f6;
+        }
+
+        /* ==================== POSITION SIZE MATRIX ==================== */
+        .psm-table {
+            width: 100%;
+            border-collapse: collapse;
+            font-size: 12px;
+            background: white;
+            border: 1px solid #e5e7eb;
+            border-radius: 6px;
+            overflow: hidden;
+        }
+        
+        .psm-table thead th {
+            background: #f9fafb;
+            padding: 10px 6px;
+            border-bottom: 1px solid #e5e7eb;
+            text-align: center;
+            font-weight: 600;
+            font-size: 11px;
+            text-transform: uppercase;
+            color: #6b7280;
+        }
+        
+        .psm-table tbody td {
+            border-bottom: 1px solid #f3f4f6;
+            padding: 8px 6px;
+            text-align: center;
+        }
+        
+        .psm-table tbody tr:hover {
+            background: #f9fafb;
+        }
+        
+        .psm-input {
+            width: 60px;
+            text-align: center;
+            padding: 4px;
+            border: 1px solid #d1d5db;
+            border-radius: 4px;
+            font-size: 12px;
+        }
+
+        .psm-input:focus {
+            outline: none;
+            border-color: #3b82f6;
+        }
+        
+        .psm-readonly {
+            background: #f3f4f6;
+            padding: 4px 8px;
+            border-radius: 4px;
+            font-weight: 600;
+            font-size: 11px;
+            color: #374151;
+        }
+        
+        .psm-id-cell {
+            background: #f9fafb;
+            font-weight: 600;
+        }
+		
+		.psm-long-row {
+		    background: #f0fdf4 !important;
+		}
+
+		.psm-short-row {
+		    background: #fef2f2 !important;
+		}
+
+		.psm-long-row:hover {
+		    background: #dcfce7 !important;
+		}
+
+		.psm-short-row:hover {
+		    background: #fee2e2 !important;
+		}
+        
+        #psmBody input[type=number]::-webkit-inner-spin-button,
+        #psmBody input[type=number]::-webkit-outer-spin-button {
+            -webkit-appearance: none;
+            margin: 0;
+        }
+        
+        #psmBody input[type=number] { 
+            -moz-appearance: textfield; 
+        }
+
+		/* ==================== CAPITAL MANAGEMENT ==================== */
+		.capital-input {
+		    width: 100%;
+		    padding: 10px 10px 10px 28px;
+		    border: 1px solid #d1d5db;
+		    border-radius: 6px;
+		    font-size: 14px;
+		    color: #111827;
+		    background: #ffffff;
+		    font-family: inherit;
+		}
+
+		.capital-input:focus {
+		    outline: none;
+		    border-color: #3b82f6;
+		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+		}
+
+		.capital-input::placeholder {
+		    color: #9ca3af;
+		}
+		
+        /* ==================== PERIOD FILTER BUTTONS ==================== */
+        .period-btn {
+            padding: 6px 14px;
+            border: 1px solid #d1d5db;
+            background: white;
+            border-radius: 4px;
+            font-size: 13px;
+            font-weight: 500;
+            cursor: pointer;
+            color: #6b7280;
+            transition: all 0.15s;
+            font-family: inherit;
+        }
+
+        .period-btn:hover {
+            background: #f3f4f6;
+            border-color: #9ca3af;
+        }
+
+        .period-btn.active {
+            background: #3b82f6;
+            color: white;
+            border-color: #3b82f6;
+        }
+
+        /* ==================== BADGES ==================== */
+        .symbol-badge {
+            display: inline-block;
+            padding: 4px 10px;
+            border-radius: 4px;
+            font-weight: 500;
+            font-size: 12px;
+            margin: 4px 0;
+        }
+
+        .symbol-badge.this-week {
+            background: #dbeafe;
+            color: #1e40af;
+        }
+
+        .symbol-badge.rollover {
+            background: #ede9fe;
+            color: #5b21b6;
+        }
+
+        /* ==================== LOADING OVERLAY ==================== */
+        .loading-overlay {
+            position: absolute;
+            top: 0;
+            left: 0;
+            right: 0;
+            bottom: 0;
+            background: rgba(255, 255, 255, 0.8);
+            display: none;
+            align-items: center;
+            justify-content: center;
+            border-radius: 6px;
+            z-index: 10;
+        }
+
+        .loading-overlay.active {
+            display: flex;
+        }
+
+        .spinner {
+            width: 40px;
+            height: 40px;
+            border: 4px solid #e5e7eb;
+            border-top-color: #3b82f6;
+            border-radius: 50%;
+            animation: spin 0.8s linear infinite;
+        }
+
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+
+		/* ==================== NSE HOLIDAY CALENDAR ==================== */
+		.calendar-container {
+		    display: none;
+		    margin-top: 12px;
+		}
+
+		.calendar-header {
+		    display: flex;
+		    justify-content: space-between;
+		    align-items: center;
+		    padding: 16px;
+		    background: #f9fafb;
+		    border: 1px solid #d1d5db;
+		    border-radius: 6px 6px 0 0;
+		    border-bottom: none;
+		}
+
+		.calendar-nav {
+		    display: flex;
+		    gap: 8px;
+		    align-items: center;
+		}
+
+		.calendar-nav button {
+		    background: white;
+		    border: 1px solid #d1d5db;
+		    border-radius: 4px;
+		    padding: 8px 14px;
+		    cursor: pointer;
+		    font-size: 13px;
+		    font-weight: 500;
+		    color: #374151;
+		    font-family: inherit;
+		    transition: all 0.2s;
+		}
+
+		.calendar-nav button:hover {
+		    background: #f3f4f6;
+		    border-color: #9ca3af;
+		    transform: translateY(-1px);
+		}
+
+		.calendar-nav button:active {
+		    transform: translateY(0);
+		}
+
+		.calendar-month-year {
+		    font-weight: 600;
+		    font-size: 16px;
+		    color: #111827;
+		}
+
+		.calendar-grid {
+		    display: grid;
+		    grid-template-columns: repeat(7, 1fr);
+		    border: 1px solid #d1d5db;
+		    border-radius: 0 0 6px 6px;
+		    overflow: hidden;
+		    background: white;
+		    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
+		}
+
+		.calendar-day-header {
+		    background: #f3f4f6;
+		    padding: 12px 8px;
+		    text-align: center;
+		    font-weight: 600;
+		    font-size: 11px;
+		    color: #374151;
+		    border-bottom: 2px solid #d1d5db;
+		    border-right: 1px solid #e5e7eb;
+		    text-transform: uppercase;
+		    letter-spacing: 0.5px;
+		}
+
+		.calendar-day-header:last-child {
+		    border-right: none;
+		}
+
+		.calendar-day {
+		    min-height: 80px;
+		    padding: 10px;
+		    border-right: 1px solid #e5e7eb;
+		    border-bottom: 1px solid #e5e7eb;
+		    position: relative;
+		    background: white;
+		    transition: all 0.2s;
+		    cursor: default;
+		}
+
+		.calendar-day:hover {
+		    background: #f9fafb;
+		    box-shadow: inset 0 0 0 1px #3b82f6;
+		    z-index: 1;
+		}
+
+		.calendar-day:nth-child(7n) {
+		    border-right: none;
+		}
+
+		.calendar-day.other-month {
+		    background: #f9fafb;
+		    opacity: 0.4;
+		}
+
+		.calendar-day.other-month:hover {
+		    background: #f3f4f6;
+		    opacity: 0.5;
+		}
+
+		.calendar-day.weekend {
+		    background: #fef2f2;
+		    border-left: 3px solid #fca5a5;
+		}
+
+		.calendar-day.weekend:hover {
+		    background: #fee2e2;
+		}
+
+		.calendar-day.holiday {
+		    background: #fee2e2;
+		    border: 2px solid #f87171;
+		}
+		.calendar-day.rollover {
+		    background: #ede9fe;
+		    border-left: 3px solid #8b5cf6;
+		}
+
+		.calendar-day.rollover:hover {
+		    background: #ddd6fe;
+		}
+
+		.calendar-day.today.rollover {
+		    background: linear-gradient(135deg, #dbeafe 50%, #ede9fe 50%);
+		    border: 2px solid #3b82f6;
+		}
+
+		.calendar-day.today.rollover:hover {
+		    background: linear-gradient(135deg, #bfdbfe 50%, #ddd6fe 50%);
+		}
+
+		.rollover-badge {
+		    font-size: 10px;
+		    color: #6b21a8;
+		    font-weight: 600;
+		    line-height: 1.3;
+		    margin-top: 6px;
+		    padding: 4px 6px;
+		    background: rgba(255, 255, 255, 0.7);
+		    border-radius: 3px;
+		    border-left: 2px solid #8b5cf6;
+		}
+		
+		.calendar-day.holiday:hover {
+		    background: #fecaca;
+		    box-shadow: inset 0 0 0 1px #ef4444;
+		}
+
+		.calendar-day.today {
+		    background: #dbeafe;
+		    border: 2px solid #3b82f6;
+		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+		    font-weight: 600;
+		}
+
+		.calendar-day.today:hover {
+		    background: #bfdbfe;
+		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
+		}
+
+		.calendar-day.today.holiday {
+		    background: linear-gradient(135deg, #dbeafe 50%, #fee2e2 50%);
+		    border: 2px solid #3b82f6;
+		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+		}
+
+		.calendar-day.today.holiday:hover {
+		    background: linear-gradient(135deg, #bfdbfe 50%, #fecaca 50%);
+		}
+
+		.calendar-day.today.weekend {
+		    background: linear-gradient(135deg, #dbeafe 50%, #fef2f2 50%);
+		    border: 2px solid #3b82f6;
+		}
+
+		.calendar-day.today.weekend:hover {
+		    background: linear-gradient(135deg, #bfdbfe 50%, #fee2e2 50%);
+		}
+
+		.calendar-day-number {
+		    font-weight: 600;
+		    font-size: 14px;
+		    color: #111827;
+		    margin-bottom: 6px;
+		    line-height: 1;
+		}
+
+		.calendar-day.other-month .calendar-day-number {
+		    color: #9ca3af;
+		    font-weight: 500;
+		}
+
+		.calendar-day.today .calendar-day-number {
+		    color: #1e40af;
+		}
+
+		.calendar-day.holiday .calendar-day-number {
+		    color: #991b1b;
+		}
+
+		.holiday-name {
+		    font-size: 10px;
+		    color: #991b1b;
+		    font-weight: 500;
+		    line-height: 1.3;
+		    margin-top: 6px;
+		    padding: 4px 6px;
+		    background: rgba(255, 255, 255, 0.6);
+		    border-radius: 3px;
+		    border-left: 2px solid #dc2626;
+		}
+
+		.calendar-legend {
+		    display: flex;
+		    gap: 20px;
+		    padding: 14px 16px;
+		    background: #f9fafb;
+		    border: 1px solid #d1d5db;
+		    border-top: none;
+		    border-radius: 0 0 6px 6px;
+		    flex-wrap: wrap;
+		    font-size: 12px;
+		    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+		}
+
+		.legend-item {
+		    display: flex;
+		    align-items: center;
+		    gap: 8px;
+		    color: #374151;
+		    font-weight: 500;
+		}
+
+		.legend-box {
+		    width: 20px;
+		    height: 20px;
+		    border-radius: 4px;
+		    border: 1px solid #d1d5db;
+		    flex-shrink: 0;
+		}
+
+		.legend-box.today {
+		    background: #dbeafe;
+		    border: 2px solid #3b82f6;
+		}
+
+		.legend-box.weekend {
+		    background: #fef2f2;
+		    border-left: 3px solid #fca5a5;
+		}
+
+		.legend-box.holiday {
+		    background: #fee2e2;
+		    border: 2px solid #f87171;
+		}
+
+		/* ==================== RESPONSIVE ==================== */
+		@media (max-width: 768px) {
+		    body { 
+		        padding: 24px 16px; 
+		    }
+		    
+		    .section-grid { 
+		        grid-template-columns: 1fr; 
+		    }
+		    
+		    .top-bar { 
+		        flex-wrap: wrap; 
+		    }
+
+		    .action-btn {
+		        width: 100%;
+		    }
+
+		    .form-actions {
+		        flex-direction: column;
+		    }
+
+		    .calendar-day {
+		        min-height: 70px;
+		        padding: 6px;
+		    }
+		    
+		    .calendar-day-number {
+		        font-size: 13px;
+		    }
+		    
+		    .holiday-name {
+		        font-size: 9px;
+		        padding: 3px 4px;
+		    }
+		    
+		    .calendar-header {
+		        padding: 12px;
+		    }
+		    
+		    .calendar-nav button {
+		        padding: 6px 10px;
+		        font-size: 12px;
+		    }
+		    
+		    .calendar-month-year {
+		        font-size: 14px;
+		    }
+		    
+		    .calendar-legend {
+		        gap: 12px;
+		        padding: 10px 12px;
+		    }
+		    
+		    .legend-item {
+		        font-size: 11px;
+		    }
+		    
+		    .legend-box {
+		        width: 16px;
+		        height: 16px;
+		    }
+		}
+    </style>
+
+    <script>
+        // ==================== STATE MANAGEMENT ====================
+        const AppState = {
+            equityCurveChart: null,
+            fullEquityData: null,
+            currentPeriod: '1W',
+            currentStrategy: 'All',
+            availableStrategies: [],
+            isLoading: false
+        };
+
+        // ==================== UTILITY FUNCTIONS ====================
+        const Utils = {
+            formatDateTime(timestamp) {
+                if (!timestamp) return 'N/A';
+                try {
+                    const date = new Date(timestamp);
+                    return date.toLocaleString('en-IN', {
+                        year: 'numeric',
+                        month: 'short',
+                        day: '2-digit',
+                        hour: '2-digit',
+                        minute: '2-digit',
+                        second: '2-digit',
+                        hour12: true
+                    });
+                } catch (e) {
+                    return timestamp;
+                }
+            },
+
+            parseChartDate(dateStr) {
+                // Handle formats like "16 Nov 24" or "16 Nov"
+                const parts = dateStr.split(' ');
+                if (parts.length < 2) return null;
+                
+                const day = parseInt(parts[0]);
+                const month = parts[1];
+                const year = parts.length === 3 ? parseInt('20' + parts[2]) : new Date().getFullYear();
+                
+                const monthMap = {
+                    'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
+                    'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
+                };
+                
+                if (monthMap[month] === undefined) return null;
+                
+                return new Date(year, monthMap[month], day);
+            },
+
+            showMessage(elementId, message, isError = false) {
+                const element = document.getElementById(elementId);
+                element.textContent = message;
+                element.className = isError ? 'message error' : 'message success';
+                element.style.display = 'block';
+            },
+
+            hideMessage(elementId) {
+                const element = document.getElementById(elementId);
+                element.style.display = 'none';
+            },
+
+            setLoading(containerId, isLoading) {
+                const container = document.getElementById(containerId);
+                const overlay = container.querySelector('.loading-overlay');
+                if (overlay) {
+                    overlay.classList.toggle('active', isLoading);
+                }
+            }
+        };
+
+        // ==================== LOGIN URL ====================
+        function fetchLoginUrl() {
+            fetch('/kite-auth/get-login-url')
+                .then(response => response.text())
+                .then(data => {
+                    const field = document.getElementById('loginUrlField');
+                    const rightSection = document.getElementById('urlRightSection');
+                    field.value = data;
+                    rightSection.style.display = 'flex';
+                })
+                .catch(error => {
+                    alert('Error fetching login URL: ' + error.message);
+                });
+        }
+
+        function copyLoginUrl() {
+            const field = document.getElementById('loginUrlField');
+            navigator.clipboard.writeText(field.value)
+                .then(() => {
+                    const icon = document.getElementById('copyIcon');
+                    icon.innerHTML = '✓';
+                    setTimeout(() => icon.innerHTML = '📋', 1200);
+                })
+                .catch(err => {
+                    alert('Failed to copy: ' + err.message);
+                });
+        }
+
+        // ==================== CACHE STATUS ====================
+        function viewCacheStatus() {
+            const statusDiv = document.getElementById('cacheStatusDisplay');
+            statusDiv.innerHTML = '<p class="no-data">Loading...</p>';
+            statusDiv.style.display = 'block';
+
+            fetch('/api/cacheStatus')
+                .then(response => {
+                    if (!response.ok) throw new Error('Failed to fetch');
+                    return response.json();
+                })
+                .then(data => displayCacheStatus(data))
+                .catch(error => {
+                    statusDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
+                });
+        }
+
+        function displayCacheStatus(data) {
+            const statusDiv = document.getElementById('cacheStatusDisplay');
+            let html = '';
+
+            html += '<h4>Signal Cache</h4>';
+            html += '<p><strong>Cached:</strong> ' + data.cacheSize + ' | <strong>TTL:</strong> ' + data.ttlDays + ' days</p>';
+
+            if (data.cachedSignals && data.cachedSignals.length > 0) {
+                const signalsArray = Array.isArray(data.cachedSignals) ? data.cachedSignals : Array.from(data.cachedSignals);
+                const displaySignals = signalsArray.slice(0, 5);
+                html += '<pre>' + JSON.stringify(displaySignals, null, 2) + '</pre>';
+                if (signalsArray.length > 5) {
+                    html += '<p style="font-size:11px; color:#6b7280;"><em>... and ' + (signalsArray.length - 5) + ' more</em></p>';
+                }
+            } else {
+                html += '<p class="no-data">No signals cached</p>';
+            }
+
+            html += '<h4>Duplicate Tracking</h4>';
+            if (data.duplicateKeys && Object.keys(data.duplicateKeys).length > 0) {
+                html += '<pre>' + JSON.stringify(data.duplicateKeys, null, 2) + '</pre>';
+            } else {
+                html += '<p class="no-data">None tracked</p>';
+            }
+
+            html += '<h4>Strategy Tracking</h4>';
+            html += '<p><strong>Tracked:</strong> ' + data.previousTracked + '</p>';
+
+            if (data.previousByStrategy && Object.keys(data.previousByStrategy).length > 0) {
+                for (const [strategyName, details] of Object.entries(data.previousByStrategy)) {
+                    html += '<div>';
+                    html += '<p style="font-weight:600; margin-bottom:4px;">' + strategyName + '</p>';
+                    html += '<p><strong>Action:</strong> ' + details.action + ' | <strong>Signal:</strong> ' + details.signalType + '</p>';
+                    html += '<p><strong>Price:</strong> ' + details.currentPrice + ' | <strong>Time:</strong> ' + details.time + '</p>';
+                    html += '<p style="font-size:11px; color:#6b7280;">Received: ' + Utils.formatDateTime(details.receivedAt) + '</p>';
+                    html += '</div>';
+                }
+            } else {
+                html += '<p class="no-data">None tracked</p>';
+            }
+
+            statusDiv.innerHTML = html;
+        }
+
+        function clearCache() {
+            if (confirm('Clear all caches?')) {
+                fetch('/api/clearCache', { method: 'POST' })
+                    .then(response => response.text())
+                    .then(data => {
+                        alert(data);
+                        document.getElementById('cacheStatusDisplay').style.display = 'none';
+                    })
+                    .catch(error => alert('Error: ' + error.message));
+            }
+        }
+
+        // ==================== ROLLOVER ====================
+        function triggerRollover() {
+            const price = document.getElementById('signalPriceInput').value.trim();
+            const msg = document.getElementById('rolloverMsg');
+
+            if (!/^\d{5}$/.test(price)) {
+                Utils.showMessage('rolloverMsg', 'Enter a valid 5-digit number.', true);
+                return;
+            }
+
+            fetch('/api/rollover?signalPrice=' + encodeURIComponent(price))
+                .then(resp => resp.text())
+                .then(text => {
+                    Utils.showMessage('rolloverMsg', 'Success: ' + text, false);
+                })
+                .catch(err => {
+                    Utils.showMessage('rolloverMsg', 'Error: ' + err, true);
+                });
+        }
+
+        function validateSignalPrice(input) {
+            input.value = input.value.replace(/[^0-9]/g, '');
+            if (input.value.length > 5) {
+                input.value = input.value.slice(0, 5);
+            }
+        }
+
+        // ==================== POSITION SIZE MATRIX ====================
+        function togglePsm() {
+            const body = document.getElementById('psmBody');
+            const btn = document.getElementById('psmToggleBtn');
+            if (body.style.display === 'none' || body.style.display === '') {
+                body.style.display = 'block';
+                btn.textContent = '▲';
+            } else {
+                body.style.display = 'none';
+                btn.textContent = '▼';
+            }
+        }
+
+        // ==================== SYMBOLS ====================
+        function setSymbolsEditable(editable) {
+            const tw = document.getElementById('thisWeekSymbolInput');
+            const ro = document.getElementById('rolloverSymbolInput');
+            const save = document.getElementById('saveSymbolsBtn');
+            const edit = document.getElementById('editSymbolsBtn');
+            const cancel = document.getElementById('cancelSymbolsBtn');
+
+            if (editable) {
+                tw.removeAttribute('disabled');
+                ro.removeAttribute('disabled');
+                save.removeAttribute('disabled');
+                tw.classList.remove('readonly');
+                ro.classList.remove('readonly');
+                save.classList.remove('btn-secondary');
+                edit.style.display = 'none';
+                cancel.style.display = 'inline-block';
+                tw.focus();
+            } else {
+                tw.setAttribute('disabled', 'disabled');
+                ro.setAttribute('disabled', 'disabled');
+                save.setAttribute('disabled', 'disabled');
+                tw.classList.add('readonly');
+                ro.classList.add('readonly');
+                save.classList.add('btn-secondary');
+                edit.style.display = 'inline-block';
+                cancel.style.display = 'none';
+            }
+        }
+
+        function enableSymbolEdit() { setSymbolsEditable(true); }
+        function cancelSymbolEdit() { setSymbolsEditable(false); }
+
+        // ==================== NIFTY INSTRUMENTS ====================
+        function fetchNiftyInstruments() {
+            const box = document.getElementById('niftyInstrumentsBox');
+            const status = document.getElementById('niftyInstrumentsStatus');
+
+            status.style.display = 'block';
+            status.className = 'message';
+            status.textContent = 'Loading...';
+
+            fetch('/getNiftyInstruments')
+                .then(r => {
+                    if (!r.ok) throw new Error('Server error ' + r.status);
+                    return r.json();
+                })
+                .then(list => {
+                    status.style.display = 'none';
+                    if (!Array.isArray(list) || list.length === 0) {
+                        box.style.display = 'block';
+                        box.innerHTML = '<p class="no-data">No instruments found</p>';
+                        return;
+                    }
+                    const items = list.map(s => `<li>${s}</li>`).join('');
+                    box.innerHTML = `<div style="margin-bottom:8px; color:#6b7280; font-weight:500;">Total: ${list.length}</div><ul>${items}</ul>`;
+                    box.style.display = 'block';
+                })
+                .catch(err => {
+                    box.style.display = 'none';
+                    status.style.display = 'block';
+                    status.className = 'message error';
+                    status.textContent = 'Error: ' + err.message;
+                });
+        }
+
+        function clearNiftyInstruments() {
+            const box = document.getElementById('niftyInstrumentsBox');
+            const status = document.getElementById('niftyInstrumentsStatus');
+            box.style.display = 'none';
+            box.innerHTML = '';
+            status.style.display = 'none';
+            status.textContent = '';
+        }
+		
+		// ==================== CAPITAL MANAGEMENT ====================
+		function saveCapital(event) {
+		    event.preventDefault();
+		    
+		    const successMsg = document.getElementById('capitalSuccessMsg');
+		    const errorMsg = document.getElementById('capitalErrorMsg');
+		    
+		    // Hide previous messages
+		    successMsg.style.display = 'none';
+		    errorMsg.style.display = 'none';
+		    
+		    // Get values and remove commas
+		    const currentCapital = parseFloat(document.getElementById('currentCapitalInput').value.replace(/,/g, '')) || null;
+		    const additionalCapital = parseFloat(document.getElementById('additionalCapitalInput').value.replace(/,/g, '')) || null;
+		    const ceilingToHit = parseFloat(document.getElementById('ceilingToHitInput').value.replace(/,/g, '')) || null;
+		    const nrmlCostPerLot = parseInt(document.getElementById('nrmlCostPerLotInput').value.replace(/,/g, '')) || null;
+		    const definedRiskPerLot = parseInt(document.getElementById('definedRiskPerLotInput').value.replace(/,/g, '')) || null;
+			const currentRiskPerLot = parseInt(document.getElementById('currentRiskPerLotInput').value.replace(/,/g, '')) || null;
+
+		    const data = {
+		        currentCapital: currentCapital,
+		        additionalCapital: additionalCapital,
+		        ceilingToHit: ceilingToHit,
+		        nrmlCostPerLot: nrmlCostPerLot,
+		        definedRiskPerLot: definedRiskPerLot,
+				currentRiskPerLot: currentRiskPerLot
+		    };
+		    
+		    fetch('/api/capital/save', {
+		        method: 'POST',
+		        headers: {
+		            'Content-Type': 'application/json'
+		        },
+		        body: JSON.stringify(data)
+		    })
+		    .then(response => response.json())
+		    .then(result => {
+		        if (result.success) {
+		            successMsg.textContent = result.message;
+		            successMsg.style.display = 'block';
+		            
+					if (result.success) {
+					    successMsg.textContent = result.message;
+					    successMsg.style.display = 'block';
+					    if (result.data && result.data.currentCapital) {
+					        document.getElementById('currentCapitalInput').value = formatIndianCurrency(result.data.currentCapital);
+					    }
+					    document.getElementById('additionalCapitalInput').value = '';					    
+					    setTimeout(() => {
+					        cancelCapitalEdit();
+					    }, 1500);
+					}
+		            
+		            document.getElementById('additionalCapitalInput').value = '';
+		            setTimeout(() => {
+		                cancelCapitalEdit();
+		            }, 1500);
+		        } else {
+		            errorMsg.textContent = result.message;
+		            errorMsg.style.display = 'block';
+		        }
+		    })
+		    .catch(error => {
+		        errorMsg.textContent = 'Error: ' + error.message;
+		        errorMsg.style.display = 'block';
+		    });
+		}
+
+		function loadCapitalData() {
+		    fetch('/api/capital')
+		        .then(response => response.json())
+		        .then(data => {
+		            if (data) {
+		                document.getElementById('currentCapitalInput').value = formatIndianCurrency(data.currentCapital) || '0';
+		                document.getElementById('ceilingToHitInput').value = formatIndianCurrency(data.ceilingToHit) || '0';
+		                document.getElementById('nrmlCostPerLotInput').value = formatIndianCurrency(data.nrmlCostPerLot) || '0';
+		                document.getElementById('definedRiskPerLotInput').value = formatIndianCurrency(data.definedRiskPerLot) || '0';
+		                document.getElementById('currentRiskPerLotInput').value = formatIndianCurrency(data.currentRiskPerLot) || '0';
+		            }
+		        })
+		        .catch(error => {
+		            console.error('Error loading capital data:', error);
+		        });
+		}
+
+		function toggleCapital() {
+		    const body = document.getElementById('capitalBody');
+		    const btn = document.getElementById('capitalToggleBtn');
+		    if (body.style.display === 'none' || body.style.display === '') {
+		        body.style.display = 'block';
+		        btn.textContent = '▲';
+		    } else {
+		        body.style.display = 'none';
+		        btn.textContent = '▼';
+		    }
+		}
+
+		function formatCurrencyInput(input) {
+		    let value = input.value.replace(/[^0-9.]/g, '');		    
+		    const parts = value.split('.');
+		    if (parts.length > 2) {
+		        value = parts[0] + '.' + parts.slice(1).join('');
+		    }
+		    
+		    // Limit to 2 decimal places
+		    if (parts[1] && parts[1].length > 2) {
+		        value = parts[0] + '.' + parts[1].substring(0, 2);
+		    }		    
+		    input.value = value;
+		}
+		
+		function formatCurrencyOnBlur(input) {
+		    if (input.value && input.value.trim() !== '') {
+		        const numericValue = input.value.replace(/,/g, '');
+		        input.value = formatIndianCurrency(numericValue);
+		    }
+		}
+
+		function formatIndianCurrency(value) {
+		    if (!value || value === '' || value === null || value === undefined) return '';		    
+		    const stringValue = String(value);
+		    const num = parseFloat(stringValue.replace(/,/g, ''));
+		    if (isNaN(num)) return stringValue;
+		    const parts = num.toFixed(2).split('.');
+		    const integerPart = parts[0];
+		    const decimalPart = parts[1];
+		    let lastThree = integerPart.substring(integerPart.length - 3);
+		    const otherNumbers = integerPart.substring(0, integerPart.length - 3);		    
+		    if (otherNumbers !== '') {
+		        lastThree = ',' + lastThree;
+		    }		    
+		    const formatted = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + lastThree;		    
+		    return decimalPart ? formatted + '.' + decimalPart : formatted;
+		}
+
+		function setCapitalEditable(editable) {
+			const inputs = [
+			    'currentCapitalInput',
+			    'additionalCapitalInput',
+			    'ceilingToHitInput',
+			    'nrmlCostPerLotInput',
+			    'definedRiskPerLotInput',
+			    'currentRiskPerLotInput'
+			];
+		    
+		    const save = document.getElementById('saveCapitalBtn');
+		    const edit = document.getElementById('editCapitalBtn');
+		    const cancel = document.getElementById('cancelCapitalBtn');
+		    
+		    if (editable) {
+		        inputs.forEach(id => {
+		            const input = document.getElementById(id);
+		            input.removeAttribute('disabled');
+		            input.classList.remove('readonly');
+		        });
+		        save.removeAttribute('disabled');
+		        save.classList.remove('btn-secondary');
+		        edit.style.display = 'none';
+		        cancel.style.display = 'inline-block';
+		        document.getElementById('additionalCapitalInput').focus();
+		    } else {
+		        inputs.forEach(id => {
+		            const input = document.getElementById(id);
+		            input.setAttribute('disabled', 'disabled');
+		            input.classList.add('readonly');
+		        });
+		        save.setAttribute('disabled', 'disabled');
+		        save.classList.add('btn-secondary');
+		        edit.style.display = 'inline-block';
+		        cancel.style.display = 'none';
+		        
+		        // Clear additional capital on cancel
+		        document.getElementById('additionalCapitalInput').value = '';
+		    }
+		}
+
+		function enableCapitalEdit() { 
+		    setCapitalEditable(true); 
+		}
+
+		function cancelCapitalEdit() { 
+		    setCapitalEditable(false);
+		    // Hide any messages
+		    document.getElementById('capitalSuccessMsg').style.display = 'none';
+		    document.getElementById('capitalErrorMsg').style.display = 'none';
+		}
+
+        // ==================== AUTO-ENABLE ====================
+        document.addEventListener('DOMContentLoaded', function () {
+            const card = document.querySelector('[data-no-symbols]');
+            const noSymbols = card && card.getAttribute('data-no-symbols') === 'true';
+            if (noSymbols) {
+                setSymbolsEditable(true);
+            }
+			loadCapitalData();
+        });
+
+        // ==================== EQUITY CURVE ====================
+        const EquityCurve = {
+            loadAvailableStrategies() {
+                fetch('/api/strategies')
+                    .then(response => {
+                        if (!response.ok) throw new Error('Failed to fetch strategies');
+                        return response.json();
+                    })
+                    .then(strategies => {
+                        AppState.availableStrategies = strategies || [];
+                        this.populateStrategyDropdown(strategies);
+                    })
+                    .catch(error => {
+                        console.error('Error loading strategies:', error);
+                    });
+            },
+
+            populateStrategyDropdown(strategies) {
+                const dropdown = document.getElementById('strategyFilter');
+                dropdown.innerHTML = '<option value="All">All Strategies</option>';
+                
+                if (strategies && strategies.length > 0) {
+                    strategies.forEach(strategy => {
+                        const option = document.createElement('option');
+                        option.value = strategy;
+                        option.textContent = strategy;
+                        dropdown.appendChild(option);
+                    });
+                }
+            },
+
+            filterByStrategy(strategy) {
+                AppState.currentStrategy = strategy;
+                this.loadEquityCurveWithFilters();
+            },
+
+            loadEquityCurveWithFilters() {
+                const container = document.getElementById('equityCurveContainer');
+                const filters = document.getElementById('equityFilters');
+                const status = document.getElementById('equityCurveStatus');
+                
+                status.style.display = 'block';
+                status.className = 'message';
+                status.textContent = 'Loading equity curve...';
+                container.style.position = 'relative';
+
+                const url = `/api/equity-curve?strategy=${encodeURIComponent(AppState.currentStrategy)}`;
+
+                fetch(url)
+                    .then(response => {
+                        if (!response.ok) throw new Error('Failed to fetch equity data');
+                        return response.json();
+                    })
+                    .then(data => {
+                        if (!data || !data.equity || data.equity.length === 0) {
+                            status.style.display = 'block';
+                            status.className = 'message error';
+                            status.textContent = 'No data available for selected strategy';
+                            container.style.display = 'none';
+                            filters.style.display = 'none';
+                            return;
+                        }
+
+                        AppState.fullEquityData = data;
+                        status.style.display = 'none';
+                        container.style.display = 'block';
+                        filters.style.display = 'block';
+                        
+                        const filteredData = this.filterDataByPeriod(AppState.fullEquityData, AppState.currentPeriod);
+                        this.renderEquityCurve(filteredData);
+                    })
+                    .catch(error => {
+                        status.style.display = 'block';
+                        status.className = 'message error';
+                        status.textContent = 'Error: ' + error.message;
+                        container.style.display = 'none';
+                        filters.style.display = 'none';
+                    });
+            },
+
+            selectPeriod(period, button) {
+                document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
+                button.classList.add('active');
+                
+                AppState.currentPeriod = period;
+                
+                if (AppState.fullEquityData) {
+                    const filteredData = this.filterDataByPeriod(AppState.fullEquityData, period);
+                    this.renderEquityCurve(filteredData);
+                }
+            },
+
+            applyCustomDateRange() {
+                const startDate = document.getElementById('equityStartDate').value;
+                const endDate = document.getElementById('equityEndDate').value;
+                
+                if (!startDate || !endDate) {
+                    alert('Please select both start and end dates');
+                    return;
+                }
+                
+                if (new Date(startDate) > new Date(endDate)) {
+                    alert('Start date must be before end date');
+                    return;
+                }
+                
+                document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
+                
+                if (AppState.fullEquityData) {
+                    const filteredData = this.filterDataByDateRange(AppState.fullEquityData, startDate, endDate);
+                    this.renderEquityCurve(filteredData);
+                }
+            },
+
+            filterDataByPeriod(data, period) {
+                if (period === 'ALL') {
+                    return data;
+                }
+                
+                if (!data || !data.dates || !data.equity || data.dates.length === 0 || data.equity.length === 0) {
+                    return data;
+                }
+                
+                let daysToShow = 7;
+                if (period === '1M') daysToShow = 30;
+                if (period === '3M') daysToShow = 90;
+                if (period === '6M') daysToShow = 180;
+                if (period === '1Y') daysToShow = 365;
+                
+                const startIndex = Math.max(0, data.dates.length - daysToShow);
+                
+                return {
+                    startingEquity: data.equity[startIndex],
+                    currentEquity: data.equity[data.equity.length - 1],
+                    dates: data.dates.slice(startIndex),
+                    equity: data.equity.slice(startIndex),
+                    lotSize: data.lotSize ? data.lotSize.slice(startIndex) : []
+                };
+            },
+
+            filterDataByDateRange(data, startDateStr, endDateStr) {
+                if (!data || !data.dates || data.dates.length === 0) {
+                    return data;
+                }
+                
+                const startDate = new Date(startDateStr);
+                const endDate = new Date(endDateStr);
+                endDate.setHours(23, 59, 59, 999);
+                
+                const filteredIndices = [];
+                
+                for (let i = 0; i < data.dates.length; i++) {
+                    const parsedDate = Utils.parseChartDate(data.dates[i]);
+                    
+                    if (parsedDate && parsedDate >= startDate && parsedDate <= endDate) {
+                        filteredIndices.push(i);
+                    }
+                }
+                
+                if (filteredIndices.length === 0) {
+                    alert('No data found in the selected date range');
+                    return data;
+                }
+                
+                return {
+                    startingEquity: data.equity[filteredIndices[0]],
+                    currentEquity: data.equity[filteredIndices[filteredIndices.length - 1]],
+                    dates: filteredIndices.map(i => data.dates[i]),
+                    equity: filteredIndices.map(i => data.equity[i]),
+                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
+                };
+            },
+
+            showMockEquityCurve() {
+                const mockStrategies = ['SwingMaster', 'V-LinTra', 'BreakoutPro'];
+                AppState.availableStrategies = mockStrategies;
+                this.populateStrategyDropdown(mockStrategies);
+                
+                const startDate = new Date();
+                startDate.setDate(startDate.getDate() - 365);
+                
+                const dates = [];
+                const equity = [];
+                const lotSize = [];
+                let currentEquity = 100000;
+                let currentLotSize = 1;
+                
+                for (let i = 0; i < 365; i++) {
+                    const date = new Date(startDate);
+                    date.setDate(date.getDate() + i);
+                    
+                    if (date.getDate() === 1) {
+                        dates.push(date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }));
+                    } else {
+                        dates.push(date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }));
+                    }
+                    
+                    const trend = Math.sin(i / 30) * 1000;
+                    const randomPnl = (Math.random() - 0.35) * 4000;
+                    const dailyPnl = randomPnl + trend;
+                    
+                    currentEquity += dailyPnl;
+                    
+                    if (currentEquity < 50000) {
+                        currentEquity = 50000 + Math.random() * 5000;
+                    }
+                    
+                    equity.push(Math.round(currentEquity));
+                    
+                    if (currentEquity >= 150000 && currentLotSize < 3) {
+                        currentLotSize = 3;
+                    } else if (currentEquity >= 120000 && currentLotSize < 2) {
+                        currentLotSize = 2;
+                    } else if (currentEquity < 90000 && currentLotSize > 1) {
+                        currentLotSize = 1;
+                    }
+                    
+                    lotSize.push(currentLotSize);
+                }
+                
+                AppState.fullEquityData = {
+                    startingEquity: 100000,
+                    currentEquity: Math.round(currentEquity),
+                    dates: dates,
+                    equity: equity,
+                    lotSize: lotSize
+                };
+                
+                document.getElementById('equityCurveStatus').style.display = 'none';
+                document.getElementById('equityCurveContainer').style.display = 'block';
+                document.getElementById('equityFilters').style.display = 'block';
+                
+                const filteredData = this.filterDataByPeriod(AppState.fullEquityData, AppState.currentPeriod);
+                this.renderEquityCurve(filteredData);
+            },
+
+            loadEquityCurve() {
+                this.loadAvailableStrategies();
+                this.loadEquityCurveWithFilters();
+            },
+
+            refreshEquityCurve() {
+                if (document.getElementById('equityCurveContainer').style.display === 'block') {
+                    this.loadEquityCurveWithFilters();
+                }
+            },
+
+            renderEquityCurve(data) {
+                if (!data || !data.equity || data.equity.length === 0) {
+                    alert('No equity data available to display');
+                    return;
+                }
+                
+                const startingEquity = data.startingEquity || 0;
+                const currentEquity = data.currentEquity || 0;
+                const totalPnl = currentEquity - startingEquity;
+                const returnPercent = startingEquity > 0 ? ((totalPnl / startingEquity) * 100).toFixed(2) : 0;
+
+                document.getElementById('startingEquity').textContent = '₹' + startingEquity.toLocaleString('en-IN');
+                document.getElementById('currentEquity').textContent = '₹' + currentEquity.toLocaleString('en-IN');
+                document.getElementById('totalPnl').textContent = '₹' + totalPnl.toLocaleString('en-IN');
+                document.getElementById('totalPnl').style.color = totalPnl >= 0 ? '#059669' : '#dc2626';
+                document.getElementById('returnPercent').textContent = returnPercent + '%';
+                document.getElementById('returnPercent').style.color = returnPercent >= 0 ? '#059669' : '#dc2626';
+
+                const equityValues = data.equity || [];
+                const lotSizes = data.lotSize || [];
+                const drawdowns = [];
+                let peak = equityValues[0] || 0;
+                
+                for (let i = 0; i < equityValues.length; i++) {
+                    const currentValue = equityValues[i];
+                    if (currentValue > peak) {
+                        peak = currentValue;
+                    }
+                    const drawdown = peak > 0 ? ((currentValue - peak) / peak) * 100 : 0;
+                    drawdowns.push(drawdown);
+                }
+
+                if (AppState.equityCurveChart) {
+                    AppState.equityCurveChart.destroy();
+                }
+
+                const ctx = document.getElementById('equityCurveChart').getContext('2d');
+                
+                AppState.equityCurveChart = new Chart(ctx, {
+                    type: 'line',
+                    data: {
+                        labels: data.dates || [],
+                        datasets: [{
+                            label: 'Equity',
+                            data: data.equity || [],
+                            borderColor: '#3b82f6',
+                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
+                            borderWidth: 2,
+                            fill: true,
+                            tension: 0.1,
+                            pointRadius: 2,
+                            pointHoverRadius: 5
+                        }]
+                    },
+                    options: {
+                        responsive: true,
+                        maintainAspectRatio: true,
+                        plugins: {
+                            legend: {
+                                display: false
+                            },
+                            tooltip: {
+                                mode: 'index',
+                                intersect: false,
+                                callbacks: {
+                                    title: function(context) {
+                                        return context[0].label;
+                                    },
+                                    label: function(context) {
+                                        return 'Equity: ₹' + context.parsed.y.toLocaleString('en-IN');
+                                    },
+                                    afterLabel: function(context) {
+                                        const index = context.dataIndex;
+                                        const drawdown = drawdowns[index];
+                                        const lotSize = lotSizes[index];
+                                        
+                                        let lines = [];
+                                        
+                                        if (drawdown === 0) {
+                                            lines.push('Drawdown: 0% (Peak)');
+                                        } else {
+                                            lines.push('Drawdown: ' + drawdown.toFixed(2) + '%');
+                                        }
+                                        
+                                        if (lotSize !== undefined && lotSize !== null) {
+                                            lines.push('Lot Size: ' + lotSize);
+                                        }
+                                        
+                                        return lines;
+                                    }
+                                },
+                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
+                                titleColor: '#fff',
+                                bodyColor: '#fff',
+                                borderColor: '#3b82f6',
+                                borderWidth: 1,
+                                padding: 10,
+                                displayColors: false
+                            }
+                        },
+                        scales: {
+                            x: {
+                                grid: {
+                                    display: false
+                                },
+                                ticks: {
+                                    maxTicksLimit: 12,
+                                    autoSkip: true
+                                }
+                            },
+                            y: {
+                                beginAtZero: false,
+                                ticks: {
+                                    callback: function(value) {
+                                        return '₹' + value.toLocaleString('en-IN');
+                                    }
+                                },
+                                suggestedMin: function(context) {
+                                    const data = context.chart.data.datasets[0].data;
+                                    const min = Math.min(...data);
+                                    return min * 0.95;
+                                },
+                                suggestedMax: function(context) {
+                                    const data = context.chart.data.datasets[0].data;
+                                    const max = Math.max(...data);
+                                    return max * 1.05;
+                                }
+                            }
+                        }
+                    }
+                });
+            }
+        };
+
+        // Expose EquityCurve methods globally
+        function loadEquityCurve() { EquityCurve.loadEquityCurve(); }
+        function refreshEquityCurve() { EquityCurve.refreshEquityCurve(); }
+        function showMockEquityCurve() { EquityCurve.showMockEquityCurve(); }
+        function selectPeriod(period, button) { EquityCurve.selectPeriod(period, button); }
+        function applyCustomDateRange() { EquityCurve.applyCustomDateRange(); }
+        function filterByStrategy(strategy) { EquityCurve.filterByStrategy(strategy); }
+
+        // ==================== NSE HOLIDAY CALENDAR ====================
+        const NSECalendar = {
+            holidays2026: [
+                { date: '2026-01-15', name: 'Municipal Corporation Election - Maharashtra' },
+                { date: '2026-01-26', name: 'Republic Day' },
+                { date: '2026-03-03', name: 'Holi' },
+                { date: '2026-03-26', name: 'Shri Ram Navami' },
+                { date: '2026-03-31', name: 'Shri Mahavir Jayanti' },
+                { date: '2026-04-03', name: 'Good Friday' },
+                { date: '2026-04-14', name: 'Dr. Baba Saheb Ambedkar Jayanti' },
+                { date: '2026-05-01', name: 'Maharashtra Day' },
+                { date: '2026-05-28', name: 'Bakri Id' },
+                { date: '2026-06-26', name: 'Muharram' },
+                { date: '2026-09-14', name: 'Ganesh Chaturthi' },
+                { date: '2026-10-02', name: 'Mahatma Gandhi Jayanti' },
+                { date: '2026-10-20', name: 'Dussehra' },
+                { date: '2026-11-10', name: 'Diwali-Balipratipada' },
+                { date: '2026-11-24', name: 'Prakash Gurpurb Sri Guru Nanak Dev' },
+                { date: '2026-12-25', name: 'Christmas' }
+            ],
+            
+            currentMonth: new Date().getMonth(),
+            currentYear: new Date().getFullYear(),
+            
+			isFriday(date) {
+			    return date.getDay() === 5; // Friday is day 5
+			},			    
+			isRolloverDay(date) {
+			    const dateStr = this.formatDate(date);
+			    const isHoliday = this.isHoliday(dateStr);
+			    const isFriday = this.isFriday(date);			        
+			    return isFriday && !isHoliday;
+			},				
+            toggleCalendar() {
+                const container = document.getElementById('calendarContainer');
+                const btn = document.getElementById('calendarToggleBtn');
+                
+                if (container.style.display === 'none' || container.style.display === '') {
+                    container.style.display = 'block';
+                    btn.textContent = '▲';
+                    this.renderCalendar();
+                } else {
+                    container.style.display = 'none';
+                    btn.textContent = '▼';
+                }
+            },
+            
+            isHoliday(dateStr) {
+                return this.holidays2026.find(h => h.date === dateStr);
+            },
+            
+            isWeekend(date) {
+                const day = date.getDay();
+                return day === 0 || day === 6; // Sunday or Saturday
+            },
+            
+            isToday(date) {
+                const today = new Date();
+                return date.getDate() === today.getDate() &&
+                       date.getMonth() === today.getMonth() &&
+                       date.getFullYear() === today.getFullYear();
+            },
+            
+            formatDate(date) {
+                const year = date.getFullYear();
+                const month = String(date.getMonth() + 1).padStart(2, '0');
+                const day = String(date.getDate()).padStart(2, '0');
+                return `${year}-${month}-${day}`;
+            },
+            
+            prevMonth() {
+                this.currentMonth--;
+                if (this.currentMonth < 0) {
+                    this.currentMonth = 11;
+                    this.currentYear--;
+                }
+                this.renderCalendar();
+            },
+            
+            nextMonth() {
+                this.currentMonth++;
+                if (this.currentMonth > 11) {
+                    this.currentMonth = 0;
+                    this.currentYear++;
+                }
+                this.renderCalendar();
+            },
+            
+            goToToday() {
+                const today = new Date();
+                this.currentMonth = today.getMonth();
+                this.currentYear = today.getFullYear();
+                this.renderCalendar();
+            },
+            
+			renderCalendar() {
+			        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
+			                           'July', 'August', 'September', 'October', 'November', 'December'];
+			        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
+			        
+			        document.getElementById('calendarMonthYear').textContent = 
+			            `${monthNames[this.currentMonth]} ${this.currentYear}`;
+			        
+			        const firstDay = new Date(this.currentYear, this.currentMonth, 1);
+			        const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
+			        const prevLastDay = new Date(this.currentYear, this.currentMonth, 0);
+			        
+			        const firstDayOfWeek = firstDay.getDay();
+			        const lastDateOfMonth = lastDay.getDate();
+			        const prevLastDate = prevLastDay.getDate();
+			        
+			        let calendarHTML = '';
+			        
+			        dayNames.forEach(day => {
+			            calendarHTML += `<div class="calendar-day-header">${day}</div>`;
+			        });
+			        
+			        for (let i = firstDayOfWeek - 1; i >= 0; i--) {
+			            const day = prevLastDate - i;
+			            calendarHTML += `<div class="calendar-day other-month">
+			                <div class="calendar-day-number">${day}</div>
+			            </div>`;
+			        }
+			        
+			        for (let day = 1; day <= lastDateOfMonth; day++) {
+			            const date = new Date(this.currentYear, this.currentMonth, day);
+			            const dateStr = this.formatDate(date);
+			            const holiday = this.isHoliday(dateStr);
+			            const isWeekend = this.isWeekend(date);
+			            const isToday = this.isToday(date);
+			            const isRollover = this.isRolloverDay(date);
+			            
+			            let classes = 'calendar-day';
+			            if (isToday) classes += ' today';
+			            if (holiday) classes += ' holiday';
+			            else if (isRollover) classes += ' rollover';
+			            else if (isWeekend) classes += ' weekend';
+			            
+			            calendarHTML += `<div class="${classes}">
+			                <div class="calendar-day-number">${day}</div>
+			                ${holiday ? `<div class="holiday-name">${holiday.name}</div>` : ''}
+			                ${isRollover ? `<div class="rollover-badge">🔄 Rollover Day</div>` : ''}
+			            </div>`;
+			        }
+			        
+			        const remainingDays = 42 - (firstDayOfWeek + lastDateOfMonth);
+			        for (let day = 1; day <= remainingDays; day++) {
+			            calendarHTML += `<div class="calendar-day other-month">
+			                <div class="calendar-day-number">${day}</div>
+			            </div>`;
+			        }
+			        
+			        document.getElementById('calendarGrid').innerHTML = calendarHTML;
+			    }
+			};
+
+        function toggleCalendar() { NSECalendar.toggleCalendar(); }
+        function prevMonth() { NSECalendar.prevMonth(); }
+        function nextMonth() { NSECalendar.nextMonth(); }
+        function goToToday() { NSECalendar.goToToday(); }
+    </script>
+</head>
+<body>
+<div class="container">
+    <!-- TOP BAR -->
+    <div class="top-bar">
+        <div class="logo-wrap">
+            <img src="/img/nc.png" alt="novaQuant">
+        </div>
+        <div class="title-block">
+            <div class="page-header">novaQuant • Signals Operations Desk</div>
+            <div class="page-sub">Manage Kite auth, symbols, rollover trigger and runtime cache</div>
+        </div>
+    </div>
+
+    <div class="section-grid">
+
+        <!-- Get Login URL -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-icon">🔗</div>
+                <div>
+                    <div class="section-title">Get Login URL</div>
+                    <div class="section-subtitle">Fetch the broker login link</div>
+                </div>
+            </div>
+            <div class="get-url-container">
+                <button class="action-btn" onclick="fetchLoginUrl()" style="margin: 0; width: auto; padding: 10px 16px;">Fetch URL</button>
+                <div id="urlRightSection" class="url-right-section">
+                    <input type="text" id="loginUrlField" readonly style="display: block;" />
+                    <button id="copyIcon" class="copy-icon" onclick="copyLoginUrl()">📋</button>
+                </div>
+            </div>
+            <p style="font-size:12px; color:#6b7280;">Click "Fetch URL", copy and open in browser</p>
+        </div>
+
+        <!-- Save Token -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-icon">🔑</div>
+                <div>
+                    <div class="section-title">Save Request Token</div>
+                    <div class="section-subtitle">Store your request token</div>
+                </div>
+            </div>
+            <form method="post" th:action="@{/kite-auth/save}">
+                <div class="form-group">
+                    <i>🔐</i>
+                    <input type="text" name="requestToken" required placeholder="Enter Request Token" style="max-width: none;"/>
+                </div>
+                <button type="submit" class="action-btn" style="margin-top: 12px;">Save Request Token</button>
+            </form>
+            <div class="message success"
+                 th:if="${success != null} and (${source} == null or ${source} != 'symbols')"
+                 th:text="${success}"></div>
+            <div class="message error"
+                 th:if="${error != null} and (${source} == null or ${source} != 'symbols')"
+                 th:text="${error}"></div>
+        </div>
+
+        <!-- Save Symbols -->
+        <div class="section-card"
+             th:classappend="${noSymbols} ? ' needs-attention' : ''"
+             th:attr="data-no-symbols=${noSymbols}">
+            <div class="section-header">
+                <div class="section-icon">📈</div>
+                <div>
+                    <div class="section-title">Save Symbols</div>
+                    <div class="section-subtitle">This week &amp; rollover symbols</div>
+                </div>
+            </div>
+
+            <form method="post" th:action="@{/symbol/save}">
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <div class="symbol-badge this-week" style="margin: 0; min-width: 80px; text-align: center;">This Week</div>
+                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <i>📊</i>
+                        <input type="text"
+                               id="thisWeekSymbolInput"
+                               name="thisWeekSymbol"
+                               required
+                               placeholder="This Week Symbol"
+                               th:value="${symbols?.thisWeekSymbol}"
+                               th:disabled="${!noSymbols}"
+                               class="readonly"
+                               style="max-width: none;" />
+                    </div>
+                </div>
+
+                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
+                    <div class="symbol-badge rollover" style="margin: 0; min-width: 80px; text-align: center;">Rollover</div>
+                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
+                        <i>🔁</i>
+                        <input type="text"
+                               id="rolloverSymbolInput"
+                               name="rolloverSymbol"
+                               required
+                               placeholder="Rollover Symbol"
+                               th:value="${symbols?.rolloverSymbol}"
+                               th:disabled="${!noSymbols}"
+                               class="readonly"
+                               style="max-width: none;" />
+                    </div>
+                </div>
+
+                <div class="form-actions">
+                    <button type="button" class="action-btn btn-secondary" id="editSymbolsBtn" onclick="enableSymbolEdit()">Edit</button>
+                    <button type="button" class="action-btn btn-secondary" id="cancelSymbolsBtn" style="display:none;" onclick="cancelSymbolEdit()">Cancel</button>
+                    <button type="submit" class="action-btn" id="saveSymbolsBtn"
+                            th:disabled="${!noSymbols}"
+                            th:classappend="${!noSymbols} ? ' btn-secondary' : ''">
+                        Save
+                    </button>
+                </div>
+            </form>
+
+            <div class="message success"
+                 th:if="${success != null} and (${source} != null and ${source} == 'symbols')"
+                 th:text="${success}"></div>
+            <div class="message error"
+                 th:if="${error != null} and (${source} != null and ${source} == 'symbols')"
+                 th:text="${error}"></div>
+        </div>
+
+        <!-- Trigger Rollover -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-icon">⚡</div>
+                <div>
+                    <div class="section-title">Trigger Rollover</div>
+                    <div class="section-subtitle">Call /api/rollover</div>
+                </div>
+            </div>
+            <div style="display: flex; gap: 8px; align-items: center;">
+                <div class="form-group" style="margin-bottom: 0;">
+                    <i>💹</i>
+                    <input type="text" id="signalPriceInput"
+                           placeholder="5-digit Signal Price"
+                           maxlength="5"
+                           oninput="validateSignalPrice(this)" />
+                </div>
+                <button class="action-btn" onclick="triggerRollover()" style="margin: 0;">Rollover</button>
+            </div>
+            <div id="rolloverMsg" class="message" style="display:none;"></div>
+        </div>
+
+        <!-- Cache -->
+        <div class="section-card">
+            <div class="section-header">
+                <div class="section-icon">🧠</div>
+                <div>
+                    <div class="section-title">Cache</div>
+                    <div class="section-subtitle">View signal status</div>
+                </div>
+            </div>
+            <div style="display:flex; gap:8px;">
+                <button class="action-btn btn-secondary" onclick="viewCacheStatus()" style="width:50%;">View</button>
+                <button class="action-btn btn-danger" onclick="clearCache()" style="width:50%;">Clear</button>
+            </div>
+            <div id="cacheStatusDisplay"></div>
+        </div>
+
+        <!-- Nifty Instruments -->
+        <div class="section-card">
+            <div class="section-header" style="justify-content:space-between; align-items:center;">
+                <div style="display:flex; gap:12px; align-items:center;">
+                    <div class="section-icon">📜</div>
+                    <div>
+                        <div class="section-title">Nifty Instruments</div>
+                        <div class="section-subtitle">View NIFTY instruments</div>
+                    </div>
+                </div>
+                <div style="display:flex; gap:8px;">
+                    <button class="action-btn" onclick="fetchNiftyInstruments()" style="width:auto; padding:10px 14px; font-size:13px;">Get</button>
+                    <button class="action-btn btn-secondary" onclick="clearNiftyInstruments()" style="width:auto; padding:10px 14px; font-size:13px;">Close</button>
+                </div>
+            </div>
+            <div id="niftyInstrumentsStatus" class="message" style="display:none;"></div>
+            <div id="niftyInstrumentsBox"></div>
+        </div>
+
+		<!-- Position Size Matrix -->
+		<div class="section-card" style="grid-column: 1 / -1;">
+		    <div class="section-header" style="justify-content:space-between; align-items:center;">
+		        <div style="display:flex; gap:12px; align-items:center;">
+		            <div class="section-icon">📋</div>
+		            <div>
+		                <div class="section-title">Position Size Matrix</div>
+		                <div class="section-subtitle">View / Edit matrix</div>
+		            </div>
+		        </div>
+		        <button id="psmToggleBtn" onclick="togglePsm()"
+		                style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:20px; padding:6px 12px; line-height: 1;">
+		            ▼
+		        </button>
+		    </div>
+
+		    <div id="psmBody" style="display:none; overflow-x:auto;">
+		        <form method="post" th:action="@{/position-matrix/save}">
+		            <table class="psm-table">
+		                <thead>
+		                <tr>
+		                    <th>ID</th>
+		                    <th>Side</th>
+		                    <th>Action</th>
+		                    <th>Option</th>
+		                    <th>ATM</th>
+		                    <th>ATM +150</th>
+		                    <th>ATM +200</th>
+		                    <th>ATM +250</th>
+		                    <th>ATM -150</th>
+		                    <th>ATM -200</th>
+		                    <th>ATM -250</th>
+		                </tr>
+		                </thead>
+		                <tbody>
+		                <tr th:each="row, st : ${positionMatrix}" 
+		                    th:classappend="${row.id <= 2} ? 'psm-long-row' : 'psm-short-row'">
+		                    <td class="psm-id-cell">
+		                        <input type="hidden" th:name="${'matrix[' + st.index + '].id'}" th:value="${row.id}" />
+		                        <span th:text="${row.id}"></span>
+		                    </td>
+		                    <td>
+		                        <span class="psm-readonly" th:text="${row.positionSide}"></span>
+		                        <input type="hidden" th:name="${'matrix[' + st.index + '].positionSide'}" th:value="${row.positionSide}" />
+		                    </td>
+		                    <td>
+		                        <span class="psm-readonly" th:text="${row.actionType}"></span>
+		                        <input type="hidden" th:name="${'matrix[' + st.index + '].actionType'}" th:value="${row.actionType}" />
+		                    </td>
+		                    <td>
+		                        <span class="psm-readonly" th:text="${row.optionType}"></span>
+		                        <input type="hidden" th:name="${'matrix[' + st.index + '].optionType'}" th:value="${row.optionType}" />
+		                    </td>
+		                    
+		                    <!-- ATM - always disabled -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input readonly" 
+		                               th:name="${'matrix[' + st.index + '].atm'}" 
+		                               th:value="${row.atm}"
+		                               disabled />
+		                    </td>
+		                    
+		                    <!-- ATM +150: enabled only for PE (PUT), disabled for CE (CALL) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmPlus150'}" 
+		                               th:value="${row.atmPlus150}"
+		                               th:disabled="${row.optionType == 'CE'}"
+		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
+		                    </td>
+		                    
+		                    <!-- ATM +200: enabled only for PE (PUT), disabled for CE (CALL) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmPlus200'}" 
+		                               th:value="${row.atmPlus200}"
+		                               th:disabled="${row.optionType == 'CE'}"
+		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
+		                    </td>
+		                    
+		                    <!-- ATM +250: enabled only for PE (PUT), disabled for CE (CALL) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmPlus250'}" 
+		                               th:value="${row.atmPlus250}"
+		                               th:disabled="${row.optionType == 'CE'}"
+		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
+		                    </td>
+		                    
+		                    <!-- ATM -150: enabled only for CE (CALL), disabled for PE (PUT) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmMinus150'}" 
+		                               th:value="${row.atmMinus150}"
+		                               th:disabled="${row.optionType == 'PE'}"
+		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
+		                    </td>
+		                    
+		                    <!-- ATM -200: enabled only for CE (CALL), disabled for PE (PUT) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmMinus200'}" 
+		                               th:value="${row.atmMinus200}"
+		                               th:disabled="${row.optionType == 'PE'}"
+		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
+		                    </td>
+		                    
+		                    <!-- ATM -250: enabled only for CE (CALL), disabled for PE (PUT) -->
+		                    <td>
+		                        <input type="number" min="0" class="psm-input" 
+		                               th:name="${'matrix[' + st.index + '].atmMinus250'}" 
+		                               th:value="${row.atmMinus250}"
+		                               th:disabled="${row.optionType == 'PE'}"
+		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
+		                    </td>
+		                </tr>
+		                </tbody>
+		            </table>
+		            <div style="margin-top:16px; text-align:right;">
+		                <button type="submit" class="action-btn" style="width:160px;">Save Matrix</button>
+		            </div>
+		        </form>
+		        <div class="message success" style="margin-top:12px;" th:if="${matrixSuccess != null}" th:text="${matrixSuccess}"></div>
+		        <div class="message error" style="margin-top:12px;" th:if="${matrixError != null}" th:text="${matrixError}"></div>
+		    </div>
+		</div>
+
+		<!-- Equity Curve -->
+		<div class="section-card" style="grid-column: 1 / -1;">
+		    <div class="section-header" style="justify-content:space-between; align-items:center;">
+		        <div style="display:flex; gap:12px; align-items:center;">
+		            <div class="section-icon">📊</div>
+		            <div>
+		                <div class="section-title">Equity Curve</div>
+		                <div class="section-subtitle">Track portfolio performance</div>
+		            </div>
+		        </div>
+		        <div style="display:flex; gap:8px;">
+		            <button class="action-btn" onclick="loadEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px;">Load Chart</button>
+		            <button class="action-btn btn-secondary" onclick="refreshEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px;">Refresh</button>
+		            <button class="action-btn" onclick="showMockEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px; background:#8b5cf6;">Demo</button>
+		        </div>
+		    </div>
+		    
+		    <!-- Capital Management -->
+		    <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 16px;">
+		        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
+		            <div style="display:flex; gap:8px; align-items:center;">
+		                <span style="font-size:14px; font-weight:500; color:#374151;">💰 Capital Management</span>
+		            </div>
+		            <button id="capitalToggleBtn" onclick="toggleCapital()"
+		                    style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:18px; padding:4px 8px; line-height: 1;">
+		                ▼
+		            </button>
+		        </div>
+		        
+		        <div id="capitalBody" style="display:none;">
+					<form id="capitalForm" onsubmit="saveCapital(event)">
+					    <input type="hidden" name="id" value="1" />
+					    
+					    <div style="display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; margin-bottom:12px;">
+					        <div>
+					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Current Capital</label>
+					            <div class="form-group" style="margin-bottom:0;">
+					                <i style="left:8px; font-size:12px;">₹</i>
+					                <input type="text" 
+					                       id="currentCapitalInput"
+					                       name="currentCapital"
+					                       placeholder="0"
+					                       th:value="${tradeCapital?.currentCapital}"
+					                       disabled
+					                       class="capital-input readonly"
+					                       oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+					            </div>
+					        </div>
+					        
+					        <div>
+					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Additional Capital</label>
+					            <div class="form-group" style="margin-bottom:0;">
+					                <i style="left:8px; font-size:12px;">₹</i>
+					                <input type="text" 
+					                       id="additionalCapitalInput"
+					                       name="additionalCapital"
+					                       placeholder="0"
+					                       disabled
+					                       class="capital-input readonly"
+					                       oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+					            </div>
+					        </div>
+					        
+					        <div>
+					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Ceiling to Hit</label>
+					            <div class="form-group" style="margin-bottom:0;">
+					                <i style="left:8px; font-size:12px;">₹</i>
+					                <input type="text" 
+					                       id="ceilingToHitInput"
+					                       name="ceilingToHit"
+					                       placeholder="0"
+					                       th:value="${tradeCapital?.ceilingToHit}"
+					                       disabled
+					                       class="capital-input readonly"
+					                       oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+					            </div>
+					        </div>
+					        
+					        <div>
+					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">NRML Cost/Lot</label>
+					            <div class="form-group" style="margin-bottom:0;">
+					                <i style="left:8px; font-size:12px;">₹</i>
+					                <input type="text" 
+					                       id="nrmlCostPerLotInput"
+					                       name="nrmlCostPerLot"
+					                       placeholder="0"
+					                       th:value="${tradeCapital?.nrmlCostPerLot}"
+					                       disabled
+					                       class="capital-input readonly"
+					                       oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+					            </div>
+					        </div>
+					        
+					        <div>
+					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Defined Risk Per Lot</label>
+					            <div class="form-group" style="margin-bottom:0;">
+					                <i style="left:8px; font-size:12px;">₹</i>
+					                <input type="text" 
+					                       id="definedRiskPerLotInput"
+					                       name="definedRiskPerLot"
+					                       placeholder="0"
+					                       th:value="${tradeCapital?.definedRiskPerLot}"
+					                       disabled
+					                       class="capital-input readonly"
+					                       oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+					            </div>
+					        </div>
+							
+							<div>
+							    <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Current Risk Per Lot</label>
+							    <div class="form-group" style="margin-bottom:0;">
+							        <i style="left:8px; font-size:12px;">₹</i>
+							        <input type="text" 
+							               id="currentRiskPerLotInput"
+							               name="currentRiskPerLot"
+							               placeholder="0"
+							               th:value="${tradeCapital?.currentRiskPerLot}"
+							               disabled
+							               class="capital-input readonly"
+							               oninput="formatCurrencyInput(this)"
+										   onblur="formatCurrencyOnBlur(this)"
+							               style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
+							    </div>
+							</div>
+							
+					    </div>
+					    
+					    <div style="display:flex; justify-content:flex-end; gap:8px;">
+					        <button type="button" class="action-btn btn-secondary" id="editCapitalBtn" onclick="enableCapitalEdit()" style="width:auto; padding:8px 16px; margin:0;">Edit</button>
+					        <button type="button" class="action-btn btn-secondary" id="cancelCapitalBtn" style="display:none; width:auto; padding:8px 16px; margin:0;" onclick="cancelCapitalEdit()">Cancel</button>
+					        <button type="submit" class="action-btn btn-secondary" id="saveCapitalBtn" disabled style="width:auto; padding:8px 16px; margin:0;">Save</button>
+					    </div>
+					</form>
+
+					<div class="message success" style="margin-top:12px; display:none;" id="capitalSuccessMsg"></div>
+					<div class="message error" style="margin-top:12px; display:none;" id="capitalErrorMsg"></div>
+		        </div>
+		    </div>
+		    
+		    <!-- Time Period Filters -->
+		    <div id="equityFilters" style="display:none; margin-top:8px; padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;">
+		        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
+		            <div style="display:flex; gap:6px;">
+		                <button class="period-btn active" onclick="selectPeriod('1W', this)">1W</button>
+		                <button class="period-btn" onclick="selectPeriod('1M', this)">1M</button>
+		                <button class="period-btn" onclick="selectPeriod('3M', this)">3M</button>
+		                <button class="period-btn" onclick="selectPeriod('6M', this)">6M</button>
+		                <button class="period-btn" onclick="selectPeriod('1Y', this)">1Y</button>
+		                <button class="period-btn" onclick="selectPeriod('ALL', this)">ALL</button>
+		            </div>
+		            <div style="height:20px; width:1px; background:#d1d5db;"></div>
+		            <div style="display:flex; gap:8px; align-items:center;">
+		                <label style="font-size:13px; color:#6b7280; font-weight:500;">Strategy:</label>
+		                <select id="strategyFilter" onchange="filterByStrategy(this.value)" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; background:white; cursor:pointer; font-family:inherit;">
+		                    <option value="All">All Strategies</option>
+		                </select>
+		            </div>
+		            <div style="height:20px; width:1px; background:#d1d5db;"></div>
+		            <div style="display:flex; gap:8px; align-items:center;">
+		                <label style="font-size:13px; color:#6b7280; font-weight:500;">Custom:</label>
+		                <input type="date" id="equityStartDate" style="padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+		                <span style="color:#9ca3af;">to</span>
+		                <input type="date" id="equityEndDate" style="padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
+		                <button class="action-btn" onclick="applyCustomDateRange()" style="width:auto; padding:6px 14px; font-size:13px; margin:0;">Apply</button>
+		            </div>
+		        </div>
+		    </div>
+
+		    <div id="equityCurveContainer" style="display:none; margin-top:16px; position:relative;">
+		        <div class="loading-overlay">
+		            <div class="spinner"></div>
+		        </div>
+		        <canvas id="equityCurveChart" style="max-height: 400px;"></canvas>
+		        <div style="margin-top:12px; padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; display:flex; justify-content:space-around; font-size:13px;">
+		            <div style="text-align:center;">
+		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Starting Equity</div>
+		                <div id="startingEquity" style="font-weight:600; color:#111827;">₹0</div>
+		            </div>
+		            <div style="text-align:center;">
+		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Current Equity</div>
+		                <div id="currentEquity" style="font-weight:600; color:#111827;">₹0</div>
+		            </div>
+		            <div style="text-align:center;">
+		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Total P&L</div>
+		                <div id="totalPnl" style="font-weight:600;">₹0</div>
+		            </div>
+		            <div style="text-align:center;">
+		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Return %</div>
+		                <div id="returnPercent" style="font-weight:600;">0%</div>
+		            </div>
+		        </div>
+		    </div>
+		    <div id="equityCurveStatus" class="message" style="display:none;"></div>
+		</div>
+
+		<!-- NSE Holiday Calendar -->
+		<div class="section-card" style="grid-column: 1 / -1;">
+		    <div class="section-header" style="justify-content:space-between; align-items:center;">
+		        <div style="display:flex; gap:12px; align-items:center;">
+		            <div class="section-icon">📅</div>
+		            <div>
+		                <div class="section-title">NSE Holiday Calendar 2026</div>
+		                <div class="section-subtitle">Track market holidays and weekends</div>
+		            </div>
+		        </div>
+		        <button id="calendarToggleBtn" onclick="toggleCalendar()"
+		                style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:20px; padding:6px 12px; line-height: 1;">
+		            ▼
+		        </button>
+		    </div>
+		    
+		    <div id="calendarContainer" class="calendar-container">
+		        <div class="calendar-header">
+		            <div class="calendar-nav">
+		                <button onclick="prevMonth()">◀ Prev</button>
+		                <button onclick="goToToday()">Today</button>
+		                <button onclick="nextMonth()">Next ▶</button>
+		            </div>
+		            <div class="calendar-month-year" id="calendarMonthYear">January 2026</div>
+		        </div>
+		        
+		        <div class="calendar-grid" id="calendarGrid"></div>
+		        
+				<div class="calendar-legend">
+				    <div class="legend-item">
+				        <div class="legend-box today"></div>
+				        <span>Today</span>
+				    </div>
+				    <div class="legend-item">
+				        <div class="legend-box rollover" style="background: #ede9fe; border-left: 3px solid #8b5cf6;"></div>
+				        <span>Rollover Day</span>
+				    </div>
+				    <div class="legend-item">
+				        <div class="legend-box holiday"></div>
+				        <span>NSE Holiday</span>
+				    </div>
+				    <div class="legend-item">
+				        <div class="legend-box weekend"></div>
+				        <span>Weekend</span>
+				    </div>
+				</div>
+		    </div>
+		</div>
+
+    </div>
+</div>
+</body>
+</html>

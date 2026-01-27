@@ -1,0 +1,272 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<svg width="800" height="800" viewBox="0 0 800 800" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="goldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#F59E0B;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#D97706;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#B45309;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="lightGoldGrad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#FCD34D;stop-opacity:1" />
+      <stop offset="50%" style="stop-color:#FBBF24;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:1" />
+    </linearGradient>
+    
+    <linearGradient id="emeraldAccent" x1="0%" y1="0%" x2="100%" y2="0%">
+      <stop offset="0%" style="stop-color:#10B981;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#059669;stop-opacity:1" />
+    </linearGradient>
+    
+    <radialGradient id="centerGlow" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FCD34D;stop-opacity:0.6" />
+      <stop offset="100%" style="stop-color:#F59E0B;stop-opacity:0" />
+    </radialGradient>
+    
+    <radialGradient id="bgGradient" cx="50%" cy="50%" r="50%">
+      <stop offset="0%" style="stop-color:#FFFBEB;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#FEF3C7;stop-opacity:1" />
+    </radialGradient>
+    
+    <filter id="goldGlow">
+      <feGaussianBlur stdDeviation="3" result="coloredBlur"/>
+      <feMerge>
+        <feMergeNode in="coloredBlur"/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+    
+    <filter id="softShadow">
+      <feGaussianBlur in="SourceAlpha" stdDeviation="4"/>
+      <feOffset dx="0" dy="2" result="offsetblur"/>
+      <feComponentTransfer>
+        <feFuncA type="linear" slope="0.2"/>
+      </feComponentTransfer>
+      <feMerge>
+        <feMergeNode/>
+        <feMergeNode in="SourceGraphic"/>
+      </feMerge>
+    </filter>
+  </defs>
+  
+  <!-- Light elegant background with subtle gradient -->
+  <rect width="800" height="800" fill="url(#bgGradient)"/>
+  
+  <!-- Subtle radial pattern -->
+  <g id="radialPattern" opacity="0.03">
+    <circle cx="400" cy="400" r="350" fill="none" stroke="#D97706" stroke-width="0.5"/>
+    <circle cx="400" cy="400" r="300" fill="none" stroke="#D97706" stroke-width="0.5"/>
+    <circle cx="400" cy="400" r="250" fill="none" stroke="#D97706" stroke-width="0.5"/>
+    <circle cx="400" cy="400" r="200" fill="none" stroke="#D97706" stroke-width="0.5"/>
+    <circle cx="400" cy="400" r="150" fill="none" stroke="#D97706" stroke-width="0.5"/>
+  </g>
+  
+  <!-- Golden ratio spiral (Fibonacci) - more visible -->
+  <g id="goldenSpiral" opacity="0.08">
+    <path d="M 400 400 
+             C 400 340, 440 300, 500 300
+             C 620 300, 700 380, 700 500
+             C 700 700, 500 900, 300 900
+             C -100 900, -300 500, -300 100" 
+          fill="none" stroke="#D97706" stroke-width="2"/>
+  </g>
+  
+  <!-- Metatron's Cube base structure - lighter -->
+  <g id="metatronBase" opacity="0.12">
+    <!-- Outer circle -->
+    <circle cx="400" cy="400" r="280" fill="none" stroke="#D97706" stroke-width="1.5"/>
+    
+    <!-- 6 surrounding circles -->
+    <circle cx="400" cy="120" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+    <circle cx="643" cy="260" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+    <circle cx="643" cy="540" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+    <circle cx="400" cy="680" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+    <circle cx="157" cy="540" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+    <circle cx="157" cy="260" r="80" fill="none" stroke="#F59E0B" stroke-width="1"/>
+  </g>
+  
+  <!-- Central 3D cube (isometric) - more prominent -->
+  <g id="centralCube" filter="url(#softShadow)">
+    <!-- Back face -->
+    <path d="M 340 340 L 460 340 L 460 460 L 340 460 Z" 
+          fill="rgba(251, 191, 36, 0.1)" stroke="url(#goldGrad)" stroke-width="3" opacity="0.5"/>
+    
+    <!-- Top face -->
+    <path d="M 340 340 L 400 300 L 520 300 L 460 340 Z" 
+          fill="rgba(252, 211, 77, 0.3)" stroke="url(#goldGrad)" stroke-width="3.5" filter="url(#goldGlow)"/>
+    
+    <!-- Right face -->
+    <path d="M 460 340 L 520 300 L 520 420 L 460 460 Z" 
+          fill="rgba(245, 158, 11, 0.2)" stroke="url(#goldGrad)" stroke-width="3" opacity="0.8"/>
+    
+    <!-- Front left face (brightest) -->
+    <path d="M 340 340 L 340 460 L 400 500 L 400 380 Z" 
+          fill="rgba(252, 211, 77, 0.4)" stroke="url(#goldGrad)" stroke-width="4" filter="url(#goldGlow)"/>
+    
+    <!-- Bottom face -->
+    <path d="M 340 460 L 400 500 L 520 500 L 460 460 Z" 
+          fill="rgba(217, 119, 6, 0.15)" stroke="url(#goldGrad)" stroke-width="3" opacity="0.6"/>
+    
+    <!-- Front right face -->
+    <path d="M 400 380 L 400 500 L 520 500 L 520 420 Z" 
+          fill="rgba(245, 158, 11, 0.35)" stroke="url(#goldGrad)" stroke-width="3.5" filter="url(#goldGlow)"/>
+  </g>
+  
+  <!-- Triangular momentum vectors - enhanced -->
+  <g id="momentumVectors" filter="url(#softShadow)">
+    <!-- Upward momentum (bullish) -->
+    <path d="M 400 250 L 455 335 L 345 335 Z" 
+          fill="rgba(16, 185, 129, 0.15)" stroke="#10B981" stroke-width="3.5" stroke-linejoin="round">
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2.5s" repeatCount="indefinite"/>
+    </path>
+    
+    <!-- Downward momentum (bearish) -->
+    <path d="M 400 550 L 345 465 L 455 465 Z" 
+          fill="rgba(239, 68, 68, 0.15)" stroke="#EF4444" stroke-width="3.5" stroke-linejoin="round">
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2.5s" repeatCount="indefinite" begin="1.25s"/>
+    </path>
+    
+    <!-- Left momentum vector -->
+    <path d="M 230 400 L 310 365 L 310 435 Z" 
+          fill="rgba(245, 158, 11, 0.2)" stroke="url(#goldGrad)" stroke-width="3" stroke-linejoin="round" opacity="0.8"/>
+    
+    <!-- Right momentum vector -->
+    <path d="M 570 400 L 490 365 L 490 435 Z" 
+          fill="rgba(245, 158, 11, 0.2)" stroke="url(#goldGrad)" stroke-width="3" stroke-linejoin="round" opacity="0.8"/>
+  </g>
+  
+  <!-- Sacred geometry circles (representing support/resistance levels) -->
+  <g id="sacredCircles">
+    <circle cx="400" cy="400" r="200" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" opacity="0.4"/>
+    <circle cx="400" cy="400" r="150" fill="none" stroke="url(#goldGrad)" stroke-width="2.5" opacity="0.5"/>
+    <circle cx="400" cy="400" r="100" fill="none" stroke="url(#goldGrad)" stroke-width="3" opacity="0.7"/>
+    <circle cx="400" cy="400" r="50" fill="none" stroke="url(#lightGoldGrad)" stroke-width="3.5" opacity="0.9" filter="url(#goldGlow)"/>
+  </g>
+  
+  <!-- Vertex points (price action nodes) - more prominent -->
+  <g id="vertexPoints" filter="url(#goldGlow)">
+    <!-- Top -->
+    <circle cx="400" cy="300" r="10" fill="#F59E0B" opacity="0.9">
+      <animate attributeName="r" values="10;14;10" dur="2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Top right -->
+    <circle cx="470" cy="330" r="9" fill="#FBBF24" opacity="0.85">
+      <animate attributeName="r" values="9;12;9" dur="2.3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.65;1;0.65" dur="2.3s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Right -->
+    <circle cx="520" cy="400" r="10" fill="#F59E0B" opacity="0.9">
+      <animate attributeName="r" values="10;13;10" dur="1.8s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="1.8s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Bottom right -->
+    <circle cx="470" cy="470" r="9" fill="#FBBF24" opacity="0.85">
+      <animate attributeName="r" values="9;12;9" dur="2.5s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.65;1;0.65" dur="2.5s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Bottom -->
+    <circle cx="400" cy="500" r="10" fill="#F59E0B" opacity="0.9">
+      <animate attributeName="r" values="10;14;10" dur="2.1s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2.1s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Bottom left -->
+    <circle cx="330" cy="470" r="9" fill="#FBBF24" opacity="0.85">
+      <animate attributeName="r" values="9;12;9" dur="1.9s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.65;1;0.65" dur="1.9s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Left -->
+    <circle cx="280" cy="400" r="10" fill="#F59E0B" opacity="0.9">
+      <animate attributeName="r" values="10;13;10" dur="2.4s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.7;1;0.7" dur="2.4s" repeatCount="indefinite"/>
+    </circle>
+    <!-- Top left -->
+    <circle cx="330" cy="330" r="9" fill="#FBBF24" opacity="0.85">
+      <animate attributeName="r" values="9;12;9" dur="2.2s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.65;1;0.65" dur="2.2s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Central monogram 'NQ' in geometric style - enhanced -->
+  <g id="geometricMonogram" filter="url(#softShadow)">
+    <circle cx="400" cy="400" r="40" fill="url(#centerGlow)" opacity="0.4"/>
+    
+    <!-- 'N' formed by parallel lines -->
+    <line x1="373" y1="418" x2="373" y2="382" stroke="#92400E" stroke-width="6" stroke-linecap="round"/>
+    <line x1="373" y1="382" x2="397" y2="418" stroke="#92400E" stroke-width="6" stroke-linecap="round"/>
+    <line x1="397" y1="418" x2="397" y2="382" stroke="#92400E" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- 'Q' as circle with tail -->
+    <circle cx="418" cy="400" r="14" fill="none" stroke="#92400E" stroke-width="6"/>
+    <line x1="427" y1="409" x2="435" y2="417" stroke="#92400E" stroke-width="6" stroke-linecap="round"/>
+    
+    <!-- Inner glow -->
+    <circle cx="400" cy="400" r="8" fill="#FCD34D" opacity="0.6">
+      <animate attributeName="r" values="8;12;8" dur="3s" repeatCount="indefinite"/>
+      <animate attributeName="opacity" values="0.4;0.8;0.4" dur="3s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Connecting lines (market correlations) -->
+  <g id="correlations" opacity="0.2">
+    <line x1="400" y1="300" x2="470" y2="330" stroke="#D97706" stroke-width="2"/>
+    <line x1="470" y1="330" x2="520" y2="400" stroke="#D97706" stroke-width="2"/>
+    <line x1="520" y1="400" x2="470" y2="470" stroke="#D97706" stroke-width="2"/>
+    <line x1="470" y1="470" x2="400" y2="500" stroke="#D97706" stroke-width="2"/>
+    <line x1="400" y1="500" x2="330" y2="470" stroke="#D97706" stroke-width="2"/>
+    <line x1="330" y1="470" x2="280" y2="400" stroke="#D97706" stroke-width="2"/>
+    <line x1="280" y1="400" x2="330" y2="330" stroke="#D97706" stroke-width="2"/>
+    <line x1="330" y1="330" x2="400" y2="300" stroke="#D97706" stroke-width="2"/>
+  </g>
+  
+  <!-- Rotating frame (time cycle) -->
+  <g id="timeWheel">
+    <circle cx="400" cy="400" r="250" fill="none" stroke="#F59E0B" stroke-width="1.5" opacity="0.25" stroke-dasharray="15,25">
+      <animateTransform attributeName="transform" type="rotate" from="0 400 400" to="360 400 400" dur="60s" repeatCount="indefinite"/>
+    </circle>
+  </g>
+  
+  <!-- Typography - enhanced contrast -->
+  <text x="400" y="630" font-family="'Cinzel', 'Trajan Pro', 'Times New Roman', serif" 
+        font-size="74" font-weight="400" fill="#78350F" text-anchor="middle" letter-spacing="2" 
+        filter="url(#softShadow)">
+    novaQuant
+  </text>
+  
+  <text x="400" y="675" font-family="'Cinzel', 'Times New Roman', serif" 
+        font-size="17" font-weight="500" fill="#92400E" text-anchor="middle" letter-spacing="8" opacity="0.9">
+    PRECISION TRADING
+  </text>
+  
+  <!-- Subtle underline accent -->
+  <line x1="280" y1="685" x2="520" y2="685" stroke="url(#goldGrad)" stroke-width="2" opacity="0.4"/>
+  
+  <!-- Corner sacred symbols - more visible -->
+  <g id="cornerSymbols" opacity="0.35" filter="url(#softShadow)">
+    <!-- Top left -->
+    <circle cx="100" cy="100" r="18" fill="none" stroke="#D97706" stroke-width="2"/>
+    <circle cx="100" cy="100" r="12" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+    <circle cx="100" cy="100" r="6" fill="#FBBF24"/>
+    
+    <!-- Top right -->
+    <circle cx="700" cy="100" r="18" fill="none" stroke="#D97706" stroke-width="2"/>
+    <circle cx="700" cy="100" r="12" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+    <circle cx="700" cy="100" r="6" fill="#FBBF24"/>
+    
+    <!-- Bottom left -->
+    <circle cx="100" cy="700" r="18" fill="none" stroke="#D97706" stroke-width="2"/>
+    <circle cx="100" cy="700" r="12" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+    <circle cx="100" cy="700" r="6" fill="#FBBF24"/>
+    
+    <!-- Bottom right -->
+    <circle cx="700" cy="700" r="18" fill="none" stroke="#D97706" stroke-width="2"/>
+    <circle cx="700" cy="700" r="12" fill="none" stroke="#F59E0B" stroke-width="1.5"/>
+    <circle cx="700" cy="700" r="6" fill="#FBBF24"/>
+  </g>
+  
+  <!-- Additional decorative elements -->
+  <g id="decorativeLines" opacity="0.15">
+    <line x1="400" y1="80" x2="400" y2="180" stroke="#D97706" stroke-width="1"/>
+    <line x1="400" y1="620" x2="400" y2="590" stroke="#D97706" stroke-width="1"/>
+  </g>
+</svg>

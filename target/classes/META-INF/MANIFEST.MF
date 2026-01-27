@@ -1,0 +1,6 @@
+Manifest-Version: 1.0
+Build-Jdk-Spec: 21
+Implementation-Title: NovaQuant
+Implementation-Version: v3
+Created-By: Maven Integration for Eclipse
+
