@@ -8,7 +8,7 @@ mvn -q clean package
 java -jar target/novaquant-0.0.1-SNAPSHOT.war
 ```
 
-Open http://localhost:8080/kite-auth
+Open http://localhost:8080/signalHome
 
 ## Notes
 - JSP lives at `src/main/webapp/WEB-INF/views/kiteAuthSingle.jsp`
