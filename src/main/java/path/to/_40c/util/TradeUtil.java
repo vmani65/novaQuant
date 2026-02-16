@@ -139,9 +139,9 @@ public class TradeUtil {
 	    	tradeBuyMargins.forEach(tradeBuyMargin -> {
 	    		trade.getWeeklyOrderBook().forEach(weekly -> {
 	    			if((tradeBuyMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
-	    				weekly.setTradeOpenBrokerage(ComputeUtil.round1dp(tradeBuyMargin.charges.total));
+	    				weekly.setTradeOpenBrokerage(ComputeUtil.rnd(tradeBuyMargin.charges.total));
 	        			if(BUY.equals(weekly.getTransactionType()))
-	        				weekly.setMarginToTrade(ComputeUtil.round1dp(tradeBuyMargin.total));
+	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeBuyMargin.total));
 	    			}    	
 	    		});    		
 	    	});
@@ -151,9 +151,9 @@ public class TradeUtil {
 	    	tradeSellMargins.forEach(tradeSellMargin -> {
 	    		trade.getWeeklyOrderBook().forEach(weekly -> {
 	    			if((tradeSellMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
-	    				weekly.setTradeCloseBrokerage(ComputeUtil.round1dp(tradeSellMargin.charges.total));
+	    				weekly.setTradeCloseBrokerage(ComputeUtil.rnd(tradeSellMargin.charges.total));
 	        			if(SELL.equals(weekly.getTransactionType()))
-	        				weekly.setMarginToTrade(ComputeUtil.round1dp(tradeSellMargin.total));
+	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeSellMargin.total));
 	    			}    	
 	    		});    		
 	    	});
