@@ -24,7 +24,6 @@ import static path.to._40c.util.Constants.WIN;
 import static path.to._40c.util.Constants.ZONE_ID;
 import static path.to._40c.util.Constants.INPUT_FORMATS;
 import static path.to._40c.util.Constants.OUTPUT_FORMAT;
-import static path.to._40c.util.Constants.LOT_SIZE;
 import static path.to._40c.util.Constants.NA;
 
 import java.math.BigDecimal;
@@ -139,11 +138,11 @@ public class ComputeUtil {
 			AtomicReference<Double> actualPnL = new AtomicReference<>(0.0);
 			AtomicReference<Integer> lots = new AtomicReference<>(0);
 			trade.getWeeklyOrderBook().forEach(w -> {
-				if(w.getSoldPrice() != null && w.getBoughtPrice() != null && trade.getPointsByTrade() != null 
+				if(w.getSoldPrice() != null && w.getBoughtPrice() != null && trade.getPointsByTrade() != null && w.getQuantity() != null 
 						&& w.getTradeOpenBrokerage() !=null && w.getTradeCloseBrokerage() != null && w.getLots() != null) {
-					Double d = w.getSoldPrice() - w.getBoughtPrice();
-					w.setExpectedPnL(round1dp(LOT_SIZE * trade.getPointsByTrade()));
-					w.setActualPnL(round1dp(LOT_SIZE*d));
+					Double difference = w.getSoldPrice() - w.getBoughtPrice();
+					w.setExpectedPnL(rnd(w.getQuantity() * trade.getPointsByTrade()));
+					w.setActualPnL(rnd(w.getQuantity() * difference));
 					w.setDiffPercentage(formatPnLPercent(w.getActualPnL(), w.getExpectedPnL()));
 					totalBrokerage.updateAndGet(b -> b + w.getTradeOpenBrokerage() + w.getTradeCloseBrokerage());
 			        expectedPnL.updateAndGet(e -> e + w.getExpectedPnL());
@@ -151,9 +150,9 @@ public class ComputeUtil {
 			        lots.updateAndGet(l -> l + w.getLots());
 				}
 			});		
-			trade.setBrokerage(round1dp(totalBrokerage.get()));
-			trade.setExpectedPnL(round1dp(expectedPnL.get()));		
-			trade.setActualPnL(round1dp(actualPnL.get() - totalBrokerage.get()));
+			trade.setBrokerage(rnd(totalBrokerage.get()));
+			trade.setExpectedPnL(rnd(expectedPnL.get()));		
+			trade.setActualPnL(rnd(actualPnL.get() - totalBrokerage.get()));
 			trade.setDiffPercentage(formatPnLPercent(trade.getActualPnL(), trade.getExpectedPnL()));
 			trade.setLots(lots.get());
 		}
@@ -178,7 +177,7 @@ public class ComputeUtil {
         return String.format("%.1f%%", bd.doubleValue());
     }
     
-    public static Double round1dp(double value) {
+    public static Double rnd(double value) {
         java.math.BigDecimal bd = new java.math.BigDecimal(Double.toString(value));
         bd = bd.setScale(1, java.math.RoundingMode.HALF_UP);
         double result = bd.doubleValue();
