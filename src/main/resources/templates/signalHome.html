@@ -1479,25 +1479,39 @@
                 if (period === 'ALL') {
                     return data;
                 }
-                
+
                 if (!data || !data.dates || !data.equity || data.dates.length === 0 || data.equity.length === 0) {
                     return data;
                 }
-                
+
                 let daysToShow = 7;
                 if (period === '1M') daysToShow = 30;
                 if (period === '3M') daysToShow = 90;
                 if (period === '6M') daysToShow = 180;
                 if (period === '1Y') daysToShow = 365;
-                
-                const startIndex = Math.max(0, data.dates.length - daysToShow);
-                
+
+                const cutoff = new Date();
+                cutoff.setDate(cutoff.getDate() - daysToShow);
+                cutoff.setHours(0, 0, 0, 0);
+
+                const filteredIndices = [];
+                for (let i = 0; i < data.dates.length; i++) {
+                    const parsedDate = Utils.parseChartDate(data.dates[i]);
+                    if (parsedDate && parsedDate >= cutoff) {
+                        filteredIndices.push(i);
+                    }
+                }
+
+                if (filteredIndices.length === 0) {
+                    return data;
+                }
+
                 return {
-                    startingEquity: data.equity[startIndex],
-                    currentEquity: data.equity[data.equity.length - 1],
-                    dates: data.dates.slice(startIndex),
-                    equity: data.equity.slice(startIndex),
-                    lotSize: data.lotSize ? data.lotSize.slice(startIndex) : []
+                    startingEquity: data.equity[filteredIndices[0]],
+                    currentEquity: data.equity[filteredIndices[filteredIndices.length - 1]],
+                    dates: filteredIndices.map(i => data.dates[i]),
+                    equity: filteredIndices.map(i => data.equity[i]),
+                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
                 };
             },
 
