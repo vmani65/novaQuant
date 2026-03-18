@@ -21,26 +21,28 @@ public class PositionSizeMatrix {
     @Column(name = "ATM")
     private Integer atm;
 
-    @Column(name = "ATM_PLUS_150")
-    private Integer atmPlus150;
+    @Column(name = "OFFSET1")
+    private Integer offset1;
 
-    @Column(name = "ATM_PLUS_200")
-    private Integer atmPlus200;
-    
-    @Column(name = "ATM_PLUS_250")
-    private Integer atmPlus250;
+    @Column(name = "OFFSET2")
+    private Integer offset2;
 
-    @Column(name = "ATM_MINUS_150")
-    private Integer atmMinus150;
-
-    @Column(name = "ATM_MINUS_200")
-    private Integer atmMinus200;
-    
-    @Column(name = "ATM_MINUS_250")
-    private Integer atmMinus250;
+    @Column(name = "OFFSET3")
+    private Integer offset3;
 
 	public PositionSizeMatrix() {
 		super();
+	}
+
+	public PositionSizeMatrix(String positionSide, String optionType, String actionType,
+	                          Integer atm, Integer offset1, Integer offset2, Integer offset3) {
+		this.positionSide = positionSide;
+		this.optionType = optionType;
+		this.actionType = actionType;
+		this.atm = atm;
+		this.offset1 = offset1;
+		this.offset2 = offset2;
+		this.offset3 = offset3;
 	}
 
 	public Long getId() {
@@ -75,67 +77,22 @@ public class PositionSizeMatrix {
 		this.actionType = actionType;
 	}
 
-	public Integer getAtm() {
-		return atm;
-	}
+	public Integer getAtm() { return atm; }
+	public void setAtm(Integer atm) { this.atm = atm; }
 
-	public void setAtm(Integer atm) {
-		this.atm = atm;
-	}
+	public Integer getOffset1() { return offset1; }
+	public void setOffset1(Integer offset1) { this.offset1 = offset1; }
 
-	public Integer getAtmPlus150() {
-		return atmPlus150;
-	}
+	public Integer getOffset2() { return offset2; }
+	public void setOffset2(Integer offset2) { this.offset2 = offset2; }
 
-	public void setAtmPlus150(Integer atmPlus150) {
-		this.atmPlus150 = atmPlus150;
-	}
-
-	public Integer getAtmPlus200() {
-		return atmPlus200;
-	}
-
-	public void setAtmPlus200(Integer atmPlus200) {
-		this.atmPlus200 = atmPlus200;
-	}
-
-	public Integer getAtmPlus250() {
-		return atmPlus250;
-	}
-
-	public void setAtmPlus250(Integer atmPlus250) {
-		this.atmPlus250 = atmPlus250;
-	}
-
-	public Integer getAtmMinus150() {
-		return atmMinus150;
-	}
-
-	public void setAtmMinus150(Integer atmMinus150) {
-		this.atmMinus150 = atmMinus150;
-	}
-
-	public Integer getAtmMinus200() {
-		return atmMinus200;
-	}
-
-	public void setAtmMinus200(Integer atmMinus200) {
-		this.atmMinus200 = atmMinus200;
-	}
-
-	public Integer getAtmMinus250() {
-		return atmMinus250;
-	}
-
-	public void setAtmMinus250(Integer atmMinus250) {
-		this.atmMinus250 = atmMinus250;
-	}
+	public Integer getOffset3() { return offset3; }
+	public void setOffset3(Integer offset3) { this.offset3 = offset3; }
 
 	@Override
 	public String toString() {
 		return "PositionSizeMatrix [id=" + id + ", positionSide=" + positionSide + ", optionType=" + optionType
-				+ ", actionType=" + actionType + ", atm=" + atm + ", atmPlus150=" + atmPlus150 + ", atmPlus200="
-				+ atmPlus200 + ", atmPlus250=" + atmPlus250 + ", atmMinus150=" + atmMinus150 + ", atmMinus200="
-				+ atmMinus200 + ", atmMinus250=" + atmMinus250 + "]";
+				+ ", actionType=" + actionType + ", atm=" + atm
+				+ ", offset1=" + offset1 + ", offset2=" + offset2 + ", offset3=" + offset3 + "]";
 	}
 }

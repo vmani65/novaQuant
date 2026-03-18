@@ -59,7 +59,7 @@ public class TradeUtil {
     public void setTradeExecutedPrices(Trade t) {
         if (t != null) {
           t.getWeeklyOrderBook().forEach(w -> {
-            log.info("Fetching executed prices for trade :" + t + "Order ID: " + (LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId()));
+            log.info("Fetching executed prices for trade: {} OrderID: {}", t, LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
             var trades = getOrderTrades(LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
             if (trades == null || trades.isEmpty()) {
             	log.warn("Empty Trade list while fetching executed prices. This needs investigation");
@@ -69,7 +69,7 @@ public class TradeUtil {
             if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
               var averagePrice = trades.get(0).averagePrice;
               var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0; 
-              log.info("Average Price : " + avgPrice);
+              log.info("Average Price: {}", avgPrice);
                 if (BUY.equals(w.getTransactionType())) {
                   if (LIVE.equals(w.getTradeStatus()))
                     w.setBoughtPrice(avgPrice);
@@ -90,18 +90,18 @@ public class TradeUtil {
     public void setTradeExecPricesForRollOver(Trade t, boolean rollOverClose, boolean rollOverOpen) {
         if(t != null) {
             t.getWeeklyOrderBook().stream().filter(w -> rollOverClose ? CLOSED.equals(w.getTradeStatus()) : LIVE.equals(w.getTradeStatus())).forEach(w -> {
-                log.info("Fetching executed prices for rollover trade : " + t + " Order ID : " + (rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId()));
+                log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
                 var trades = getOrderTrades(rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
                 if (trades == null || trades.isEmpty()) {
                 	log.warn("Empty Trade list while fetching executed prices during rollover. This needs investigation");
                 	sleep();
                     trades = getOrderTrades(rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());                	
                 }
-                log.info("Trade Details for Order ID :" + (rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId()) + " is " + ((trades != null && !trades.isEmpty()) ? trades.toString() : ""));
+                log.info("Trade Details for OrderID: {} is {}", rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId(), (trades != null && !trades.isEmpty()) ? trades : "");
                 if(trades != null && !trades.isEmpty() && trades.get(0) != null) {
                     var averagePrice = trades.get(0).averagePrice;
                     var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0; 
-                    log.info("Average Price : " + avgPrice);                    
+                    log.info("Average Price: {}", avgPrice);
                     if(BUY.equals(w.getTransactionType())) {
                         if(rollOverOpen) {
                             var newPrice = (w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice;
@@ -179,45 +179,44 @@ public class TradeUtil {
     	return params;
     }
     
-    public int roundNFToNearestATMForCE(String price) {
+    public int roundNFToNearestATM(String price) {
         float f = Float.valueOf(price);
-        int strikePrice = (int) (Math.floor(f/50f)) * 50;
-        log.info("roundNFToNearestATMForCE calculated strike price is " + strikePrice);
-        return strikePrice;
-    }
-
-    public int roundNFToNearestATMForPE(String price) {
-        float f = Float.valueOf(price);
-        int strikePrice = (int) (Math.ceil(f/50f)) * 50;
-        log.info("roundNFToNearestATMForPE calculated strike price is " + strikePrice);
+        int strikePrice = Math.round(f / 50f) * 50;
+        log.info("roundNFToNearestATM: input={}, calculatedStrike={}", price, strikePrice);
         return strikePrice;
     }
 	
     public Map<String, LTPQuote> getLTP(String[] ins) {
     	var kite = getKiteConnectObject();
-    	if(kite != null) {
-    		try {
-				return kite.getLTP(ins);
-			} catch (JSONException | IOException | KiteException e) {
-				log.error("Exception while fetching last traded price for instruments ",e);
-			}
+    	if (kite == null) {
+    		log.error("KiteConnect object is null — cannot fetch LTP (auth not set for today?)");
+    		return Collections.emptyMap();
     	}
-    	return null;
+    	try {
+			return kite.getLTP(ins);
+		} catch (JSONException | IOException | KiteException e) {
+			log.error("Exception while fetching last traded price for instruments ",e);
+		}
+    	return Collections.emptyMap();
     }
        
     public List<MarginCalculationData> getMarginCalculation(List<MarginCalculationParams> params) {
     	var kite = getKiteConnectObject();
     	List<MarginCalculationData> margins = new ArrayList<>();
+    	if (kite == null) {
+    		log.error("KiteConnect object is null — skipping margin calculation (auth not set for today?)");
+    		return margins;
+    	}
     	try {
     		margins = kite.getMarginCalculation(params);
 		} catch (JSONException | IOException | KiteException e) {
-			log.error("Exception while fetching margin calculation data ",e);			
+			log.error("Exception while fetching margin calculation data ",e);
 		}
     	return margins;
     }
     
     public List<com.zerodhatech.models.Trade> getOrderTrades(String orderId) {
-        log.info("Fetching trades for orderId: " + orderId);
+        log.info("Fetching trades for orderId: {}", orderId);
         List<com.zerodhatech.models.Trade> allTrades = new ArrayList<>();
         var kite = getKiteConnectObject();        
         Arrays.stream(orderId.split("\\s*,\\s*")).filter(id -> id != null && !id.trim().isEmpty()).forEach(id -> {
@@ -226,7 +225,7 @@ public class TradeUtil {
                allTrades.addAll(orderTrades);
                log.debug("Fetched {} trades for orderId: {}", orderTrades.size(), id);
             } catch (JSONException | IOException | KiteException e) {
-               log.error("Exception while fetching trades for orderId: " + id, e);
+               log.error("Exception while fetching trades for orderId: {}", id, e);
             }});        
         log.info("Total trades fetched: {}", allTrades.size());
         allTrades.forEach(trade -> log.info("Trade[tradeId={}, orderId={}, symbol={}, exchange={}, type={}, qty={}, price={}, fillTime={}]",
@@ -272,7 +271,7 @@ public class TradeUtil {
 		List<BulkOrderResponse> orders = new ArrayList<BulkOrderResponse>();
 		var kite = getKiteConnectObject();
 		OrderParams orderParams = buildOrderParams();
-        orderParams.transactionType = Constants.TRANSACTION_TYPE_BUY;
+        orderParams.transactionType = transactionType;
         orderParams.tradingsymbol = ins;
         orderParams.quantity = quantity;
         orderParams.price = price;
@@ -281,7 +280,10 @@ public class TradeUtil {
 		} catch (JSONException | IOException | KiteException e) {
 			log.error("Exception while placing auto slice order ",e);
 		}
-        orders.forEach(o -> log.info(o.orderId != null ? o.orderId : "Error Code : "+o.bulkOrderError.code+" Error Message : "+o.bulkOrderError.code));;
+        orders.forEach(o -> {
+            if (o.orderId != null) log.info("BulkOrder placed orderId: {}", o.orderId);
+            else log.error("BulkOrder error — code: {}, message: {}", o.bulkOrderError.code, o.bulkOrderError.message);
+        });
         return orders;
 	}
 	
@@ -348,7 +350,7 @@ public class TradeUtil {
             Thread.sleep(10000);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
-            log.error("Thread interrupted: " + e.getMessage());
+            log.error("Thread interrupted: {}", e.getMessage());
         }
     }
 }

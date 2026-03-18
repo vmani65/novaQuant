@@ -42,9 +42,23 @@ public class TradeOpeningService {
     	List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>(); 
     	trade.setEntrySignalPrice(Double.valueOf(signalPrice));
     	trade.setSignalType(CE.equals(type) ? LONG : SHORT);
-    	List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, type, trade, false);
-    	String[] ltpIns = weeklyPojo.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new); log.debug("OpenTrade ltpIns is :"+ltpIns);
+    	List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, trade, false);
+    	String[] ltpIns = weeklyPojo.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new);
+	log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
     	Map<String, LTPQuote> ltp = tradeUtil.getLTP(ltpIns);
+    	if (ltp.isEmpty()) {
+    	    log.error("LTP map is empty — aborting trade open for all instruments");
+    	    trade.setWeeklyOrderBook(weeklyPojo.stream().map(pojo -> {
+    	        WeeklyOrderBook b = new WeeklyOrderBook();
+    	        b.setMarginCalcSymbol(pojo.getMarginCalcSymbol()); b.setTradedSymbol(pojo.getTradedSymbol());
+    	        b.setTransactionType(pojo.getTransactionType()); b.setTrade(pojo.getParentTrade());
+    	        b.setMoneyness(pojo.getMoneyness()); b.setLots(pojo.getLots());
+    	        b.setQuantity(pojo.getLots() * LOT_SIZE); b.setTradeStatus(FAILED);
+    	        return b;
+    	    }).collect(Collectors.toList()));
+    	    trade.setTradeStatus(FAILED);
+    	    return tradeRepository.save(trade);
+    	}
     	IntStream.range(0, weeklyPojo.size()).parallel().forEach(i -> {
     	    WeeklyPojo w = weeklyPojo.get(i); 
     	    log.debug("WeeklyPojo to place order is: {}", w);    	    
@@ -98,7 +112,7 @@ public class TradeOpeningService {
         }
     	tradeUtil.calcMarginAndBrokerage(trade);
     	var liveTrade = tradeRepository.save(trade);    	
-    	log.info("Live Trade Being Opened: "+trade);
+    	log.info("Live Trade Being Opened: {}", trade);
     	return liveTrade;
     }    
 }

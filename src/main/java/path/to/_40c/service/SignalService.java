@@ -102,7 +102,7 @@ public class SignalService {
 	   if(closedTrade != null) {
 		   try {
 			   Trade t = tradeRepository.findById(closedTrade.getId()).orElse(null);
-			   log.info("Trade(Parent+All Child) used for computing post close calc : " + t);
+			   log.info("Trade(Parent+All Child) used for computing post close calc: {}", t);
 			   tradeUtil.setTradeExecutedPrices(t);
 			   computeUtil.calcTradeOutcome(t);
 			   computeUtil.calcPnL(t);

@@ -63,18 +63,6 @@ public abstract class BaseChildEntity extends BaseEntity {
     @Column(name = "TRADE_CLOSE_ORDER_ID")
     protected String tradeCloseOrderId;
     
-    @Column(name = "TRADE_OPEN_EXE_STARTTIME")
-    protected String tradeOpenExeStartTime;
-    
-    @Column(name = "TRADE_OPEN_EXE_ENDTIME")
-    protected String tradeOpenExeEndTime;
-    
-    @Column(name = "TRADE_CLOSE_EXE_STARTTIME")
-    protected String tradeCloseExeStartTime;
-    
-    @Column(name = "TRADE_CLOSE_EXE_ENDTIME")
-    protected String tradeCloseExeEndTime;
-
 	public String getTradedSymbol() {
 		return tradedSymbol;
 	}
@@ -231,38 +219,6 @@ public abstract class BaseChildEntity extends BaseEntity {
 		this.tradeCloseOrderId = tradeCloseOrderId;
 	}
 
-	public String getTradeOpenExeStartTime() {
-		return tradeOpenExeStartTime;
-	}
-
-	public void setTradeOpenExeStartTime(String tradeOpenExeStartTime) {
-		this.tradeOpenExeStartTime = tradeOpenExeStartTime;
-	}
-
-	public String getTradeOpenExeEndTime() {
-		return tradeOpenExeEndTime;
-	}
-
-	public void setTradeOpenExeEndTime(String tradeOpenExeEndTime) {
-		this.tradeOpenExeEndTime = tradeOpenExeEndTime;
-	}
-
-	public String getTradeCloseExeStartTime() {
-		return tradeCloseExeStartTime;
-	}
-
-	public void setTradeCloseExeStartTime(String tradeCloseExeStartTime) {
-		this.tradeCloseExeStartTime = tradeCloseExeStartTime;
-	}
-
-	public String getTradeCloseExeEndTime() {
-		return tradeCloseExeEndTime;
-	}
-
-	public void setTradeCloseExeEndTime(String tradeCloseExeEndTime) {
-		this.tradeCloseExeEndTime = tradeCloseExeEndTime;
-	}
-
 	@Override
 	public String toString() {
 		return "BaseChildEntity [tradedSymbol=" + tradedSymbol + ", marginCalcSymbol=" + marginCalcSymbol
@@ -272,8 +228,6 @@ public abstract class BaseChildEntity extends BaseEntity {
 				+ ", lotSize=" + lots + ", quantity=" + quantity + ", marginToTrade=" + marginToTrade
 				+ ", tradeStatus=" + tradeStatus + ", tradeOpenBrokerage=" + tradeOpenBrokerage
 				+ ", tradeCloseBrokerage=" + tradeCloseBrokerage + ", tradeOpenOrderId=" + tradeOpenOrderId
-				+ ", tradeCloseOrderId=" + tradeCloseOrderId + ", tradeOpenExeStartTime=" + tradeOpenExeStartTime
-				+ ", tradeOpenExeEndTime=" + tradeOpenExeEndTime + ", tradeCloseExeStartTime=" + tradeCloseExeStartTime
-				+ ", tradeCloseExeEndTime=" + tradeCloseExeEndTime + "]";
+				+ ", tradeCloseOrderId=" + tradeCloseOrderId + "]";
 	}
 }

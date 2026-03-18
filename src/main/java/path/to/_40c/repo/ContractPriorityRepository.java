@@ -26,13 +26,11 @@ public interface ContractPriorityRepository extends JpaRepository<PositionSizeMa
     private static List<ContractPriority> buildContractPriorities(List<PositionSizeMatrix> rows) {
         List<ContractPriority> out = new ArrayList<>();
         for (PositionSizeMatrix r : rows) {
-            addIfPositive(out, r, r.getAtm(), "ATM");
-            addIfPositive(out, r, r.getAtmPlus150(), "ATM+150");
-            addIfPositive(out, r, r.getAtmPlus200(), "ATM+200");
-            addIfPositive(out, r, r.getAtmPlus250(), "ATM+250");
-            addIfPositive(out, r, r.getAtmMinus150(), "ATM-150");
-            addIfPositive(out, r, r.getAtmMinus200(), "ATM-200");
-            addIfPositive(out, r, r.getAtmMinus250(), "ATM-250");
+            boolean isLong = "LONG".equals(r.getPositionSide());
+            addIfPositive(out, r, r.getAtm(),     "ATM");
+            addIfPositive(out, r, r.getOffset1(), isLong ? "ATM-50"  : "ATM+50");
+            addIfPositive(out, r, r.getOffset2(), isLong ? "ATM-100" : "ATM+100");
+            addIfPositive(out, r, r.getOffset3(), isLong ? "ATM-150" : "ATM+150");
         }
         return out;
     }

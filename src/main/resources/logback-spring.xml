@@ -8,13 +8,11 @@
         </encoder>
     </appender>
 
-    <!-- File Appender (writes to file) -->
+    <!-- File Appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/novaquant-app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
-            <!-- daily rollover -->
             <fileNamePattern>logs/novaquant-app.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <!-- keep last 7 days -->
             <maxHistory>7</maxHistory>
         </rollingPolicy>
         <encoder>
@@ -22,10 +20,33 @@
         </encoder>
     </appender>
 
-    <!-- Root logger (both console + file) -->
-    <root level="INFO">
+    <!--
+        AsyncAppender — signal thread hands off log events to a background queue instantly.
+        queueSize     : number of log events buffered before blocking (default 256, raised for burst)
+        discardingThreshold : 0 = never discard events even when queue is 80% full (default discards TRACE/DEBUG)
+        includeCallerData   : false = skip expensive stack frame lookup on the calling thread
+        neverBlock    : true = drop events rather than block the signal thread if queue fills up
+    -->
+    <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+        <neverBlock>true</neverBlock>
         <appender-ref ref="CONSOLE" />
+    </appender>
+
+    <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
+        <queueSize>1024</queueSize>
+        <discardingThreshold>0</discardingThreshold>
+        <includeCallerData>false</includeCallerData>
+        <neverBlock>true</neverBlock>
         <appender-ref ref="FILE" />
+    </appender>
+
+    <!-- Root logger — both appenders are now async -->
+    <root level="INFO">
+        <appender-ref ref="ASYNC_CONSOLE" />
+        <appender-ref ref="ASYNC_FILE" />
     </root>
 
 </configuration>

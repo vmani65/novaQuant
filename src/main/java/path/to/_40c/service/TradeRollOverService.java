@@ -47,11 +47,15 @@ public class TradeRollOverService {
      */
     public void rollOver(String signalPrice) {
         Trade tradeToRollOver = tradeUtil.findLiveTradesWithLiveOrderBooks();
-        String type = LONG.equals(tradeToRollOver.getSignalType()) ? CE : PE;
-        log.info(tradeToRollOver != null ? "Live Trade being rolled over is: " + tradeToRollOver : "No Live trades to rollover.");        
+        if (tradeToRollOver != null) log.info("Live Trade being rolled over is: {}", tradeToRollOver);
+        else log.info("No Live trades to rollover.");        
         if (tradeToRollOver != null) {
             String[] liveIns = tradeToRollOver.getWeeklyOrderBook().stream().map(WeeklyOrderBook::getTradedSymbol).toArray(String[]::new);
-            Map<String, LTPQuote> ltpOfToCloseTrade = tradeUtil.getLTP(liveIns);            
+            Map<String, LTPQuote> ltpOfToCloseTrade = tradeUtil.getLTP(liveIns);
+            if (ltpOfToCloseTrade.isEmpty()) {
+                log.error("LTP map is empty for close leg — aborting rollover (auth missing or Kite error)");
+                return;
+            }
             AtomicBoolean allClosesSucceeded = new AtomicBoolean(true);
             
             IntStream.range(0, tradeToRollOver.getWeeklyOrderBook().size()).parallel().forEach(i -> {
@@ -97,10 +101,14 @@ public class TradeRollOverService {
             tradeUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);            
             List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>();
             tradeToRollOver.setEntrySignalPrice(Math.round(((tradeToRollOver.getEntrySignalPrice() != null ? tradeToRollOver.getEntrySignalPrice() : 0.0) + (signalPrice != null ? Double.valueOf(signalPrice) : 0.0)) * 100.0) / 100.0);            
-            List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, type, tradeToRollOver, true);
+            List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);
             String[] ltpIns = weeklyPojo.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new);
             log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));
-            Map<String, LTPQuote> ltpOfToOpenTrade = tradeUtil.getLTP(ltpIns);            
+            Map<String, LTPQuote> ltpOfToOpenTrade = tradeUtil.getLTP(ltpIns);
+            if (ltpOfToOpenTrade.isEmpty()) {
+                log.error("LTP map is empty for open leg — aborting rollover open (close already executed, manual intervention needed)");
+                return;
+            }
             IntStream.range(0, weeklyPojo.size()).parallel().forEach(i -> {
                 WeeklyPojo w = weeklyPojo.get(i);
                 log.debug("WeeklyPojo to place order is: {}", w);                

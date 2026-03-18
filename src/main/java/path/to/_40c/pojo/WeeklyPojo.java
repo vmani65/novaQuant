@@ -11,6 +11,7 @@ public class WeeklyPojo {
 	private String marginCalcSymbol;
 	private String transactionType;
 	private String moneyness;
+	private String optionType;
 	private Trade parentTrade;
 	private int lots;
 	private String tradeOpenOrderId;
@@ -61,6 +62,14 @@ public class WeeklyPojo {
 		this.moneyness = moneyness;
 	}
 
+	public String getOptionType() {
+		return optionType;
+	}
+
+	public void setOptionType(String optionType) {
+		this.optionType = optionType;
+	}
+
 	public Trade getParentTrade() {
 		return parentTrade;
 	}
@@ -96,9 +105,9 @@ public class WeeklyPojo {
 	@Override
 	public String toString() {
 		return "WeeklyPojo [tradedSymbol=" + tradedSymbol + ", marginCalcSymbol=" + marginCalcSymbol
-				+ ", transactionType=" + transactionType + ", moneyness=" + moneyness + ", parentTrade=" + parentTrade
-				+ ", lots=" + lots + ", tradeOpenOrderId=" + tradeOpenOrderId + ", orderResponse=" + orderResponse
-				+ "]";
+				+ ", transactionType=" + transactionType + ", optionType=" + optionType
+				+ ", moneyness=" + moneyness + ", lots=" + lots
+				+ ", tradeOpenOrderId=" + tradeOpenOrderId + "]";
 	}
 }
 

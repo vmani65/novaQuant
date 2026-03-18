@@ -3,7 +3,9 @@ package path.to._40c.service;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.stream.Collectors;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import path.to._40c.entity.Trade;
@@ -36,17 +38,27 @@ public class EquityCurveService {
         return buildEquityCurve(trades);
     }
 
+    private static final DateTimeFormatter PARSE_FMT = DateTimeFormatter.ofPattern(DATE_FORMAT);
+
     private EquityCurve buildEquityCurve(List<Trade> trades) {
-        double currentEquity = STARTING_EQUITY;        
+        double currentEquity = STARTING_EQUITY;
         List<String> dates = new ArrayList<>();
         List<Double> equityValues = new ArrayList<>();
         List<Integer> lotSizes = new ArrayList<>();
-        
-        for (Trade trade : trades) {
+
+        List<Trade> sorted = trades.stream()
+            .filter(t -> t.getActualPnL() != null && t.getTradeOpenDtTime() != null)
+            .sorted(Comparator.comparing(t -> {
+                try { return LocalDateTime.parse(t.getTradeOpenDtTime(), PARSE_FMT); }
+                catch (Exception e) { return LocalDateTime.MIN; }
+            }))
+            .collect(Collectors.toList());
+
+        for (Trade trade : sorted) {
             dates.add(formatDate(trade.getTradeOpenDtTime()));
             currentEquity += trade.getActualPnL();
             equityValues.add(currentEquity);
-            lotSizes.add(trade.getLots());
+            lotSizes.add(trade.getLots() != null ? trade.getLots() : 0);
         }        
         return new EquityCurve(STARTING_EQUITY,currentEquity,dates,equityValues,lotSizes);
     }
