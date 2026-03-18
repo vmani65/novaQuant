@@ -5,7 +5,9 @@
       "Bash(netstat -ano)",
       "Bash(findstr :8080)",
       "Bash(findstr LISTENING)",
-      "Bash(taskkill /PID 9980 /F)"
+      "Bash(taskkill /PID 9980 /F)",
+      "Bash(./mvnw compile:*)",
+      "Bash(mvn compile:*)"
     ]
   }
 }

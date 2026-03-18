@@ -110,8 +110,7 @@ public class TradeOpeningService {
         	trade.setTradeStatus(FAILED);
             log.error("Trade opening operation failed - not all order openings succeeded");
         }
-    	tradeUtil.calcMarginAndBrokerage(trade);
-    	var liveTrade = tradeRepository.save(trade);    	
+    	var liveTrade = tradeRepository.save(trade);
     	log.info("Live Trade Being Opened: {}", trade);
     	return liveTrade;
     }    

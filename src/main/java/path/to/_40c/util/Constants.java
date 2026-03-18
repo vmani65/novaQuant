@@ -52,19 +52,4 @@ public class Constants {
 		    DateTimeFormatter.ofPattern("dd/MM/yyyy hh.mm.ss a")
 	);
 	
-	/*VINOTH*/
-	public static final String VINOTH_USER_ID = "FE5916"; 
-	public static final String VINOTH_APIKEY = "bpetdlek7kniupjq";
-	public static final String VINOTH_APISECRET = "s1fivfgl0kzjf6nl4y4xwo5dtyeknm0s";
-	
-	/*JANANI*/
-	public static final String JANANI_USER_ID = "GZ6781"; 
-	public static final String JANANI_APIKEY = "qw0bh2ang8j5kbhe";
-	public static final String JANANI_APISECRET = "61q0wve650b9h22dhq644c170gtq9pr4";
-	
-	/*P VINODH*/
-	public static final String PVINODH_USER_ID = ""; 
-	public static final String PVINODH_APIKEY = "";
-	public static final String PVINODH_APISECRET = "";
-	 
 }

@@ -15,6 +15,7 @@ import java.util.Collections;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CompletableFuture;
 
 import org.hibernate.Session;
 import org.json.JSONException;
@@ -46,6 +47,11 @@ import path.to._40c.repo.TradeRepository;
 public class TradeUtil {
 
 	private static final Logger log = LoggerFactory.getLogger(TradeUtil.class);
+
+    // KiteConnect cache — avoids a DB hit on every order/LTP/margin call.
+    // Keyed by today's date; invalidated when new auth is saved.
+    private volatile KiteConnect cachedKiteConnect = null;
+    private volatile LocalDate cacheDate = null;
 
     @Autowired
     private KiteAuthDetailsRepository repository;
@@ -132,30 +138,41 @@ public class TradeUtil {
 	 * 2. It fills for both buy and sell brokerage and trade margin
 	 */
     public void calcMarginAndBrokerage(Trade trade) {
-    	if(trade != null) {
+    	if (trade != null) {
 	    	var buyParams = new ArrayList<MarginCalculationParams>();
 	    	buildMarginCalcParams(trade, buyParams, Constants.TRANSACTION_TYPE_BUY);
-	    	var tradeBuyMargins = getMarginCalculation(buyParams);
-	    	tradeBuyMargins.forEach(tradeBuyMargin -> {
-	    		trade.getWeeklyOrderBook().forEach(weekly -> {
-	    			if((tradeBuyMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
-	    				weekly.setTradeOpenBrokerage(ComputeUtil.rnd(tradeBuyMargin.charges.total));
-	        			if(BUY.equals(weekly.getTransactionType()))
-	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeBuyMargin.total));
-	    			}    	
-	    		});    		
-	    	});
 	    	var sellParams = new ArrayList<MarginCalculationParams>();
 	    	buildMarginCalcParams(trade, sellParams, Constants.TRANSACTION_TYPE_SELL);
-	    	var tradeSellMargins = getMarginCalculation(sellParams);
+	    	// Fire both margin API calls in parallel on ForkJoinPool.commonPool()
+	    	// (intentionally NOT postTradeExecutor — avoids deadlock when called from async thread)
+	    	var buyFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(buyParams));
+	    	var sellFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(sellParams));
+	    	List<MarginCalculationData> tradeBuyMargins;
+	    	List<MarginCalculationData> tradeSellMargins;
+	    	try {
+	    	    tradeBuyMargins = buyFuture.get();
+	    	    tradeSellMargins = sellFuture.get();
+	    	} catch (Exception e) {
+	    	    log.error("Exception during parallel margin calculation", e);
+	    	    return;
+	    	}
+	    	tradeBuyMargins.forEach(tradeBuyMargin -> {
+	    		trade.getWeeklyOrderBook().forEach(weekly -> {
+	    			if ((tradeBuyMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
+	    				weekly.setTradeOpenBrokerage(ComputeUtil.rnd(tradeBuyMargin.charges.total));
+	        			if (BUY.equals(weekly.getTransactionType()))
+	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeBuyMargin.total));
+	    			}
+	    		});
+	    	});
 	    	tradeSellMargins.forEach(tradeSellMargin -> {
 	    		trade.getWeeklyOrderBook().forEach(weekly -> {
-	    			if((tradeSellMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
+	    			if ((tradeSellMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
 	    				weekly.setTradeCloseBrokerage(ComputeUtil.rnd(tradeSellMargin.charges.total));
-	        			if(SELL.equals(weekly.getTransactionType()))
+	        			if (SELL.equals(weekly.getTransactionType()))
 	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeSellMargin.total));
-	    			}    	
-	    		});    		
+	    			}
+	    		});
 	    	});
     	}
     }
@@ -234,15 +251,26 @@ public class TradeUtil {
     }
     
 	public KiteConnect getKiteConnectObject() {
-    	KiteConnect kiteConnect = null;
         LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
+        if (cachedKiteConnect != null && today.equals(cacheDate)) {
+            return cachedKiteConnect;
+        }
+    	KiteConnect kiteConnect = null;
     	Optional<KiteAuthDetails> existing = repository.findByAuthDate(today);
         if (existing.isPresent()) {
         	kiteConnect = new KiteConnect(existing.get().getApiKey());
         	kiteConnect.setAccessToken(existing.get().getAccessToken());
-            kiteConnect.setPublicToken(existing.get().getPublicToken());        	
+            kiteConnect.setPublicToken(existing.get().getPublicToken());
+            cachedKiteConnect = kiteConnect;
+            cacheDate = today;
         }
-    	return kiteConnect;    	
+    	return kiteConnect;
+    }
+
+    public void invalidateKiteCache() {
+        cachedKiteConnect = null;
+        cacheDate = null;
+        log.info("KiteConnect cache invalidated");
     }
 	
 	/**
