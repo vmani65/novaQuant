@@ -29,5 +29,5 @@ Thumbs.db
 *.db-wal
 data/
 
-# Credentials file contains DB path and Kite API keys — never commit
+# Credentials file contains Kite API keys — never commit
 src/main/resources/application-credentials.properties
