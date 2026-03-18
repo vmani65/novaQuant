@@ -29,5 +29,5 @@ Thumbs.db
 *.db-wal
 data/
 
-# Application properties contain environment-specific paths (local DB location etc.)
-src/main/resources/application.properties
+# Credentials file contains DB path and Kite API keys — never commit
+src/main/resources/application-credentials.properties

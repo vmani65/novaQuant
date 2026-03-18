@@ -63,4 +63,49 @@
             </plugin>
         </plugins>
     </build>
+
+    <!--
+        Maven build profiles
+
+        Default (no -P flag): mvn clean install
+          Includes MockKiteGateway + application-mock.properties.
+          Used for local development and Postman testing.
+
+        Production: mvn clean install -Pproduction
+          Excludes MockKiteGateway.java from compilation (class absent from JAR).
+          Excludes application-mock.properties from classpath.
+          Run JAR with env var SPRING_PROFILES_ACTIVE=live
+    -->
+    <profiles>
+        <profile>
+            <id>production</id>
+            <build>
+                <plugins>
+                    <!-- Exclude MockKiteGateway from compilation -->
+                    <plugin>
+                        <groupId>org.apache.maven.plugins</groupId>
+                        <artifactId>maven-compiler-plugin</artifactId>
+                        <configuration>
+                            <excludes>
+                                <exclude>path/to/_40c/gateway/MockKiteGateway.java</exclude>
+                            </excludes>
+                        </configuration>
+                    </plugin>
+                    <plugin>
+                        <groupId>org.springframework.boot</groupId>
+                        <artifactId>spring-boot-maven-plugin</artifactId>
+                    </plugin>
+                </plugins>
+                <!-- Exclude application-mock.properties from the packaged JAR -->
+                <resources>
+                    <resource>
+                        <directory>src/main/resources</directory>
+                        <excludes>
+                            <exclude>application-mock.properties</exclude>
+                        </excludes>
+                    </resource>
+                </resources>
+            </build>
+        </profile>
+    </profiles>
 </project>
