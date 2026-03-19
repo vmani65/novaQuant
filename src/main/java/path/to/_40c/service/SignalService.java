@@ -13,8 +13,6 @@ import org.springframework.stereotype.Service;
 import path.to._40c.controller.SignalController.Signal;
 import path.to._40c.entity.Trade;
 import path.to._40c.repo.TradeRepository;
-import path.to._40c.util.TradeUtil;
-
 @Service
 public class SignalService {
 
@@ -31,9 +29,6 @@ public class SignalService {
 
 	@Autowired
 	PostTradeService postTradeService;
-
-	@Autowired
-    private TradeUtil tradeUtil;
 
     @Autowired
     private TradeRepository tradeRepository;

@@ -69,8 +69,11 @@ public class TradeLogController {
         m.put("soldPrice", c.getSoldPrice());
         m.put("boughtPrice", c.getBoughtPrice());
         m.put("ltp", c.getLtp());
-        m.put("actualPnL", c.getActualPnL());
         m.put("expectedPnL", c.getExpectedPnL());
+        m.put("actualPnL", c.getActualPnL());
+        m.put("diffPercentage", c.getDiffPercentage());
+        m.put("tradeOpenBrokerage", c.getTradeOpenBrokerage());
+        m.put("tradeCloseBrokerage", c.getTradeCloseBrokerage());
         m.put("tradeStatus", c.getTradeStatus());
         m.put("marginToTrade", c.getMarginToTrade());
         m.put("tradeOpenOrderId", c.getTradeOpenOrderId());

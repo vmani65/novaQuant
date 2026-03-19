@@ -13,7 +13,6 @@ public class NIFTYDataStitcher {
     private static final String BASE_PATH = "C:\\Users\\Vinoth M\\Downloads\\2024\\2024";
     private static final String OUTPUT_PATH = "C:\\Users\\Vinoth M\\Downloads\\2024\\NIFTY_CONTINUOUS_2024.csv";
     private static final Pattern FILENAME_PATTERN = Pattern.compile("GFDLNFO_BACKADJUSTED_(\\d{2})(\\d{2})(\\d{4})(?:\\.csv)?", Pattern.CASE_INSENSITIVE);
-    private static final DateTimeFormatter DATE_FORMATTER = DateTimeFormatter.ofPattern("dd/MM/yyyy");
     private static final DateTimeFormatter TIME_FORMATTER = DateTimeFormatter.ofPattern("HH:mm:ss");
     
     private List<String> validationIssues = new ArrayList<>();

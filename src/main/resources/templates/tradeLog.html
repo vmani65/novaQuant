@@ -261,36 +261,80 @@
 
     function buildChildRows(legs, type, parentId) {
         if (!legs || legs.length === 0) return '';
-        const typeBadgeHtml = badge(type, type === 'WEEKLY' ? 'badge-weekly' : 'badge-monthly');
-        return legs.map(c => {
-            const openPrice = c.transactionType === 'SELL'
-                ? (c.soldPrice != null ? '₹' + fmt(c.soldPrice) : '—')
-                : (c.boughtPrice != null ? '₹' + fmt(c.boughtPrice) : '—');
-            const closePrice = c.transactionType === 'SELL'
-                ? (c.boughtPrice != null ? '₹' + fmt(c.boughtPrice) : '—')
-                : (c.soldPrice != null ? '₹' + fmt(c.soldPrice) : '—');
+
+        const isWeekly = type === 'WEEKLY';
+        const accentBorder = isWeekly ? 'border-blue-300' : 'border-purple-300';
+        const headerBg    = isWeekly ? 'bg-blue-50'   : 'bg-purple-50';
+        const headerColor = isWeekly ? 'text-blue-700' : 'text-purple-700';
+
+        const legRows = legs.map(c => {
+            const diffVal = c.diffPercentage != null ? parseFloat(c.diffPercentage) : null;
+            const diffClass = diffVal != null
+                ? (diffVal >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold')
+                : 'text-gray-400';
             return `
-            <tr class="child-row bg-slate-50 border-b border-gray-100" data-parent="${parentId}">
-                <td class="px-4 py-2.5" colspan="2">
-                    <div class="flex items-center gap-2 pl-4">
-                        <span class="w-px h-4 bg-gray-300 inline-block"></span>
-                        ${typeBadgeHtml}
-                    </div>
-                </td>
-                <td class="px-4 py-2.5 font-mono text-gray-600 text-[11px]" colspan="2">${c.tradedSymbol || '—'}</td>
-                <td class="px-4 py-2.5">${txnBadge(c.transactionType)}</td>
-                <td class="px-4 py-2.5">${statusBadge(c.tradeStatus)}</td>
-                <td class="px-4 py-2.5 text-gray-500 text-[11px]">${c.moneyness || '—'}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-700">${openPrice}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-700">${closePrice}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-500">${c.lots != null ? c.lots + 'L × ' + c.quantity : '—'}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-500">${c.expectedPnL != null ? '₹' + fmt(c.expectedPnL) : '—'}</td>
-                <td class="px-4 py-2.5 text-right font-mono ${pnlClass(c.actualPnL)}">${c.actualPnL != null ? '₹' + fmt(c.actualPnL) : '—'}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-500">${c.diffPercentage || '—'}</td>
-                <td class="px-4 py-2.5 text-right font-mono text-gray-400 text-[10px]">${c.tradeOpenOrderId || '—'}</td>
-                <td class="px-4 py-2.5 font-mono text-gray-400 text-[10px]">${c.tradeCloseOrderId || '—'}</td>
-            </tr>`;
+                <tr class="border-b border-gray-100 hover:bg-white transition-colors">
+                    <td class="py-2 pl-3 pr-2 font-mono text-[11px] text-gray-800 truncate" title="${c.tradedSymbol || ''}">${c.tradedSymbol || '—'}</td>
+                    <td class="py-2 px-2 text-center">${statusBadge(c.tradeStatus)}</td>
+                    <td class="py-2 px-2 text-center">${txnBadge(c.transactionType)}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.boughtPrice != null ? '₹' + fmt(c.boughtPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.soldPrice != null ? '₹' + fmt(c.soldPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-500">${c.expectedPnL != null ? '₹' + fmt(c.expectedPnL) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${pnlClass(c.actualPnL)}">${c.actualPnL != null ? '₹' + fmt(c.actualPnL) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${diffClass}">${c.diffPercentage != null ? c.diffPercentage : '—'}</td>
+                    <td class="py-2 px-2 text-[11px] text-gray-500">${c.moneyness || '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-600">${c.quantity != null ? c.quantity : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.tradeOpenBrokerage != null ? '₹' + fmt(c.tradeOpenBrokerage) : '—'}</td>
+                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.tradeCloseBrokerage != null ? '₹' + fmt(c.tradeCloseBrokerage) : '—'}</td>
+                </tr>`;
         }).join('');
+
+        // One parent-table row spanning all 15 cols, containing its own mini-table
+        return `
+        <tr class="child-row" data-parent="${parentId}">
+            <td colspan="15" class="p-0 bg-slate-50">
+                <div class="border-l-4 ${accentBorder} ml-8 mr-0">
+                    <table class="w-full text-xs border-collapse table-fixed">
+                        <colgroup>
+                            <col style="width:22%">
+                            <col style="width:8%">
+                            <col style="width:6%">
+                            <col style="width:7%">
+                            <col style="width:7%">
+                            <col style="width:8%">
+                            <col style="width:8%">
+                            <col style="width:7%">
+                            <col style="width:8%">
+                            <col style="width:5%">
+                            <col style="width:7%">
+                            <col style="width:7%">
+                        </colgroup>
+                        <thead>
+                            <tr class="${headerBg} border-b border-gray-200">
+                                <th colspan="12" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
+                                    ${type} &middot; ${legs.length} legs
+                                </th>
+                            </tr>
+                            <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="py-1.5 pl-3 pr-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Symbol</th>
+                                <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                                <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Txn</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Bought</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Sold</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Exp P&amp;L</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Actual P&amp;L</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Diff%</th>
+                                <th class="py-1.5 px-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Moneyness</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Qty</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Open Brok</th>
+                                <th class="py-1.5 pl-2 pr-3 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Close Brok</th>
+                            </tr>
+                        </thead>
+                        <tbody>${legRows}</tbody>
+                    </table>
+                </div>
+            </td>
+        </tr>`;
     }
 
     function renderTrades(trades) {
