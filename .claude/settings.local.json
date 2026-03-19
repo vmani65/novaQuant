@@ -7,7 +7,18 @@
       "Bash(findstr LISTENING)",
       "Bash(taskkill /PID 9980 /F)",
       "Bash(./mvnw compile:*)",
-      "Bash(mvn compile:*)"
+      "Bash(mvn compile:*)",
+      "Bash(cmd /c \"netstat -ano | findstr :8080\")",
+      "Bash(cmd /c \"cd /d \"\"c:\\\\Users\\\\Vinoth M\\\\Documents\\\\projects\\\\novaquant\"\" && mvn spring-boot:run -q\")",
+      "Bash(powershell -Command \"Stop-Process -Id 18516 -Force\")",
+      "Bash(mvn spring-boot:run)",
+      "Bash(sqlite3 \"D:/Softwares/sqlite/signals.db\" \".schema TRADE\")",
+      "Bash(powershell -Command \"& ''D:/Softwares/sqlite/sqlite3.exe'' ''D:/Softwares/sqlite/signals.db'' ''.schema TRADE''\")",
+      "Bash(powershell -Command \"& ''D:/Softwares/sqlite/sqlite3.exe'' ''D:/Softwares/sqlite/signals.db'' ''.schema WEEKLY_ORDER_BOOK''\")",
+      "Bash(powershell -Command \"& ''D:/Softwares/sqlite/sqlite3.exe'' ''D:/Softwares/sqlite/signals.db'' ''.schema MONTHLY_ORDER_BOOK''\")",
+      "Bash(powershell -Command \"& ''D:/Softwares/sqlite/sqlite3.exe'' ''D:/Softwares/sqlite/signals.db'' ''.read C:/Users/Vinoth M/Documents/projects/novaquant/seed.sql''\")",
+      "Bash(powershell -Command \"Get-Content ''C:/Users/Vinoth M/Documents/projects/novaquant/seed.sql'' | & ''D:/Softwares/sqlite/sqlite3.exe'' ''D:/Softwares/sqlite/signals.db''\")",
+      "Bash(powershell -Command \"Stop-Process -Id \\(Get-NetTCPConnection -LocalPort 8080 -State Listen\\).OwningProcess -Force -ErrorAction SilentlyContinue\")"
     ]
   }
 }
