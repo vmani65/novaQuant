@@ -6,7 +6,6 @@ import java.util.Map;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -27,11 +26,13 @@ public class EquityCurveController {
 
     private static final Logger log = LoggerFactory.getLogger(EquityCurveController.class);
 
-    @Autowired
-    private EquityCurveService equityCurveService;
-    
-    @Autowired
-    private TradeCapitalService tradeCapitalService;
+    private final EquityCurveService equityCurveService;
+    private final TradeCapitalService tradeCapitalService;
+
+    public EquityCurveController(EquityCurveService equityCurveService, TradeCapitalService tradeCapitalService) {
+        this.equityCurveService = equityCurveService;
+        this.tradeCapitalService = tradeCapitalService;
+    }
 
     @GetMapping("/strategies")
     public ResponseEntity<List<String>> getAvailableStrategies() {
@@ -43,6 +44,7 @@ public class EquityCurveController {
             @RequestParam(defaultValue = "All") String strategy) {
         return ResponseEntity.ok(equityCurveService.getEquityCurveData(strategy));
     }
+
     @GetMapping("/capital")
     public ResponseEntity<TradeCapital> getTradeCapital() {
         try {
@@ -54,19 +56,16 @@ public class EquityCurveController {
         }
     }
 
-    /**
-     * Save/Update trade capital
-     */
     @PostMapping("/capital/save")
     public ResponseEntity<Map<String, Object>> saveTradeCapital(@RequestBody TradeCapitalDTO capitalDTO) {
-        Map<String, Object> response = new HashMap<>();        
+        Map<String, Object> response = new HashMap<>();
         try {
             TradeCapital tradeCapital = tradeCapitalService.getTradeCapital();
 
             if (capitalDTO.getCurrentCapital() != null) {
                 tradeCapital.setCurrentCapital(capitalDTO.getCurrentCapital());
             }
-            
+
             if (capitalDTO.getAdditionalCapital() != null && capitalDTO.getAdditionalCapital() > 0) {
                 double updatedCapital = tradeCapital.getCurrentCapital() + capitalDTO.getAdditionalCapital();
                 tradeCapital.setCurrentCapital(updatedCapital);
@@ -76,19 +75,19 @@ public class EquityCurveController {
             if (capitalDTO.getCeilingToHit() != null) {
                 tradeCapital.setCeilingToHit(capitalDTO.getCeilingToHit());
             }
-            
+
             if (capitalDTO.getNrmlCostPerLot() != null) {
                 tradeCapital.setNrmlCostPerLot(capitalDTO.getNrmlCostPerLot());
             }
-            
+
             if (capitalDTO.getDefinedRiskPerLot() != null) {
                 tradeCapital.setDefinedRiskPerLot(capitalDTO.getDefinedRiskPerLot());
             }
-            
+
             TradeCapital savedCapital = tradeCapitalService.saveTradeCapital(tradeCapital);
             response.put("success", true);
             response.put("message", "Capital settings saved successfully!");
-            response.put("data", savedCapital);            
+            response.put("data", savedCapital);
             return ResponseEntity.ok(response);
         } catch (Exception e) {
             log.error("Error saving trade capital", e);
@@ -98,13 +97,9 @@ public class EquityCurveController {
         }
     }
 
-    /**
-     * Add capital to current balance
-     */
     @PostMapping("/capital/add")
     public ResponseEntity<Map<String, Object>> addCapital(@RequestParam Double amount) {
         Map<String, Object> response = new HashMap<>();
-        
         try {
             if (amount == null || amount <= 0) {
                 response.put("success", false);
@@ -124,9 +119,6 @@ public class EquityCurveController {
         }
     }
 
-    /**
-     * Check if capital has reached ceiling
-     */
     @GetMapping("/capital/ceiling-status")
     public ResponseEntity<Map<String, Object>> checkCeilingStatus() {
         Map<String, Object> response = new HashMap<>();

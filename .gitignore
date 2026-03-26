@@ -31,3 +31,6 @@ data/
 
 # Credentials file contains Kite API keys — never commit
 src/main/resources/application-credentials.properties
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json

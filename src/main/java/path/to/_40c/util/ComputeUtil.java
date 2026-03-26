@@ -2,7 +2,6 @@ package path.to._40c.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.entity.Trade;
@@ -39,15 +38,17 @@ public class ComputeUtil {
 
 	private static final Logger log = LoggerFactory.getLogger(ComputeUtil.class);
 
-	@Autowired
-    private WeeklySymbolCache symbolCache;
-    
-    @Autowired
-    private ContractPriorityCache contractCache;
-    
-    @Autowired
-    private TradeCapitalRepository tradeCapital;
-	
+    private final WeeklySymbolCache symbolCache;
+    private final ContractPriorityCache contractCache;
+    private final TradeCapitalRepository tradeCapital;
+
+    public ComputeUtil(WeeklySymbolCache symbolCache, ContractPriorityCache contractCache,
+            TradeCapitalRepository tradeCapital) {
+        this.symbolCache = symbolCache;
+        this.contractCache = contractCache;
+        this.tradeCapital = tradeCapital;
+    }
+
 	public List<WeeklyPojo> buildInstrument(String signalPrice, Trade trade, boolean rollOver) {
         log.info("Starting to build instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
                  signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getSignalType() : null, rollOver);
@@ -99,7 +100,7 @@ public class ComputeUtil {
             default -> throw new IllegalArgumentException("Invalid Strike: " + strikeCalcParam);
         };
     }
-    
+
 	public void calcTradeOutcome(Trade trade) {
 		if(trade != null) {
 			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySignalPrice());
@@ -113,23 +114,23 @@ public class ComputeUtil {
 			}
 			if(SHORT.equals(trade.getSignalType())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
-					points = entryPrice.subtract(exitPrice).doubleValue();				
+					points = entryPrice.subtract(exitPrice).doubleValue();
 				else
-					points = 0.0d;			
+					points = 0.0d;
 			}
 			trade.setPointsByTrade(points);
 			trade.setTradeOutcome(points > 0 ? WIN :LOSS);
 		}
 	}
-	
-	public void calcPnL(Trade trade) {		
+
+	public void calcPnL(Trade trade) {
 		if(trade != null) {
 			AtomicReference<Double> totalBrokerage = new AtomicReference<>(0.0);
 			AtomicReference<Double> expectedPnL = new AtomicReference<>(0.0);
 			AtomicReference<Double> actualPnL = new AtomicReference<>(0.0);
 			AtomicReference<Integer> lots = new AtomicReference<>(0);
 			trade.getWeeklyOrderBook().forEach(w -> {
-				if(w.getSoldPrice() != null && w.getBoughtPrice() != null && trade.getPointsByTrade() != null && w.getQuantity() != null 
+				if(w.getSoldPrice() != null && w.getBoughtPrice() != null && trade.getPointsByTrade() != null && w.getQuantity() != null
 						&& w.getTradeOpenBrokerage() !=null && w.getTradeCloseBrokerage() != null && w.getLots() != null) {
 					Double difference = w.getSoldPrice() - w.getBoughtPrice();
 					w.setExpectedPnL(rnd(w.getQuantity() * trade.getPointsByTrade()));
@@ -140,15 +141,15 @@ public class ComputeUtil {
 			        actualPnL.updateAndGet(p -> p + w.getActualPnL());
 			        lots.updateAndGet(l -> l + w.getLots());
 				}
-			});		
+			});
 			trade.setBrokerage(rnd(totalBrokerage.get()));
-			trade.setExpectedPnL(rnd(expectedPnL.get()));		
+			trade.setExpectedPnL(rnd(expectedPnL.get()));
 			trade.setActualPnL(rnd(actualPnL.get() - totalBrokerage.get()));
 			trade.setDiffPercentage(formatPnLPercent(trade.getActualPnL(), trade.getExpectedPnL()));
 			trade.setLots(lots.get());
 		}
 	}
-	
+
 	public static String formatPnLPercent(Double actual, Double expected) {
         if (actual == null || expected == null) return NA;
         if (!Double.isFinite(actual) || !Double.isFinite(expected)) return NA;
@@ -167,7 +168,7 @@ public class ComputeUtil {
         bd = bd.setScale(1, java.math.RoundingMode.HALF_UP);
         return String.format("%.1f%%", bd.doubleValue());
     }
-    
+
     public static Double rnd(double value) {
         java.math.BigDecimal bd = new java.math.BigDecimal(Double.toString(value));
         bd = bd.setScale(1, java.math.RoundingMode.HALF_UP);
@@ -177,10 +178,10 @@ public class ComputeUtil {
         }
         return result;
     }
-    
+
 	public String toStd(String dateTimeStr) {
-		if (dateTimeStr == null || dateTimeStr.trim().isEmpty()) return dateTimeStr;		    
-		    String trimmed = dateTimeStr.trim();		    
+		if (dateTimeStr == null || dateTimeStr.trim().isEmpty()) return dateTimeStr;
+		    String trimmed = dateTimeStr.trim();
 		return INPUT_FORMATS.stream()
 		    .map(formatter -> {
 		       try {
@@ -193,7 +194,7 @@ public class ComputeUtil {
 		       return dateTimeStr;
 		});
 	}
-	
+
 	public void recalculateCapital(Trade closedTrade) {
 		TradeCapital capital = tradeCapital.getTradeCapital();
 		closedTrade.setStartingCapital(capital.getCurrentCapital());
@@ -205,7 +206,7 @@ public class ComputeUtil {
 		capital.setCurrentRiskPerLot((int)(closedTrade.getEndingCapital() / capital.getDefinedRiskPerLot()));
 		tradeCapital.save(capital);
 	}
-	
+
     public String getDtTimeNow() {
     	return LocalDateTime.now(ZoneId.of(ZONE_ID)).format(DateTimeFormatter.ofPattern(DATE_FORMAT));
     }

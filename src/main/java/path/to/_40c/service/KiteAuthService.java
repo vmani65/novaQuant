@@ -2,7 +2,6 @@ package path.to._40c.service;
 
 import java.util.List;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -17,20 +16,24 @@ import path.to._40c.util.TradeUtil;
 @Service
 public class KiteAuthService {
 
-	@Value("${kite.api-key}")
-	private String apiKey;
+	private final String apiKey;
+	private final String apiSecret;
+	private final KiteAuthDetailsRepository kiteRepository;
+	private final KiteGateway kiteGateway;
+	private final TradeUtil util;
 
-	@Value("${kite.api-secret}")
-	private String apiSecret;
-
-	@Autowired
-    private KiteAuthDetailsRepository kiteRepository;
-
-	@Autowired
-	private KiteGateway kiteGateway;
-
-	@Autowired
-    private TradeUtil util;
+	public KiteAuthService(
+			@Value("${kite.api-key}") String apiKey,
+			@Value("${kite.api-secret}") String apiSecret,
+			KiteAuthDetailsRepository kiteRepository,
+			KiteGateway kiteGateway,
+			TradeUtil util) {
+		this.apiKey = apiKey;
+		this.apiSecret = apiSecret;
+		this.kiteRepository = kiteRepository;
+		this.kiteGateway = kiteGateway;
+		this.util = util;
+	}
 
     @Transactional
     public String saveKiteAuth(String requestToken) {

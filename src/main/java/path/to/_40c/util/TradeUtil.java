@@ -14,7 +14,6 @@ import java.util.concurrent.CompletableFuture;
 import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -27,7 +26,6 @@ import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 
 import jakarta.persistence.EntityManager;
-import jakarta.persistence.PersistenceContext;
 import path.to._40c.entity.Trade;
 import path.to._40c.gateway.KiteGateway;
 import path.to._40c.repo.TradeRepository;
@@ -37,14 +35,15 @@ public class TradeUtil {
 
 	private static final Logger log = LoggerFactory.getLogger(TradeUtil.class);
 
-    @Autowired
-    private KiteGateway kiteGateway;
+    private final KiteGateway kiteGateway;
+    private final TradeRepository tradeRepository;
+    private final EntityManager entityManager;
 
-    @Autowired
-    private TradeRepository tradeRepository;
-
-    @PersistenceContext
-    private EntityManager entityManager;
+    public TradeUtil(KiteGateway kiteGateway, TradeRepository tradeRepository, EntityManager entityManager) {
+        this.kiteGateway = kiteGateway;
+        this.tradeRepository = tradeRepository;
+        this.entityManager = entityManager;
+    }
 
     // -----------------------------------------------------------------------
     // Execution price enrichment

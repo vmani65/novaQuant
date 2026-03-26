@@ -8,7 +8,6 @@ import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.BulkOrderResponse;
@@ -26,20 +25,21 @@ import static path.to._40c.util.Constants.*;
 
 @Service
 public class TradeOpeningService {
-	
+
 	private static final Logger log = LoggerFactory.getLogger(TradeOpeningService.class);
-	
-    @Autowired
-    private TradeRepository tradeRepository;         
-    
-    @Autowired
-    private TradeUtil tradeUtil;
-    
-    @Autowired
-    private ComputeUtil computeUtil;    
-    
+
+    private final TradeRepository tradeRepository;
+    private final TradeUtil tradeUtil;
+    private final ComputeUtil computeUtil;
+
+    public TradeOpeningService(TradeRepository tradeRepository, TradeUtil tradeUtil, ComputeUtil computeUtil) {
+        this.tradeRepository = tradeRepository;
+        this.tradeUtil = tradeUtil;
+        this.computeUtil = computeUtil;
+    }
+
     public Trade openTrade(String signalPrice, String type, Trade trade) {
-    	List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>(); 
+    	List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>();
     	trade.setEntrySignalPrice(Double.valueOf(signalPrice));
     	trade.setSignalType(CE.equals(type) ? LONG : SHORT);
     	List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, trade, false);
@@ -60,12 +60,12 @@ public class TradeOpeningService {
     	    return tradeRepository.save(trade);
     	}
     	IntStream.range(0, weeklyPojo.size()).parallel().forEach(i -> {
-    	    WeeklyPojo w = weeklyPojo.get(i); 
-    	    log.debug("WeeklyPojo to place order is: {}", w);    	    
-    	    int totalQty = w.getLots() * LOT_SIZE;    	    
+    	    WeeklyPojo w = weeklyPojo.get(i);
+    	    log.debug("WeeklyPojo to place order is: {}", w);
+    	    int totalQty = w.getLots() * LOT_SIZE;
     	    try {
     	        if (totalQty >= MAX_SIZE_PER_ORDER) {
-    	            List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);    	            
+    	            List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
     	            if (o != null && !o.isEmpty()) {
     	                log.info("Auto-sliced order placed for {} ({} qty, {} slices)", w.getMarginCalcSymbol(), totalQty, o.size());
     	                synchronized (w) {
@@ -75,7 +75,7 @@ public class TradeOpeningService {
     	                log.error("Auto-slice order failed for {} (returned null/empty)", w.getMarginCalcSymbol());
     	            }
     	        } else {
-    	            Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);    	            
+    	            Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
     	            if (o != null && o.orderId != null) {
     	                log.info("Direct order placed for {} ({} qty, orderId={})",w.getMarginCalcSymbol(), totalQty, o.orderId);
     	                synchronized (w) {
@@ -113,5 +113,5 @@ public class TradeOpeningService {
     	var liveTrade = tradeRepository.save(trade);
     	log.info("Live Trade Being Opened: {}", trade);
     	return liveTrade;
-    }    
+    }
 }

@@ -5,7 +5,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.stream.Collectors;
 
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.data.domain.Sort;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
@@ -18,8 +17,11 @@ import path.to._40c.repo.TradeRepository;
 @Controller
 public class TradeLogController {
 
-    @Autowired
-    private TradeRepository tradeRepository;
+    private final TradeRepository tradeRepository;
+
+    public TradeLogController(TradeRepository tradeRepository) {
+        this.tradeRepository = tradeRepository;
+    }
 
     @GetMapping("/tradeLog")
     public String tradeLogPage() {

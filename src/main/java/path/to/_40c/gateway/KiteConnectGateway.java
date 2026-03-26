@@ -12,7 +12,6 @@ import java.util.Optional;
 import org.json.JSONException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -43,22 +42,23 @@ public class KiteConnectGateway implements KiteGateway {
 
     private static final Logger log = LoggerFactory.getLogger(KiteConnectGateway.class);
 
-    @Value("${kite.api-key}")
-    private String apiKey;
-
-    @Value("${kite.api-secret}")
-    private String apiSecret;
-
-    @Value("${kite.user-id}")
-    private String userId;
-
-    @Autowired
-    private KiteAuthDetailsRepository repository;
+    private final String apiKey;
+    private final String userId;
+    private final KiteAuthDetailsRepository repository;
 
     // Session cache — avoids a DB hit on every order/LTP/margin call.
     // Keyed by today's date; invalidated when new auth is saved.
     private volatile KiteConnect cachedKiteConnect = null;
     private volatile LocalDate cacheDate = null;
+
+    public KiteConnectGateway(
+            @Value("${kite.api-key}") String apiKey,
+            @Value("${kite.user-id}") String userId,
+            KiteAuthDetailsRepository repository) {
+        this.apiKey = apiKey;
+        this.userId = userId;
+        this.repository = repository;
+    }
 
     @Override
     public Map<String, LTPQuote> getLTP(String[] instruments) {

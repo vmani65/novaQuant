@@ -262,7 +262,8 @@
             event.preventDefault();
             const tw = document.getElementById('thisWeekSymbolInput').value.trim();
             const ro = document.getElementById('rolloverSymbolInput').value.trim();
-            postForm('/symbol/save', { thisWeekSymbol: tw, rolloverSymbol: ro }, 'symbolsMsg',
+            const rd = document.getElementById('rolloverDayInput').value;
+            postForm('/symbol/save', { thisWeekSymbol: tw, rolloverSymbol: ro, rolloverDay: rd }, 'symbolsMsg',
                 () => setSymbolsEditable(false));
         }
 
@@ -304,17 +305,20 @@
         function setSymbolsEditable(editable) {
             const tw = document.getElementById('thisWeekSymbolInput');
             const ro = document.getElementById('rolloverSymbolInput');
+            const rd = document.getElementById('rolloverDayInput');
             const save = document.getElementById('saveSymbolsBtn');
             const edit = document.getElementById('editSymbolsBtn');
             const cancel = document.getElementById('cancelSymbolsBtn');
             if (editable) {
-                tw.removeAttribute('disabled'); ro.removeAttribute('disabled'); save.removeAttribute('disabled');
-                tw.classList.remove('readonly'); ro.classList.remove('readonly');
+                tw.removeAttribute('disabled'); ro.removeAttribute('disabled'); rd.removeAttribute('disabled');
+                save.removeAttribute('disabled');
+                tw.classList.remove('readonly'); ro.classList.remove('readonly'); rd.classList.remove('readonly');
                 save.classList.remove('btn-secondary');
                 edit.style.display = 'none'; cancel.style.display = 'inline-block'; tw.focus();
             } else {
-                tw.setAttribute('disabled','disabled'); ro.setAttribute('disabled','disabled'); save.setAttribute('disabled','disabled');
-                tw.classList.add('readonly'); ro.classList.add('readonly');
+                tw.setAttribute('disabled','disabled'); ro.setAttribute('disabled','disabled'); rd.setAttribute('disabled','disabled');
+                save.setAttribute('disabled','disabled');
+                tw.classList.add('readonly'); ro.classList.add('readonly'); rd.classList.add('readonly');
                 save.classList.add('btn-secondary');
                 edit.style.display = 'inline-block'; cancel.style.display = 'none';
             }
@@ -877,6 +881,22 @@
                                    th:value="${symbols?.rolloverSymbol}"
                                    th:disabled="${!noSymbols}"
                                    class="readonly px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-24 disabled:bg-gray-50 disabled:text-gray-400" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-orange-600 uppercase tracking-wide shrink-0">Rollover Day</label>
+                            <input type="date" id="rolloverDayInput" name="rolloverDay"
+                                   th:value="${symbols?.rolloverDay}"
+                                   th:disabled="${!noSymbols}"
+                                   onkeydown="return false;"
+                                   class="readonly px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-36 disabled:bg-gray-50 disabled:text-gray-400 cursor-pointer" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide shrink-0">Rollover Complete?</label>
+                            <input type="text" readonly
+                                   th:value="${symbols?.rolloverComplete == true ? 'YES' : 'NO'}"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-center w-14
+                                          bg-gray-50 cursor-not-allowed
+                                          [[${symbols?.rolloverComplete == true ? 'text-green-600 font-semibold' : 'text-gray-400'}]]" />
                         </div>
                         <div class="flex gap-2 items-center">
                             <button type="button" id="editSymbolsBtn" onclick="enableSymbolEdit()"

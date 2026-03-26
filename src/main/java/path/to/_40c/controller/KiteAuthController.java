@@ -8,7 +8,6 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import path.to._40c.entity.KiteAuthDetails;
 import path.to._40c.entity.PositionSizeMatrix;
 import path.to._40c.repo.ContractPriorityRepository;
@@ -32,27 +31,28 @@ public class KiteAuthController {
 
     private static final Logger log = LoggerFactory.getLogger(KiteAuthController.class);
 
-	@Autowired
-    private KiteAuthDetailsRepository repository;
-    
-    @Autowired
-    private KiteAuthService kiteAuthService;
+    private final KiteAuthDetailsRepository repository;
+    private final KiteAuthService kiteAuthService;
+    private final SymbolService symbolService;
+    private final ContractPriorityRepository matrixRepository;
+    private final ContractPriorityCache contractCache;
 
-    @Autowired
-    private SymbolService symbolService;
-    
-    @Autowired
-    ContractPriorityRepository matrixRepository;
-    
-    @Autowired
-    private ContractPriorityCache contractCache;
-    
+    public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
+            SymbolService symbolService, ContractPriorityRepository matrixRepository,
+            ContractPriorityCache contractCache) {
+        this.repository = repository;
+        this.kiteAuthService = kiteAuthService;
+        this.symbolService = symbolService;
+        this.matrixRepository = matrixRepository;
+        this.contractCache = contractCache;
+    }
+
     @PostMapping
     public ResponseEntity<KiteAuthDetails> saveAuth(@RequestBody KiteAuthDetails authDetails) {
         KiteAuthDetails saved = repository.save(authDetails);
         return ResponseEntity.ok(saved);
     }
-   
+
     @PostMapping("/kite-auth/save")
     @Transactional
     @ResponseBody
@@ -68,26 +68,29 @@ public class KiteAuthController {
             return ResponseEntity.ok(Map.of("success", true, "message", "Auth details saved successfully."));
         return ResponseEntity.ok(Map.of("success", false, "message", status));
     }
-    
+
     @GetMapping("/kite-auth/get-login-url")
     @ResponseBody
     public String getLoginUrl() {
         return kiteAuthService.getLoginUrl();
     }
-    
+
     @PostMapping("/symbol/save")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> save(@RequestParam("thisWeekSymbol") String thisWeekSymbol, @RequestParam("rolloverSymbol") String rolloverSymbol) {
-        symbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim());
+    public ResponseEntity<Map<String, Object>> save(
+            @RequestParam String thisWeekSymbol,
+            @RequestParam String rolloverSymbol,
+            @RequestParam(required = false) String rolloverDay) {
+        symbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
         return ResponseEntity.ok(Map.of("success", true, "message", "Symbols saved."));
     }
-    
+
     @GetMapping(value = "/getNiftyInstruments", produces = MediaType.APPLICATION_JSON_VALUE)
     @ResponseBody
-    public List<String> getNiftyInstruments() {    	
+    public List<String> getNiftyInstruments() {
         return kiteAuthService.getNiftyInstruments();
     }
-    
+
     @GetMapping("/signalHome")
     public String showForm(Model model) {
     	model.addAttribute("symbols", symbolService.get().orElse(null));

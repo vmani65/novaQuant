@@ -2,7 +2,6 @@ package path.to._40c.service;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
@@ -16,14 +15,15 @@ public class PostTradeService {
 
     private static final Logger log = LoggerFactory.getLogger(PostTradeService.class);
 
-    @Autowired
-    private TradeUtil tradeUtil;
+    private final TradeUtil tradeUtil;
+    private final ComputeUtil computeUtil;
+    private final TradeRepository tradeRepository;
 
-    @Autowired
-    private ComputeUtil computeUtil;
-
-    @Autowired
-    private TradeRepository tradeRepository;
+    public PostTradeService(TradeUtil tradeUtil, ComputeUtil computeUtil, TradeRepository tradeRepository) {
+        this.tradeUtil = tradeUtil;
+        this.computeUtil = computeUtil;
+        this.tradeRepository = tradeRepository;
+    }
 
     /**
      * Runs asynchronously after a trade is opened.

@@ -2,6 +2,8 @@ package path.to._40c.service;
 
 import java.util.Optional;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
@@ -12,6 +14,8 @@ import path.to._40c.repo.SymbolConfigRepository;
 
 @Service
 public class SymbolService {
+
+    private static final Logger log = LoggerFactory.getLogger(SymbolService.class);
     private final SymbolConfigRepository repo;
     private final WeeklySymbolCache cache;
 
@@ -20,11 +24,33 @@ public class SymbolService {
     }
 
     @Transactional
-    public void saveSymbols(String thisWeek, String rollover) {
+    public void saveSymbols(String thisWeek, String rollover, String rolloverDay) {
         repo.deleteAllInBatch();
         SymbolConfig cfg = new SymbolConfig(thisWeek, rollover);
+        if (rolloverDay != null && !rolloverDay.isBlank()) {
+            cfg.setRolloverDay(java.time.LocalDate.parse(rolloverDay));
+        }
         repo.save(cfg);
         cache.set(cfg);
+    }
+
+    @Transactional
+    public void promoteRolloverSymbol() {
+        repo.findById(1L).ifPresent(cfg -> {
+            log.info("Promoting rollover symbol to this week | {} -> {}", cfg.getRolloverSymbol(), cfg.getThisWeekSymbol());
+            cfg.setThisWeekSymbol(cfg.getRolloverSymbol());
+            SymbolConfig saved = repo.save(cfg);
+            cache.set(saved);
+        });
+    }
+
+    @Transactional
+    public void markRolloverComplete() {
+        repo.findById(1L).ifPresent(cfg -> {
+            cfg.setRolloverComplete(true);
+            SymbolConfig saved = repo.save(cfg);
+            cache.set(saved);
+        });
     }
 
     public Optional<SymbolConfig> get() {
