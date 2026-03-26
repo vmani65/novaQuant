@@ -21,6 +21,16 @@ java -jar target/novaquant-v3.jar
 
 Open [http://localhost:8080/signalHome](http://localhost:8080/signalHome)
 
+### Mock mode (no broker connection)
+
+Run with the `mock` profile to test without Kite Connect credentials:
+
+```bash
+java -jar target/novaquant-v3.jar --spring.profiles.active=mock
+```
+
+Mock mode swaps `KiteConnectGateway` for `MockKiteGateway` (returns synthetic LTP/order data). All service logic — including rollover promotion, capital calculations, and post-trade PnL — runs normally. New DB columns (`rollover_day`, `rollover_complete`) are created automatically via `ddl-auto=update`; no schema migration needed.
+
 ## Configuration
 
 Update `src/main/resources/application.properties`:
@@ -39,11 +49,40 @@ API keys and user credentials live in `src/main/java/path/to/_40c/util/Constants
 TradingView webhook → SignalController → SignalService
   ├── handleTradeOpen  → TradeOpeningService.openTrade()
   ├── handleTradeClose → TradeClosingService.closeTrade()
-  ├── handleFlip       → closeTrade() + openTrade()
+  │                      └── checkAndPromoteRolloverSymbol() (if rollover day)
+  ├── handleFlip       → closeTrade()
+  │                      └── checkAndPromoteRolloverSymbol() (if rollover day)
+  │                      └── openTrade()          ← always sees updated symbol
   └── handleRollOver   → TradeRollOverService.rollOver()
 ```
 
 Order placement runs in parallel (`IntStream.parallel`) per leg. Large-lot orders (> 1755 qty) are auto-sliced by Kite.
+
+### Rollover flow
+
+Weekly symbol rollover is a two-step process:
+
+1. **AFL trigger** — `afl/rollOverTrigger.afl` runs on a Nifty-i 1-min chart. At exactly 14:47 IST it fires once per day (guarded by `StaticVarGet/Set` keyed on `DateNum()`), calling:
+
+   ```
+   GET /api/rollover-trigger?currentPrice=<close>
+   ```
+
+2. **Server-side** — `RollOverTriggerController` applies three guards before acting:
+   - No rollover day configured → skip
+   - Today (IST) ≠ configured rollover day → skip
+   - `rolloverComplete = true` → skip (already done)
+
+   If all guards pass: calls `SignalService.handleRollOver(price)` then `SymbolService.markRolloverComplete()`.
+
+3. **Symbol promotion on trade close/flip** — `SignalService.checkAndPromoteRolloverSymbol()` is called synchronously after every trade close. On rollover day, if `rolloverComplete` is false, it copies `rolloverSymbol → thisWeekSymbol` before the next open order is placed. This guarantees the opening service always uses the promoted symbol.
+
+### Rollover UI (signalHome — Save Symbols section)
+
+| Field | Type | Behaviour |
+|---|---|---|
+| Rollover Day | `<input type="date">` | Calendar-only picker (keyboard blocked). Saved to `rollover_day` column. Saving new symbols resets `rolloverComplete` to false. |
+| Rollover Complete? | Read-only text | Displays YES (green) / NO (grey) from `rollover_complete` column. Updated automatically by `markRolloverComplete()`. |
 
 ### Post-trade calculations (async — off the critical path)
 
@@ -71,28 +110,44 @@ Configured via the Position Size Matrix UI (Trade Sizing tab). Supports up to 4 
 
 LONG: CE leg buys at ATM − offset (ITM). SHORT: PE leg buys at ATM + offset (ITM).
 
+### Dependency injection
+
+All Spring beans use **constructor injection** (`private final` fields, single constructor). `@Autowired` field injection is not used. `@Value` properties are injected via constructor parameters.
+
 ## Key Files
 
 ```
+afl/
+  rollOverTrigger.afl           — AmiBroker AFL: fires GET /api/rollover-trigger at 14:47 IST
+
 src/main/java/path/to/_40c/
   controller/
-    SignalController.java       — webhook receiver (POST /signal)
-    KiteAuthController.java     — auth + position size UI
+    SignalController.java           — webhook receiver (POST /signal)
+    KiteAuthController.java         — auth + position size + symbol UI
+    RollOverTriggerController.java  — rollover AFL endpoint (GET /api/rollover-trigger)
+    EquityCurveController.java      — equity curve + capital API
   service/
-    SignalService.java          — signal routing
-    TradeOpeningService.java    — order placement (open)
-    TradeClosingService.java    — order placement (close + large-move stub)
-    TradeRollOverService.java   — weekly rollover
-    PostTradeService.java       — async post-trade calculations
-    KiteAuthService.java        — Kite session management
+    SignalService.java              — signal routing + rollover promotion logic
+    TradeOpeningService.java        — order placement (open)
+    TradeClosingService.java        — order placement (close + large-move stub)
+    TradeRollOverService.java       — weekly rollover
+    PostTradeService.java           — async post-trade calculations
+    KiteAuthService.java            — Kite session management
+    SymbolService.java              — symbol config, cache, rollover promotion
+    TradeCapitalService.java        — capital CRUD + lot-size calculations
+    EquityCurveService.java         — equity curve data aggregation
   util/
-    TradeUtil.java              — KiteConnect wrapper (LTP, orders, margin, cache)
-    ComputeUtil.java            — PnL, outcome, capital calculations
-    Constants.java              — app-wide constants + Kite credentials
-  AsyncConfig.java              — @EnableAsync + postTradeExecutor bean
+    TradeUtil.java                  — KiteConnect wrapper (LTP, orders, margin, cache)
+    ComputeUtil.java                — PnL, outcome, capital calculations
+    Constants.java                  — app-wide constants + Kite credentials
+  entity/
+    SymbolConfig.java               — symbol table (thisWeekSymbol, rolloverSymbol,
+                                      rolloverDay, rolloverComplete)
+  AsyncConfig.java                  — @EnableAsync + postTradeExecutor bean
 
 src/main/resources/
   templates/signalHome.html     — main UI (auth, symbols, position size, analytics)
   application.properties
+  application-mock.properties   — mock profile overrides
   logback-spring.xml            — async appender, log rotation
 ```
