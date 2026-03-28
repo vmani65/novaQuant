@@ -8,11 +8,20 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import static path.to._40c.util.Constants.BUY;
+import static path.to._40c.util.Constants.CE;
+import static path.to._40c.util.Constants.LONG;
+import static path.to._40c.util.Constants.PE;
+import static path.to._40c.util.Constants.SELL;
+import static path.to._40c.util.Constants.SHORT;
+import static path.to._40c.util.Constants.ZONE_ID;
+
 import path.to._40c.entity.KiteAuthDetails;
 import path.to._40c.entity.PositionSizeMatrix;
 import path.to._40c.repo.ContractPriorityRepository;
 import path.to._40c.repo.KiteAuthDetailsRepository;
 
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
@@ -57,16 +66,16 @@ public class KiteAuthController {
     @Transactional
     @ResponseBody
     public ResponseEntity<Map<String, Object>> saveKiteAuth(@RequestParam String requestToken) {
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
         Optional<KiteAuthDetails> existing = repository.findByAuthDate(today);
-        contractCache.getLongPriorities().forEach(l -> log.info(l.toString()));
-        contractCache.getShortPriorities().forEach(s -> log.info(s.toString()));
         if (existing.isPresent())
-            return ResponseEntity.ok(Map.of("success", false, "message", "Auth details already saved for today."));
+            return ResponseEntity.status(HttpStatus.CONFLICT)
+                    .body(Map.of("success", false, "message", "Auth details already saved for today."));
         String status = kiteAuthService.saveKiteAuth(requestToken);
         if ("SUCCESS".equals(status))
             return ResponseEntity.ok(Map.of("success", true, "message", "Auth details saved successfully."));
-        return ResponseEntity.ok(Map.of("success", false, "message", status));
+        return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                .body(Map.of("success", false, "message", status));
     }
 
     @GetMapping("/kite-auth/get-login-url")
@@ -95,10 +104,10 @@ public class KiteAuthController {
     public String showForm(Model model) {
     	model.addAttribute("symbols", symbolService.get().orElse(null));
         model.addAttribute("noSymbols", symbolService.isMissing());
-        PositionSizeMatrix longBuy = matrixRepository.findByPositionSide("LONG").stream()
-                .filter(r -> "BUY".equals(r.getActionType())).findFirst().orElse(null);
-        PositionSizeMatrix shortBuy = matrixRepository.findByPositionSide("SHORT").stream()
-                .filter(r -> "BUY".equals(r.getActionType())).findFirst().orElse(null);
+        PositionSizeMatrix longBuy = matrixRepository.findByPositionSide(LONG).stream()
+                .filter(r -> BUY.equals(r.getActionType())).findFirst().orElse(null);
+        PositionSizeMatrix shortBuy = matrixRepository.findByPositionSide(SHORT).stream()
+                .filter(r -> BUY.equals(r.getActionType())).findFirst().orElse(null);
         model.addAttribute("longAtm",     longBuy  != null && longBuy.getAtm()     != null ? longBuy.getAtm()     : 0);
         model.addAttribute("longOffset1", longBuy  != null && longBuy.getOffset1() != null ? longBuy.getOffset1() : 0);
         model.addAttribute("longOffset2", longBuy  != null && longBuy.getOffset2() != null ? longBuy.getOffset2() : 0);
@@ -121,10 +130,10 @@ public class KiteAuthController {
                  longAtm, longOffset1, longOffset2, longOffset3, shortAtm, shortOffset1, shortOffset2, shortOffset3);
         matrixRepository.deleteAll();
         matrixRepository.saveAll(List.of(
-            new PositionSizeMatrix("LONG",  "CE", "BUY",  longAtm,  longOffset1,  longOffset2,  longOffset3),
-            new PositionSizeMatrix("LONG",  "PE", "SELL", longAtm,  longOffset1,  longOffset2,  longOffset3),
-            new PositionSizeMatrix("SHORT", "PE", "BUY",  shortAtm, shortOffset1, shortOffset2, shortOffset3),
-            new PositionSizeMatrix("SHORT", "CE", "SELL", shortAtm, shortOffset1, shortOffset2, shortOffset3)
+            new PositionSizeMatrix(LONG,  CE, BUY,  longAtm,  longOffset1,  longOffset2,  longOffset3),
+            new PositionSizeMatrix(LONG,  PE, SELL, longAtm,  longOffset1,  longOffset2,  longOffset3),
+            new PositionSizeMatrix(SHORT, PE, BUY,  shortAtm, shortOffset1, shortOffset2, shortOffset3),
+            new PositionSizeMatrix(SHORT, CE, SELL, shortAtm, shortOffset1, shortOffset2, shortOffset3)
         ));
         contractCache.refreshCache();
         log.info("Matrix saved and cache refreshed.");

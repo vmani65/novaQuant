@@ -11,6 +11,9 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
+import static path.to._40c.util.Constants.BUY;
+import static path.to._40c.util.Constants.CE;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.annotation.Profile;
@@ -92,7 +95,7 @@ public class MockKiteGateway implements KiteGateway {
             return Math.round((80 + random.nextDouble() * 80) * 100.0) / 100.0;
         }
         double strike = Double.parseDouble(m.group(1));
-        boolean isCE = "CE".equals(m.group(2));
+        boolean isCE = CE.equals(m.group(2));
 
         double intrinsic = isCE ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
         double timeValue = 60 + random.nextDouble() * 70;  // 60–130
@@ -141,7 +144,7 @@ public class MockKiteGateway implements KiteGateway {
     private double applySlippage(Double basePrice, String transactionType) {
         if (basePrice == null) return 0.0;
         double slippagePct = 0.001 + random.nextDouble() * 0.003;  // 0.1% – 0.4%
-        double multiplier = "BUY".equals(transactionType) ? (1 + slippagePct) : (1 - slippagePct);
+        double multiplier = BUY.equals(transactionType) ? (1 + slippagePct) : (1 - slippagePct);
         return Math.round(basePrice * multiplier * 100.0) / 100.0;
     }
 

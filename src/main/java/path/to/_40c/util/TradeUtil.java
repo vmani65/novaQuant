@@ -3,6 +3,8 @@ package path.to._40c.util;
 import static path.to._40c.util.Constants.BUY;
 import static path.to._40c.util.Constants.CLOSED;
 import static path.to._40c.util.Constants.LIVE;
+import static path.to._40c.util.Constants.NFO;
+import static path.to._40c.util.Constants.NIFTY;
 import static path.to._40c.util.Constants.SELL;
 
 import java.util.ArrayList;
@@ -253,9 +255,9 @@ public class TradeUtil {
     }
 
     public List<String> getNiftyInstruments() {
-        return kiteGateway.getInstruments("NFO").stream()
+        return kiteGateway.getInstruments(NFO).stream()
             .map(i -> i.tradingsymbol)
-            .filter(symbol -> symbol.contains("NIFTY"))
+            .filter(symbol -> symbol.contains(NIFTY))
             .filter(symbol -> !symbol.contains("MIDCPNIFTY"))
             .filter(symbol -> !symbol.contains("BANKNIFTY"))
             .filter(symbol -> !symbol.contains("NIFTYNXT"))

@@ -1,5 +1,9 @@
 package path.to._40c.repo;
 
+import static path.to._40c.util.Constants.ATM;
+import static path.to._40c.util.Constants.LONG;
+import static path.to._40c.util.Constants.SHORT;
+
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,18 +20,18 @@ public interface ContractPriorityRepository extends JpaRepository<PositionSizeMa
     List<PositionSizeMatrix> findByPositionSide(@Param("side") String side);
     
     default List<ContractPriority> findLongContractQty() {
-        return buildContractPriorities(findByPositionSide("LONG"));
+        return buildContractPriorities(findByPositionSide(LONG));
     }
-    
+
     default List<ContractPriority> findShortContractQty() {
-        return buildContractPriorities(findByPositionSide("SHORT"));
+        return buildContractPriorities(findByPositionSide(SHORT));
     }
-    
+
     private static List<ContractPriority> buildContractPriorities(List<PositionSizeMatrix> rows) {
         List<ContractPriority> out = new ArrayList<>();
         for (PositionSizeMatrix r : rows) {
-            boolean isLong = "LONG".equals(r.getPositionSide());
-            addIfPositive(out, r, r.getAtm(),     "ATM");
+            boolean isLong = LONG.equals(r.getPositionSide());
+            addIfPositive(out, r, r.getAtm(),     ATM);
             addIfPositive(out, r, r.getOffset1(), isLong ? "ATM-50"  : "ATM+50");
             addIfPositive(out, r, r.getOffset2(), isLong ? "ATM-100" : "ATM+100");
             addIfPositive(out, r, r.getOffset3(), isLong ? "ATM-150" : "ATM+150");

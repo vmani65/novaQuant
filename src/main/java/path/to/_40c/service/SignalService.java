@@ -1,6 +1,7 @@
 package path.to._40c.service;
 
 import static path.to._40c.util.Constants.LIVE;
+import static path.to._40c.util.Constants.ZONE_ID;
 
 import java.time.Duration;
 import java.time.Instant;
@@ -78,7 +79,7 @@ public class SignalService {
 	}
 
 	private void checkAndPromoteRolloverSymbol() {
-	   LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+	   LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
 	   SymbolConfig cfg = symbolService.current();
 	   if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
 	   if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {

@@ -18,6 +18,7 @@ import java.time.ZoneId;
 import java.time.Duration;
 
 import static path.to._40c.util.Constants.IST_FORMATTER;
+import static path.to._40c.util.Constants.ZONE_ID;
 
 @RestController
 @RequestMapping("/api")
@@ -162,7 +163,7 @@ public class SignalController {
                 int count = duplicateCount.merge(cacheKey, 1, Integer::sum);
                 Instant lastLogged = lastLogDuplicate.get(cacheKey);
                 if (lastLogged == null || Duration.between(lastLogged, now).compareTo(LOG_THROTTLE) > 0) {
-                    log.warn("DUPLICATE ignored | key={} | firstSeenAt={} | duplicateCount={}",cacheKey, firstSeen.atZone(ZoneId.of("Asia/Kolkata")), count);
+                    log.warn("DUPLICATE ignored | key={} | firstSeenAt={} | duplicateCount={}",cacheKey, firstSeen.atZone(ZoneId.of(ZONE_ID)), count);
                     lastLogDuplicate.put(cacheKey, now);
                 }                
                 return true;
@@ -170,7 +171,7 @@ public class SignalController {
             signalCache.put(cacheKey, now);
             duplicateCount.remove(cacheKey);
             lastLogDuplicate.remove(cacheKey);
-            log.info("TTL EXPIRED -> accepting and refreshing key={} | previousFirstSeen={}", cacheKey, firstSeen.atZone(ZoneId.of("Asia/Kolkata")));
+            log.info("TTL EXPIRED -> accepting and refreshing key={} | previousFirstSeen={}", cacheKey, firstSeen.atZone(ZoneId.of(ZONE_ID)));
             return false;
         }
         signalCache.put(cacheKey, now);

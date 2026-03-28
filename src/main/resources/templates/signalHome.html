@@ -232,14 +232,14 @@
         // ==================== SHARED AJAX FORM HELPER ====================
         function postForm(url, params, msgId, onSuccess) {
             fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) })
-                .then(r => r.json())
-                .then(result => {
+                .then(r => r.json().then(result => {
                     const el = document.getElementById(msgId);
+                    const isSuccess = r.ok && result.success;
                     el.textContent = result.message;
-                    el.className = result.success ? 'message success' : 'message error';
+                    el.className = isSuccess ? 'message success' : 'message error';
                     el.style.display = 'block';
-                    if (result.success && onSuccess) onSuccess();
-                })
+                    if (isSuccess && onSuccess) onSuccess();
+                }))
                 .catch(err => {
                     const el = document.getElementById(msgId);
                     el.textContent = 'Error: ' + err.message;

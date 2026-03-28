@@ -7,6 +7,8 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
+import static path.to._40c.util.Constants.ZONE_ID;
+
 import path.to._40c.entity.SymbolConfig;
 import path.to._40c.service.SignalService;
 import path.to._40c.service.SymbolService;
@@ -47,7 +49,7 @@ public class RollOverTriggerController {
             return;
         }
 
-        LocalDate today = LocalDate.now(ZoneId.of("Asia/Kolkata"));
+        LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
 
         if (!today.equals(cfg.getRolloverDay())) {
             log.info("RollOver skipped — today={} does not match rollover day={}", today, cfg.getRolloverDay());
