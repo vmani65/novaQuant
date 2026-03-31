@@ -1,0 +1,39 @@
+// =============================================================================
+// rollOverHelper.afl
+// Chart  : Nifty-I  |  Timeframe: 1 Minute
+// Purpose: Fire a rollover trigger to NovaQuant at exactly 14:47 IST daily.
+//          Passes the current Nifty-I close price. Triggers only once per day.
+// Endpoint: GET http://localhost:8080/api/rollover-trigger?currentPrice=<price>
+// =============================================================================
+
+_SECTION_BEGIN("RollOver Helper");
+
+SetBarsRequired(sbrAll, 0);
+
+STATIC_VAR_KEY = "RollOverHelper_LastFiredDate";
+
+lastHour  = LastValue(Hour());
+lastMin   = LastValue(Minute());
+lastDate  = LastValue(DateNum());
+lastClose = LastValue(Close);
+
+isTriggerTime     = (lastHour == 14) AND (lastMin == 47);
+alreadyFiredToday = (StaticVarGet(STATIC_VAR_KEY) == lastDate);
+
+if (isTriggerTime AND NOT alreadyFiredToday) {
+
+    priceStr   = NumToStr(lastClose, 1.2);
+    requestURL = "http://localhost:8080/api/rollover-trigger?currentPrice=" + priceStr;
+
+    StaticVarSet(STATIC_VAR_KEY, lastDate);
+
+    ih = InternetOpenURL(requestURL);
+    if (ih) InternetClose(ih);
+}
+
+// ---------------------------------------------------------------------------
+// Chart display
+// ---------------------------------------------------------------------------
+Plot(Close, "NIFTY-I", colorDefault, styleCandle);
+
+_SECTION_END();

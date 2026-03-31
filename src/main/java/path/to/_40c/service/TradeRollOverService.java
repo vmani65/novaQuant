@@ -67,10 +67,8 @@ public class TradeRollOverService {
                         List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
                         if (o != null && !o.isEmpty()) {
                             log.info("Auto-sliced order placed for {} ({} qty, {} slices)", toClose.getMarginCalcSymbol(), toClose.getQuantity(), o.size());
-                            synchronized (toClose) {
-                                toClose.setTradeCloseOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-                                toClose.setTradeStatus(CLOSED);
-                            }
+                            toClose.setTradeCloseOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
+                            toClose.setTradeStatus(CLOSED);
                         } else {
                             log.error("Rollover close failed for {} - returned null/empty", toClose.getMarginCalcSymbol());
                             allClosesSucceeded.set(false);
@@ -79,10 +77,8 @@ public class TradeRollOverService {
                         Order o = tradeUtil.placeOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
                         if (o != null && o.orderId != null) {
                             log.info("Direct order placed for {} ({} qty, orderId={})", toClose.getMarginCalcSymbol(), toClose.getQuantity(), o.orderId);
-                            synchronized (toClose) {
-                                toClose.setTradeCloseOrderId(o.orderId);
-                                toClose.setTradeStatus(CLOSED);
-                            }
+                            toClose.setTradeCloseOrderId(o.orderId);
+                            toClose.setTradeStatus(CLOSED);
                         } else {
                             log.error("Rollover close failed for {} ({} qty) - returned null", toClose.getMarginCalcSymbol(), toClose.getQuantity());
                             allClosesSucceeded.set(false);
@@ -118,9 +114,7 @@ public class TradeRollOverService {
                         List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder( w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(), totalQty);
                         if (o != null && !o.isEmpty()) {
                             log.info("Auto-sliced order placed for {} ({} qty, {} slices)", w.getMarginCalcSymbol(), totalQty, o.size());
-                            synchronized (w) {
-                                w.setTradeOpenOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-                            }
+                            w.setTradeOpenOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
                         } else {
                             log.error("Rollover open failed for {} - returned null/empty", w.getMarginCalcSymbol());
                         }
@@ -128,9 +122,7 @@ public class TradeRollOverService {
                         Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(),totalQty);
                         if (o != null && o.orderId != null) {
                             log.info("Direct order placed for {} ({} qty, orderId={})", w.getMarginCalcSymbol(), totalQty, o.orderId);
-                            synchronized (w) {
-                                w.setTradeOpenOrderId(o.orderId);
-                            }
+                            w.setTradeOpenOrderId(o.orderId);
                         } else {
                             log.error("Rollover open failed for {} ({} qty) - returned null", w.getMarginCalcSymbol(), totalQty);
                         }
