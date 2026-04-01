@@ -6,6 +6,7 @@ import org.springframework.stereotype.Service;
 
 import path.to._40c.entity.Trade;
 import path.to._40c.entity.TradeCapital;
+import path.to._40c.entity.WeeklyOrderBook;
 import path.to._40c.pojo.TradeLegConfig;
 import path.to._40c.pojo.WeeklyPojo;
 import path.to._40c.repo.TradeCapitalRepository;
@@ -30,7 +31,7 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
-import java.util.concurrent.atomic.AtomicReference;
+import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
@@ -124,30 +125,47 @@ public class ComputeUtil {
 	}
 
 	public void calcPnL(Trade trade) {
-		if(trade != null) {
-			AtomicReference<Double> totalBrokerage = new AtomicReference<>(0.0);
-			AtomicReference<Double> expectedPnL = new AtomicReference<>(0.0);
-			AtomicReference<Double> actualPnL = new AtomicReference<>(0.0);
-			AtomicReference<Integer> lots = new AtomicReference<>(0);
-			trade.getWeeklyOrderBook().forEach(w -> {
-				if(w.getSoldPrice() != null && w.getBoughtPrice() != null && trade.getPointsByTrade() != null && w.getQuantity() != null
-						&& w.getTradeOpenBrokerage() !=null && w.getTradeCloseBrokerage() != null && w.getLots() != null) {
-					Double difference = w.getSoldPrice() - w.getBoughtPrice();
-					w.setExpectedPnL(rnd(w.getQuantity() * trade.getPointsByTrade()));
-					w.setActualPnL(rnd(w.getQuantity() * difference));
-					w.setDiffPercentage(formatPnLPercent(w.getActualPnL(), w.getExpectedPnL()));
-					totalBrokerage.updateAndGet(b -> b + w.getTradeOpenBrokerage() + w.getTradeCloseBrokerage());
-			        expectedPnL.updateAndGet(e -> e + w.getExpectedPnL());
-			        actualPnL.updateAndGet(p -> p + w.getActualPnL());
-			        lots.updateAndGet(l -> l + w.getLots());
-				}
-			});
-			trade.setBrokerage(rnd(totalBrokerage.get()));
-			trade.setExpectedPnL(rnd(expectedPnL.get()));
-			trade.setActualPnL(rnd(actualPnL.get() - totalBrokerage.get()));
-			trade.setDiffPercentage(formatPnLPercent(trade.getActualPnL(), trade.getExpectedPnL()));
-			trade.setLots(lots.get());
+		if (trade == null || trade.getPointsByTrade() == null) return;
+
+		// Group legs by moneyness — each group is one synthetic pair (CE + PE at same strike)
+		Map<String, List<WeeklyOrderBook>> pairs = trade.getWeeklyOrderBook().stream()
+				.collect(Collectors.groupingBy(WeeklyOrderBook::getMoneyness));
+
+		double totalBrokerage  = 0.0;
+		double totalExpectedPnL = 0.0;
+		double totalActualPnL  = 0.0;
+		int    totalLots       = 0;
+
+		for (List<WeeklyOrderBook> pairLegs : pairs.values()) {
+			boolean allPresent = pairLegs.stream().allMatch(w ->
+					w.getSoldPrice() != null && w.getBoughtPrice() != null &&
+					w.getQuantity()  != null && w.getLots()     != null &&
+					w.getTradeOpenBrokerage()  != null && w.getTradeCloseBrokerage() != null);
+			if (!allPresent) continue;
+
+			// Per-leg actual PnL is real and meaningful — set it on each leg
+			pairLegs.forEach(w -> w.setActualPnL(rnd(w.getQuantity() * (w.getSoldPrice() - w.getBoughtPrice()))));
+
+			// Pair-level aggregations
+			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyOrderBook::getActualPnL).sum();
+			double pairBrokerage  = pairLegs.stream()
+					.mapToDouble(w -> w.getTradeOpenBrokerage() + w.getTradeCloseBrokerage()).sum();
+			// Expected PnL belongs to the pair, not individual legs.
+			// Synthetic delta ≈ 1, so expected = 1 leg's quantity × pointsByTrade.
+			// CE qty == PE qty by design; use the first leg as representative.
+			double pairExpectedPnL = rnd(pairLegs.get(0).getQuantity() * trade.getPointsByTrade());
+
+			totalActualPnL  += pairActualPnL;
+			totalBrokerage  += pairBrokerage;
+			totalExpectedPnL += pairExpectedPnL;
+			totalLots       += pairLegs.get(0).getLots(); // count once per pair, not per leg
 		}
+
+		trade.setBrokerage(rnd(totalBrokerage));
+		trade.setExpectedPnL(rnd(totalExpectedPnL));
+		trade.setActualPnL(rnd(totalActualPnL - totalBrokerage));
+		trade.setDiffPercentage(formatPnLPercent(trade.getActualPnL(), trade.getExpectedPnL()));
+		trade.setLots(totalLots);
 	}
 
 	public static String formatPnLPercent(Double actual, Double expected) {

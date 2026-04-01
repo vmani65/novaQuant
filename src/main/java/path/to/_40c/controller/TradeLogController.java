@@ -51,6 +51,7 @@ public class TradeLogController {
         m.put("actualPnL", t.getActualPnL());
         m.put("expectedPnL", t.getExpectedPnL());
         m.put("brokerage", t.getBrokerage());
+        m.put("diffPercentage", t.getDiffPercentage());
         m.put("lots", t.getLots());
         m.put("statergyName", t.getStatergyName());
         m.put("lastApiAction", t.getLastApiAction());
