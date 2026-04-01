@@ -7,17 +7,17 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
-import path.to._40c.pojo.ContractPriority;
-import path.to._40c.repo.ContractPriorityRepository;
+import path.to._40c.pojo.TradeLegConfig;
+import path.to._40c.repo.TradeLegConfigRepository;
 
 @Service
-public class ContractPriorityCache {
+public class TradeLegCache {
 	
-	private final ContractPriorityRepository repository;
-    private final AtomicReference<List<ContractPriority>> longPriorityCache = new AtomicReference<>(List.of());
-    private final AtomicReference<List<ContractPriority>> shortPriorityCache = new AtomicReference<>(List.of());
+	private final TradeLegConfigRepository repository;
+    private final AtomicReference<List<TradeLegConfig>> longLegsCache = new AtomicReference<>(List.of());
+    private final AtomicReference<List<TradeLegConfig>> shortLegsCache = new AtomicReference<>(List.of());
 
-    public ContractPriorityCache(ContractPriorityRepository repository) {
+    public TradeLegCache(TradeLegConfigRepository repository) {
         this.repository = repository;
     }
 
@@ -26,18 +26,18 @@ public class ContractPriorityCache {
         refreshCache(); 
     }
 
-    public List<ContractPriority> getLongPriorities() {
-        return longPriorityCache.get();
+    public List<TradeLegConfig> getLongLegs() {
+        return longLegsCache.get();
     }
 
-    public List<ContractPriority> getShortPriorities() {
-        return shortPriorityCache.get();
+    public List<TradeLegConfig> getShortLegs() {
+        return shortLegsCache.get();
     }
 
     public void refreshCache() {
-        List<ContractPriority> long_ = repository.findLongContractQty(); 
-        longPriorityCache.set(Collections.unmodifiableList(long_));
-        List<ContractPriority> short_ = repository.findShortContractQty(); 
-        shortPriorityCache.set(Collections.unmodifiableList(short_));
+        List<TradeLegConfig> long_ = repository.findLongLegs(); 
+        longLegsCache.set(Collections.unmodifiableList(long_));
+        List<TradeLegConfig> short_ = repository.findShortLegs(); 
+        shortLegsCache.set(Collections.unmodifiableList(short_));
     }
 }

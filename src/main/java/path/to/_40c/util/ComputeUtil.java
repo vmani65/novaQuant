@@ -6,10 +6,10 @@ import org.springframework.stereotype.Service;
 
 import path.to._40c.entity.Trade;
 import path.to._40c.entity.TradeCapital;
-import path.to._40c.pojo.ContractPriority;
+import path.to._40c.pojo.TradeLegConfig;
 import path.to._40c.pojo.WeeklyPojo;
 import path.to._40c.repo.TradeCapitalRepository;
-import path.to._40c.service.ContractPriorityCache;
+import path.to._40c.service.TradeLegCache;
 import path.to._40c.service.WeeklySymbolCache;
 
 import static path.to._40c.util.Constants.DATE_FORMAT;
@@ -39,10 +39,10 @@ public class ComputeUtil {
 	private static final Logger log = LoggerFactory.getLogger(ComputeUtil.class);
 
     private final WeeklySymbolCache symbolCache;
-    private final ContractPriorityCache contractCache;
+    private final TradeLegCache contractCache;
     private final TradeCapitalRepository tradeCapital;
 
-    public ComputeUtil(WeeklySymbolCache symbolCache, ContractPriorityCache contractCache,
+    public ComputeUtil(WeeklySymbolCache symbolCache, TradeLegCache contractCache,
             TradeCapitalRepository tradeCapital) {
         this.symbolCache = symbolCache;
         this.contractCache = contractCache;
@@ -54,7 +54,7 @@ public class ComputeUtil {
                  signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getSignalType() : null, rollOver);
         boolean isLong = LONG.equals(trade.getSignalType());
         int strikePrice = roundNFToNearestATM(signalPrice);
-        List<ContractPriority> priorities = isLong ? contractCache.getLongPriorities() : contractCache.getShortPriorities();
+        List<TradeLegConfig> priorities = isLong ? contractCache.getLongLegs() : contractCache.getShortLegs();
         String symbolPrefix = rollOver ? symbolCache.get().getRolloverSymbol() : symbolCache.get().getThisWeekSymbol();
         List<WeeklyPojo> weeklyPojoList = priorities.stream()
                 .map(priority -> buildWeeklyPojo(priority, strikePrice, symbolPrefix, trade))
@@ -70,7 +70,7 @@ public class ComputeUtil {
         return strikePrice;
     }
 
-    private WeeklyPojo buildWeeklyPojo(ContractPriority priority, int strikePrice, String symbolPrefix, Trade trade) {
+    private WeeklyPojo buildWeeklyPojo(TradeLegConfig priority, int strikePrice, String symbolPrefix, Trade trade) {
         WeeklyPojo w = new WeeklyPojo();
         String optionSuffix = priority.getOptionType();
         int calculatedStrike = calcStrike(strikePrice, priority.getStrike());

@@ -12,23 +12,23 @@ import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
 import path.to._40c.entity.PositionSizeMatrix;
-import path.to._40c.pojo.ContractPriority;
+import path.to._40c.pojo.TradeLegConfig;
 
-public interface ContractPriorityRepository extends JpaRepository<PositionSizeMatrix, Long> {
+public interface TradeLegConfigRepository extends JpaRepository<PositionSizeMatrix, Long> {
 
 	@Query("SELECT p FROM position_size_matrix p WHERE p.positionSide = :side")
     List<PositionSizeMatrix> findByPositionSide(@Param("side") String side);
     
-    default List<ContractPriority> findLongContractQty() {
-        return buildContractPriorities(findByPositionSide(LONG));
+    default List<TradeLegConfig> findLongLegs() {
+        return buildTradeLegConfigs(findByPositionSide(LONG));
     }
 
-    default List<ContractPriority> findShortContractQty() {
-        return buildContractPriorities(findByPositionSide(SHORT));
+    default List<TradeLegConfig> findShortLegs() {
+        return buildTradeLegConfigs(findByPositionSide(SHORT));
     }
 
-    private static List<ContractPriority> buildContractPriorities(List<PositionSizeMatrix> rows) {
-        List<ContractPriority> out = new ArrayList<>();
+    private static List<TradeLegConfig> buildTradeLegConfigs(List<PositionSizeMatrix> rows) {
+        List<TradeLegConfig> out = new ArrayList<>();
         for (PositionSizeMatrix r : rows) {
             boolean isLong = LONG.equals(r.getPositionSide());
             addIfPositive(out, r, r.getAtm(),     ATM);
@@ -39,9 +39,9 @@ public interface ContractPriorityRepository extends JpaRepository<PositionSizeMa
         return out;
     }
     
-    private static void addIfPositive(List<ContractPriority> list, PositionSizeMatrix r, Integer lots, String strike) {
+    private static void addIfPositive(List<TradeLegConfig> list, PositionSizeMatrix r, Integer lots, String strike) {
         if (lots != null && lots > 0) {
-            list.add(new ContractPriority(r.getPositionSide(), r.getOptionType(), r.getActionType(), lots, strike));
+            list.add(new TradeLegConfig(r.getPositionSide(), r.getOptionType(), r.getActionType(), lots, strike));
         }
     }
 }

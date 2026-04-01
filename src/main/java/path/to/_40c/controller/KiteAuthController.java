@@ -22,7 +22,7 @@ import static path.to._40c.util.Constants.ZONE_ID;
 
 import path.to._40c.entity.KiteAuthDetails;
 import path.to._40c.entity.PositionSizeMatrix;
-import path.to._40c.repo.ContractPriorityRepository;
+import path.to._40c.repo.TradeLegConfigRepository;
 import path.to._40c.repo.KiteAuthDetailsRepository;
 
 import org.springframework.http.HttpStatus;
@@ -34,7 +34,7 @@ import org.springframework.web.bind.annotation.*;
 
 import path.to._40c.service.KiteAuthService;
 import path.to._40c.service.SymbolService;
-import path.to._40c.service.ContractPriorityCache;
+import path.to._40c.service.TradeLegCache;
 
 import org.springframework.http.MediaType;
 
@@ -47,12 +47,12 @@ public class KiteAuthController {
     private final KiteAuthDetailsRepository repository;
     private final KiteAuthService kiteAuthService;
     private final SymbolService symbolService;
-    private final ContractPriorityRepository matrixRepository;
-    private final ContractPriorityCache contractCache;
+    private final TradeLegConfigRepository matrixRepository;
+    private final TradeLegCache contractCache;
 
     public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
-            SymbolService symbolService, ContractPriorityRepository matrixRepository,
-            ContractPriorityCache contractCache) {
+            SymbolService symbolService, TradeLegConfigRepository matrixRepository,
+            TradeLegCache contractCache) {
         this.repository = repository;
         this.kiteAuthService = kiteAuthService;
         this.symbolService = symbolService;
