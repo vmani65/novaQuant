@@ -24,8 +24,8 @@ import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
-import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
+import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.User;
 
 /**
@@ -111,16 +111,16 @@ public class MockKiteGateway implements KiteGateway {
     // -----------------------------------------------------------------------
 
     @Override
-    public Order placeOrder(OrderParams params, String variety) {
+    public OrderResponse placeOrder(OrderParams params, String variety) {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
         double execPrice = applySlippage(params.price, params.transactionType);
         executionPrices.put(orderId, execPrice);
         log.info("[MOCK] placeOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, orderId);
-        Order order = new Order();
-        order.orderId = orderId;
-        return order;
+        OrderResponse response = new OrderResponse();
+        response.orderId = orderId;
+        return response;
     }
 
     @Override

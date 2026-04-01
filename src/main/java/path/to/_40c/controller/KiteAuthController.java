@@ -1,5 +1,9 @@
 package path.to._40c.controller;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
@@ -98,6 +102,26 @@ public class KiteAuthController {
     @ResponseBody
     public List<String> getNiftyInstruments() {
         return kiteAuthService.getNiftyInstruments();
+    }
+
+    @GetMapping("/check-server-ip")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> checkServerIp() {
+        try {
+            HttpClient client = HttpClient.newHttpClient();
+            HttpRequest request = HttpRequest.newBuilder()
+                    .uri(URI.create("https://api.ipify.org"))
+                    .build();
+            HttpResponse<String> response = client.send(request, HttpResponse.BodyHandlers.ofString());
+            String ip = response.body().trim();
+            log.info("Server outbound IP: {}", ip);
+            return ResponseEntity.ok(Map.of("serverIp", ip,
+                    "message", "Register this IP at developers.kite.trade → Profile → IP Whitelist"));
+        } catch (Exception e) {
+            log.error("Failed to fetch server IP", e);
+            return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
+                    .body(Map.of("error", e.getMessage()));
+        }
     }
 
     @GetMapping("/signalHome")

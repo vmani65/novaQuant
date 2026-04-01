@@ -8,8 +8,8 @@ import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
-import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
+import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.User;
 
 /**
@@ -29,7 +29,7 @@ public interface KiteGateway {
     Map<String, LTPQuote> getLTP(String[] instruments);
 
     /** Place a single market order. Returns null on failure. */
-    Order placeOrder(OrderParams params, String variety);
+    OrderResponse placeOrder(OrderParams params, String variety);
 
     /** Place an auto-sliced order for large quantities. Returns empty list on failure. */
     List<BulkOrderResponse> placeAutoSliceOrder(OrderParams params, String variety);

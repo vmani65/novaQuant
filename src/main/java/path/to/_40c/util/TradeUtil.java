@@ -24,8 +24,8 @@ import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
-import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
+import com.zerodhatech.models.OrderResponse;
 
 import jakarta.persistence.EntityManager;
 import path.to._40c.entity.Trade;
@@ -213,6 +213,10 @@ public class TradeUtil {
      * once per single ID, and aggregates results.
      */
     public List<com.zerodhatech.models.Trade> getOrderTrades(String orderId) {
+        if (orderId == null || orderId.isBlank()) {
+            log.warn("getOrderTrades called with null/blank orderId — skipping");
+            return new ArrayList<>();
+        }
         log.info("Fetching trades for orderId: {}", orderId);
         List<com.zerodhatech.models.Trade> allTrades = new ArrayList<>();
         Arrays.stream(orderId.split("\\s*,\\s*"))
@@ -229,13 +233,13 @@ public class TradeUtil {
         return allTrades;
     }
 
-    public Order placeOrder(String ins, Double price, String transactionType, int quantity) {
+    public OrderResponse placeOrder(String ins, Double price, String transactionType, int quantity) {
         OrderParams orderParams = buildOrderParams();
         orderParams.transactionType = transactionType;
         orderParams.tradingsymbol = ins;
         orderParams.quantity = quantity;
         orderParams.price = price;
-        Order order = kiteGateway.placeOrder(orderParams, Constants.VARIETY_REGULAR);
+        OrderResponse order = kiteGateway.placeOrder(orderParams, Constants.VARIETY_REGULAR);
         if (order != null) log.info("Order placed: orderId={}", order.orderId);
         return order;
     }
@@ -279,6 +283,7 @@ public class TradeUtil {
         orderParams.product = Constants.PRODUCT_NRML;
         orderParams.exchange = Constants.EXCHANGE_NFO;
         orderParams.validity = Constants.VALIDITY_DAY;
+        orderParams.marketProtection = 1;
         return orderParams;
     }
 

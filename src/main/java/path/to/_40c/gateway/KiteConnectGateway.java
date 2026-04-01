@@ -23,8 +23,8 @@ import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
-import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
+import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.User;
 
 import path.to._40c.entity.KiteAuthDetails;
@@ -76,12 +76,14 @@ public class KiteConnectGateway implements KiteGateway {
     }
 
     @Override
-    public Order placeOrder(OrderParams params, String variety) {
+    public OrderResponse placeOrder(OrderParams params, String variety) {
         var kite = getKiteConnectObject();
         if (kite == null) { log.error("KiteConnect null — cannot place order"); return null; }
         try {
             return kite.placeOrder(params, variety);
-        } catch (JSONException | IOException | KiteException e) {
+        } catch (KiteException e) {
+            log.error("Exception while placing order — code={} message={}", e.code, e.getMessage(), e);
+        } catch (JSONException | IOException e) {
             log.error("Exception while placing order", e);
         }
         return null;
@@ -92,8 +94,12 @@ public class KiteConnectGateway implements KiteGateway {
         var kite = getKiteConnectObject();
         if (kite == null) { log.error("KiteConnect null — cannot place auto-slice order"); return new ArrayList<>(); }
         try {
-            return kite.placeAutoSliceOrder(params, variety);
-        } catch (JSONException | IOException | KiteException e) {
+            params.autoslice = true;
+            OrderResponse response = kite.placeOrder(params, variety);
+            return response != null && response.children != null ? response.children : new ArrayList<>();
+        } catch (KiteException e) {
+            log.error("Exception while placing auto-slice order — code={} message={}", e.code, e.getMessage(), e);
+        } catch (JSONException | IOException e) {
             log.error("Exception while placing auto-slice order", e);
         }
         return new ArrayList<>();

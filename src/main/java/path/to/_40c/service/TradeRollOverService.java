@@ -16,7 +16,7 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.Order;
+import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.entity.Trade;
 import path.to._40c.entity.WeeklyOrderBook;
@@ -74,7 +74,7 @@ public class TradeRollOverService {
                             allClosesSucceeded.set(false);
                         }
                     } else {
-                        Order o = tradeUtil.placeOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
+                        OrderResponse o = tradeUtil.placeOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
                         if (o != null && o.orderId != null) {
                             log.info("Direct order placed for {} ({} qty, orderId={})", toClose.getMarginCalcSymbol(), toClose.getQuantity(), o.orderId);
                             toClose.setTradeCloseOrderId(o.orderId);
@@ -119,7 +119,7 @@ public class TradeRollOverService {
                             log.error("Rollover open failed for {} - returned null/empty", w.getMarginCalcSymbol());
                         }
                     } else {
-                        Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(),totalQty);
+                        OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(),totalQty);
                         if (o != null && o.orderId != null) {
                             log.info("Direct order placed for {} ({} qty, orderId={})", w.getMarginCalcSymbol(), totalQty, o.orderId);
                             w.setTradeOpenOrderId(o.orderId);

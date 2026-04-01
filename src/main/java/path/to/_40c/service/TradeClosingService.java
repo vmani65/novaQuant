@@ -13,7 +13,7 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.Order;
+import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.controller.SignalController.Signal;
 import path.to._40c.entity.Trade;
@@ -73,7 +73,7 @@ public class TradeClosingService {
                         }
                     }
                 } else {
-                    Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,oppositeTransaction,w.getQuantity());
+                    OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,oppositeTransaction,w.getQuantity());
                     if (o != null && o.orderId != null) {
                         log.info("Direct order placed for {} ({} qty, orderId={})", w.getMarginCalcSymbol(), w.getQuantity(), o.orderId);
                         synchronized (w) {

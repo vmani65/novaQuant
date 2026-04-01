@@ -12,7 +12,7 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.Order;
+import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.entity.Trade;
 import path.to._40c.entity.WeeklyOrderBook;
@@ -75,7 +75,7 @@ public class TradeOpeningService {
     	                log.error("Auto-slice order failed for {} (returned null/empty)", w.getMarginCalcSymbol());
     	            }
     	        } else {
-    	            Order o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
+    	            OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
     	            if (o != null && o.orderId != null) {
     	                log.info("Direct order placed for {} ({} qty, orderId={})",w.getMarginCalcSymbol(), totalQty, o.orderId);
     	                synchronized (w) {
