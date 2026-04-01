@@ -7,10 +7,10 @@ Automated options trading system for NIFTY weekly synthetic positions, built on 
 | Layer | Technology |
 |---|---|
 | Runtime | Java 17 |
-| Framework | Spring Boot 3.5.9 (JAR packaging) |
+| Framework | Spring Boot 3.5.13 (JAR packaging) |
 | UI | Thymeleaf (`signalHome.html`) |
 | Persistence | SQLite via Hibernate (community dialect) |
-| Broker API | Kite Connect 3.5.1 |
+| Broker API | Kite Connect 4.0.0 |
 
 ## Build & Run
 
