@@ -6,8 +6,6 @@ import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
-import static path.to._40c.util.Constants.LIVE;
-
 import path.to._40c.entity.Trade;
 import path.to._40c.repo.TradeRepository;
 import path.to._40c.util.ComputeUtil;
