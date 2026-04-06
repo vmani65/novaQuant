@@ -1,5 +1,6 @@
 package path.to._40c.service;
 
+import static path.to._40c.util.Constants.LIVE;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
@@ -35,11 +36,11 @@ public class PostTradeService {
      */
     @Async("postTradeExecutor")
     public void afterOpen(Trade liveTrade) {
-        if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
-            log.warn("afterOpen skipped — trade is not LIVE (status={})",
-                    liveTrade != null ? liveTrade.getTradeStatus() : "null");
+        if(liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())){
+            log.warn("afterOpen skipped - trade is not LIVE (status={})",
+                liveTrade !=null ? liveTrade.getTradeStatus() : "null");
             return;
-        }
+        }    
         try {
             tradeUtil.setTradeExecutedPrices(liveTrade);
             tradeUtil.calcMarginAndBrokerage(liveTrade);
