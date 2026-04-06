@@ -32,6 +32,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
 import org.springframework.web.bind.annotation.*;
 
+import path.to._40c.gateway.KiteGateway;
 import path.to._40c.service.KiteAuthService;
 import path.to._40c.service.SymbolService;
 import path.to._40c.service.TradeLegCache;
@@ -49,15 +50,17 @@ public class KiteAuthController {
     private final SymbolService symbolService;
     private final TradeLegConfigRepository matrixRepository;
     private final TradeLegCache contractCache;
+    private final KiteGateway kiteGateway;
 
     public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
             SymbolService symbolService, TradeLegConfigRepository matrixRepository,
-            TradeLegCache contractCache) {
+            TradeLegCache contractCache, KiteGateway kiteGateway) {
         this.repository = repository;
         this.kiteAuthService = kiteAuthService;
         this.symbolService = symbolService;
         this.matrixRepository = matrixRepository;
         this.contractCache = contractCache;
+        this.kiteGateway = kiteGateway;
     }
 
     @PostMapping
@@ -122,6 +125,22 @@ public class KiteAuthController {
             return ResponseEntity.status(HttpStatus.INTERNAL_SERVER_ERROR)
                     .body(Map.of("error", e.getMessage()));
         }
+    }
+
+    @GetMapping("/kite-auth/test-connection")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> testConnection() {
+        LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
+        Optional<KiteAuthDetails> existing = repository.findByAuthDate(today);
+        if (existing.isEmpty()) {
+            return ResponseEntity.ok(Map.of(
+                "status", "NO_AUTH",
+                "message", "No auth token saved for today (" + today + "). Login and save your request token first."
+            ));
+        }
+        log.info("Testing Kite connection for date={}", today);
+        Map<String, Object> result = kiteGateway.testConnection();
+        return ResponseEntity.ok(result);
     }
 
     @GetMapping("/signalHome")

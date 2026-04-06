@@ -50,6 +50,14 @@ public interface KiteGateway {
     String getLoginURL();
 
     /**
+     * Test the Kite connection by calling getProfile().
+     * Unlike other methods, this surfaces the actual exception message instead of swallowing it.
+     * Returns a map with keys: status ("OK" | "NO_AUTH" | "KITE_ERROR" | "ERROR"),
+     * message (human-readable), and optionally code (Kite HTTP error code).
+     */
+    Map<String, Object> testConnection();
+
+    /**
      * Invalidate the cached KiteConnect session.
      * Called after new auth is saved so the next call picks up the fresh access token.
      * No-op in MockKiteGateway.

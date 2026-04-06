@@ -160,6 +160,27 @@ public class KiteConnectGateway implements KiteGateway {
     }
 
     @Override
+    public Map<String, Object> testConnection() {
+        var kite = getKiteConnectObject();
+        if (kite == null) {
+            return Map.of("status", "NO_AUTH", "message", "No auth token found for today. Login and save your request token first.");
+        }
+        try {
+            Map<String, LTPQuote> ltpMap = kite.getLTP(new String[]{"NSE:NIFTY 50"});
+            if (ltpMap != null && !ltpMap.isEmpty()) {
+                return Map.of("status", "OK", "message", "Connection healthy.");
+            }
+            return Map.of("status", "ERROR", "message", "LTP returned no data.");
+        } catch (KiteException e) {
+            log.error("Kite connection test failed — code={} message={}", e.code, e.getMessage());
+            return Map.of("status", "KITE_ERROR", "message", e.getMessage(), "code", e.code);
+        } catch (Exception e) {
+            log.error("Kite connection test failed", e);
+            return Map.of("status", "ERROR", "message", e.getMessage());
+        }
+    }
+
+    @Override
     public void invalidateCache() {
         cachedKiteConnect = null;
         cacheDate = null;

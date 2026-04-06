@@ -231,6 +231,12 @@ public class MockKiteGateway implements KiteGateway {
     }
 
     @Override
+    public Map<String, Object> testConnection() {
+        log.info("[MOCK] testConnection → OK");
+        return Map.of("status", "OK", "message", "[MOCK] Connection healthy.");
+    }
+
+    @Override
     public void invalidateCache() {
         log.debug("[MOCK] invalidateCache called (no-op)");
     }

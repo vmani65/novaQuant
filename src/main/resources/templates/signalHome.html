@@ -154,6 +154,30 @@
             }
         };
 
+        // ==================== TEST KITE CONNECTION ====================
+        function testKiteConnection() {
+            const resultDiv = document.getElementById('kiteTestResult');
+            resultDiv.style.display = '';
+            resultDiv.className = 'message text-xs font-mono flex-1';
+            resultDiv.textContent = 'Testing…';
+            fetch('/kite-auth/test-connection')
+                .then(r => r.json())
+                .then(data => {
+                    if (data.status === 'OK') {
+                        resultDiv.classList.add('success');
+                        resultDiv.textContent = '✓ ' + data.message;
+                    } else {
+                        resultDiv.classList.add('error');
+                        const code = data.code ? ' [code=' + data.code + ']' : '';
+                        resultDiv.textContent = '✗ ' + data.status + code + ' — ' + data.message;
+                    }
+                })
+                .catch(err => {
+                    resultDiv.classList.add('error');
+                    resultDiv.textContent = '✗ Request failed: ' + err.message;
+                });
+        }
+
         // ==================== LOGIN URL ====================
         let _kiteLoginUrl = null;
         function fetchLoginUrl() {
@@ -852,6 +876,15 @@
                         </button>
                     </form>
                     <div id="tokenMsg" style="display:none;"></div>
+                    <!-- Test connection row -->
+                    <div class="flex items-center gap-3 pt-1 border-t border-gray-100">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Test Auth</span>
+                        <button onclick="testKiteConnection()"
+                                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-900 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Test Connection
+                        </button>
+                        <div id="kiteTestResult" style="display:none;" class="message text-xs font-mono flex-1"></div>
+                    </div>
                 </div>
             </div>
         </section>
