@@ -87,6 +87,14 @@ public class Trade extends BaseEntity{
     
     @Column(name = "MESSAGE")
     private String message;
+
+    /**
+     * Cumulative points captured from all profit-recenter segments before the current one.
+     * Updated by ProfitRecenterService on each recenter. Zero for trades with no recenters.
+     * Used by calcTradeOutcome: totalPoints = realizedPoints + (exit - entry of current segment).
+     */
+    @Column(name = "REALIZED_POINTS")
+    private Double realizedPoints = 0.0;
     
 	@OneToMany(mappedBy = "trade", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Filter(name = "liveOrderBooks", condition = "TRADE_STATUS = :status")
@@ -285,6 +293,14 @@ public class Trade extends BaseEntity{
 	public void setMessage(String message) {
 		this.message = message;
 	}
+
+	public Double getRealizedPoints() {
+		return realizedPoints;
+	}
+
+	public void setRealizedPoints(Double realizedPoints) {
+		this.realizedPoints = realizedPoints;
+	}
 	
 	public List<WeeklyOrderBook> getWeeklyOrderBook() {
 		return weeklyOrderBook;
@@ -317,6 +333,7 @@ public class Trade extends BaseEntity{
 				+ ", tradeStatus=" + tradeStatus + ", tradeOpenDtTime=" + tradeOpenDtTime + ", tradeCloseDtTime="
 				+ tradeCloseDtTime + ", lastApiAction=" + lastApiAction + ", lastApiSignalType=" + lastApiSignalType
 				+ ", statergyName=" + statergyName + ", apiTime=" + apiTime + ", message=" + message
+				+ ", realizedPoints=" + realizedPoints
 				+ ", weeklyOrderBook=" + weeklyOrderBook + ", monthlyOrderBook=" + monthlyOrderBook + "]";
 	}
 } 

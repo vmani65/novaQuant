@@ -3,13 +3,19 @@ package path.to._40c.service;
 import static path.to._40c.util.Constants.LIVE;
 import static path.to._40c.util.Constants.ZONE_ID;
 
+import java.net.URI;
+import java.net.http.HttpClient;
+import java.net.http.HttpRequest;
+import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.controller.SignalController.Signal;
@@ -28,6 +34,11 @@ public class SignalService {
 	private final PostTradeService postTradeService;
 	private final TradeRepository tradeRepository;
 	private final SymbolService symbolService;
+
+	private final HttpClient httpClient = HttpClient.newHttpClient();
+
+	@Value("${nq.ticker.url:http://localhost:9192}")
+	private String nqTickerUrl;
 
 	public SignalService(TradeOpeningService openingService, TradeClosingService closingService,
 			TradeRollOverService rollOverService, PostTradeService postTradeService,
@@ -71,11 +82,57 @@ public class SignalService {
 
 	public boolean handleTradeClose(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
+
+	   // 9:15 AM long exit: delegate to nQ-ticker open buffer.
+	   // nQ-ticker will monitor NIFTY and call /api/execute-close when target is hit or
+	   // deadline (09:28:59) is reached. That endpoint closes directly — no 9:15 re-check.
+	   if ("longExit".equals(signal.action) && isOpenBufferTime()) {
+	       if (armNqTickerBuffer(signalPrice)) {
+	           log.info("9:15 AM long exit delegated to nQ-ticker open buffer | openPrice={} | {}ms",
+	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
+	           return true;  // actual close fires async from nQ-ticker
+	       }
+	       log.warn("nQ-ticker arm-buffer call failed — falling back to immediate close");
+	   }
+
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("Time taken to complete trade close is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
 	   postTradeService.afterClose(closedTrade);
 	   checkAndPromoteRolloverSymbol();
 	   return true;
+	}
+
+	/**
+	 * Called by /api/execute-close — the callback from nQ-ticker's open buffer.
+	 * Closes the trade directly, no 9:15 AM check, no re-delegation.
+	 */
+	public void executeCloseImmediate(String signalPrice) {
+	   Instant start = Instant.now();
+	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
+	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
+	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
+	   postTradeService.afterClose(closedTrade);
+	   checkAndPromoteRolloverSymbol();
+	}
+
+	private boolean isOpenBufferTime() {
+	   LocalTime now = LocalTime.now(ZoneId.of(ZONE_ID));
+	   return now.getHour() == 9 && now.getMinute() == 15;
+	}
+
+	private boolean armNqTickerBuffer(String openPrice) {
+	   String url = nqTickerUrl + "/arm-buffer?openPrice=" + openPrice;
+	   try {
+	       HttpResponse<String> resp = httpClient.send(
+	               HttpRequest.newBuilder().uri(URI.create(url)).GET().build(),
+	               HttpResponse.BodyHandlers.ofString());
+	       boolean ok = resp.statusCode() == 200;
+	       if (!ok) log.warn("arm-buffer returned HTTP {} — {}", resp.statusCode(), resp.body());
+	       return ok;
+	   } catch (Exception e) {
+	       log.error("arm-buffer HTTP call failed: {}", e.getMessage());
+	       return false;
+	   }
 	}
 
 	private void checkAndPromoteRolloverSymbol() {
@@ -87,6 +144,7 @@ public class SignalService {
 	   } else {
 	       log.info("Rollover day — promoting rollover symbol | {} -> thisWeek", cfg.getRolloverSymbol());
 	       symbolService.promoteRolloverSymbol();
+	       symbolService.markRolloverComplete();
 	   }
 	}
 
