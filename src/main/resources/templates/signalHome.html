@@ -575,9 +575,11 @@
                 return {
                     startingEquity: data.equity[filteredIndices[0]],
                     currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
-                    dates:   filteredIndices.map(i => data.dates[i]),
-                    equity:  filteredIndices.map(i => data.equity[i]),
-                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
+                    dates:    filteredIndices.map(i => data.dates[i]),
+                    equity:   filteredIndices.map(i => data.equity[i]),
+                    lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
+                    outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : []
                 };
             },
 
@@ -594,9 +596,11 @@
                 return {
                     startingEquity: data.equity[filteredIndices[0]],
                     currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
-                    dates:   filteredIndices.map(i => data.dates[i]),
-                    equity:  filteredIndices.map(i => data.equity[i]),
-                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
+                    dates:    filteredIndices.map(i => data.dates[i]),
+                    equity:   filteredIndices.map(i => data.equity[i]),
+                    lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
+                    outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : []
                 };
             },
 
@@ -615,6 +619,23 @@
                 document.getElementById('totalPnl').style.color       = totalPnl >= 0 ? '#059669' : '#dc2626';
                 document.getElementById('returnPercent').textContent  = returnPercent + '%';
                 document.getElementById('returnPercent').style.color  = returnPercent >= 0 ? '#059669' : '#dc2626';
+                const outcomes = data.outcomes || [];
+                const pts      = data.points   || [];
+                let winCount = 0, lossCount = 0, winPtsSum = 0, lossPtsSum = 0;
+                for (let i = 0; i < outcomes.length; i++) {
+                    if (outcomes[i] === 'WIN')       { winCount++;  winPtsSum  += pts[i] || 0; }
+                    else if (outcomes[i] === 'LOSS') { lossCount++; lossPtsSum += Math.abs(pts[i] || 0); }
+                }
+                const totalTrades = winCount + lossCount;
+                const winRate     = totalTrades > 0 ? ((winCount / totalTrades) * 100).toFixed(1) + '%' : '-';
+                const avgWin      = winCount  > 0 ? (winPtsSum  / winCount).toFixed(1)  + ' pts' : '-';
+                const avgLoss     = lossCount > 0 ? (lossPtsSum / lossCount).toFixed(1) + ' pts' : '-';
+                document.getElementById('winRate').textContent    = winRate;
+                document.getElementById('winRate').style.color    = '#059669';
+                document.getElementById('avgWinSize').textContent = avgWin;
+                document.getElementById('avgWinSize').style.color = '#059669';
+                document.getElementById('avgLossSize').textContent = avgLoss;
+                document.getElementById('avgLossSize').style.color = '#dc2626';
                 const equityValues = data.equity || [];
                 const lotSizes     = data.lotSize || [];
                 const drawdowns    = [];
@@ -1213,7 +1234,7 @@
                     <div id="equityCurveContainer" style="display:none;" class="relative">
                         <div class="loading-overlay"><div class="spinner"></div></div>
                         <canvas id="equityCurveChart" style="max-height:380px;"></canvas>
-                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-4 gap-4 text-center text-xs">
+                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-7 gap-4 text-center text-xs">
                             <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Starting Equity</div>
                                 <div id="startingEquity" class="font-semibold text-gray-900 font-mono">₹0</div>
@@ -1229,6 +1250,18 @@
                             <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Return %</div>
                                 <div id="returnPercent" class="font-semibold font-mono">0%</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Win Rate</div>
+                                <div id="winRate" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Win</div>
+                                <div id="avgWinSize" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Loss</div>
+                                <div id="avgLossSize" class="font-semibold font-mono">-</div>
                             </div>
                         </div>
                     </div>

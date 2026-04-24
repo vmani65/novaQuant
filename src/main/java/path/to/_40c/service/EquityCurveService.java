@@ -18,8 +18,6 @@ public class EquityCurveService {
 
     private final TradeRepository tradeRepository;
 
-    private static final double STARTING_EQUITY = 100000.0;
-
     public EquityCurveService(TradeRepository tradeRepository) {
         this.tradeRepository = tradeRepository;
     }
@@ -43,26 +41,37 @@ public class EquityCurveService {
     private static final DateTimeFormatter PARSE_FMT = DateTimeFormatter.ofPattern(DATE_FORMAT);
 
     private EquityCurve buildEquityCurve(List<Trade> trades) {
-        double currentEquity = STARTING_EQUITY;
-        List<String> dates = new ArrayList<>();
+        List<String> dates        = new ArrayList<>();
         List<Double> equityValues = new ArrayList<>();
-        List<Integer> lotSizes = new ArrayList<>();
+        List<Integer> lotSizes    = new ArrayList<>();
+        List<String> outcomes     = new ArrayList<>();
+        List<Double> points       = new ArrayList<>();
 
         List<Trade> sorted = trades.stream()
-            .filter(t -> t.getActualPnL() != null && t.getTradeOpenDtTime() != null)
+            .filter(t -> t.getEndingCapital() != null && t.getTradeOpenDtTime() != null)
             .sorted(Comparator.comparing(t -> {
                 try { return LocalDateTime.parse(t.getTradeOpenDtTime(), PARSE_FMT); }
                 catch (Exception e) { return LocalDateTime.MIN; }
             }))
             .collect(Collectors.toList());
 
+        double startingEquity = 0.0;
+        if (!sorted.isEmpty()) {
+            Trade first = sorted.get(0);
+            startingEquity = first.getStartingCapital() != null ? first.getStartingCapital() : 0.0;
+        }
+
         for (Trade trade : sorted) {
             dates.add(formatDate(trade.getTradeOpenDtTime()));
-            currentEquity += trade.getActualPnL();
-            equityValues.add(currentEquity);
+            equityValues.add(trade.getEndingCapital());
             lotSizes.add(trade.getLots() != null ? trade.getLots() : 0);
+            outcomes.add(trade.getTradeOutcome() != null ? trade.getTradeOutcome() : "");
+            points.add(trade.getPointsByTrade() != null ? trade.getPointsByTrade() : 0.0);
         }
-        return new EquityCurve(STARTING_EQUITY,currentEquity,dates,equityValues,lotSizes);
+
+        double currentEquity = equityValues.isEmpty() ? startingEquity
+                : equityValues.get(equityValues.size() - 1);
+        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, lotSizes, outcomes, points);
     }
 
     private String formatDate(String dateStr) {

@@ -54,6 +54,8 @@ public class TradeLogController {
         m.put("diffPercentage", t.getDiffPercentage());
         m.put("lots", t.getLots());
         m.put("statergyName", t.getStatergyName());
+        m.put("startingCapital", t.getStartingCapital());
+        m.put("endingCapital", t.getEndingCapital());
         m.put("lastApiAction", t.getLastApiAction());
         m.put("message", t.getMessage());
         m.put("weekly", t.getWeeklyOrderBook().stream().map(this::childToMap).collect(Collectors.toList()));

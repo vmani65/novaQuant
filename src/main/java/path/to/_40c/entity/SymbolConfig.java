@@ -2,9 +2,15 @@ package path.to._40c.entity;
 
 import jakarta.persistence.*;
 import java.time.LocalDate;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
 
 @Entity
 @Table(name = "SYMBOL")
+@Getter
+@Setter
+@ToString
 public class SymbolConfig {
 
     @Id
@@ -23,30 +29,10 @@ public class SymbolConfig {
     private Boolean rolloverComplete = false;
 
     public SymbolConfig() {}
+
     public SymbolConfig(String thisWeekSymbol, String rolloverSymbol) {
-        this.id = 1L;
-        this.thisWeekSymbol = thisWeekSymbol;
-        this.rolloverSymbol = rolloverSymbol;
+        this.id              = 1L;
+        this.thisWeekSymbol  = thisWeekSymbol;
+        this.rolloverSymbol  = rolloverSymbol;
     }
-
-    public Long getId() { return id; }
-
-	public String getThisWeekSymbol() { return thisWeekSymbol; }
-	public void setThisWeekSymbol(String thisWeekSymbol) { this.thisWeekSymbol = thisWeekSymbol; }
-
-	public String getRolloverSymbol() { return rolloverSymbol; }
-	public void setRolloverSymbol(String rolloverSymbol) { this.rolloverSymbol = rolloverSymbol; }
-
-    public LocalDate getRolloverDay() { return rolloverDay; }
-    public void setRolloverDay(LocalDate rolloverDay) { this.rolloverDay = rolloverDay; }
-
-    public Boolean getRolloverComplete() { return rolloverComplete; }
-    public void setRolloverComplete(Boolean rolloverComplete) { this.rolloverComplete = rolloverComplete; }
-
-	@Override
-	public String toString() {
-		return "SymbolConfig [id=" + id + ", thisWeekSymbol=" + thisWeekSymbol + ", rolloverSymbol=" + rolloverSymbol
-                + ", rolloverDay=" + rolloverDay + ", rolloverComplete=" + rolloverComplete + "]";
-	}
 }
-

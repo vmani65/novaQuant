@@ -30,14 +30,13 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.ui.Model;
+import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import path.to._40c.gateway.KiteGateway;
 import path.to._40c.service.KiteAuthService;
 import path.to._40c.service.SymbolService;
 import path.to._40c.service.TradeLegCache;
-
-import org.springframework.http.MediaType;
 
 @Controller
 @RequestMapping

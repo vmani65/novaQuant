@@ -6,12 +6,16 @@ import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 
 import jakarta.persistence.*;
+import lombok.Getter;
+import lombok.Setter;
 
 import static path.to._40c.util.Constants.ZONE_ID;
 import static path.to._40c.util.Constants.DATE_FORMAT;
 
 @Entity
 @Table(name = "KITE_AUTH_DETAILS")
+@Getter
+@Setter
 public class KiteAuthDetails {
 
     @Id
@@ -45,25 +49,6 @@ public class KiteAuthDetails {
     public KiteAuthDetails() {
         this.appName = "jasakavi";
     }
-
-    public Long getId() { return id; }
-    public void setId(Long id) { this.id = id; }
-    public String getAppName() { return appName; }
-    public void setAppName(String appName) { this.appName = appName; }
-    public String getApiKey() { return apiKey; }
-    public void setApiKey(String apiKey) { this.apiKey = apiKey; }
-    public String getApiSecret() { return apiSecret; }
-    public void setApiSecret(String apiSecret) { this.apiSecret = apiSecret; }
-    public String getRequestToken() { return requestToken; }
-    public void setRequestToken(String requestToken) { this.requestToken = requestToken; }
-    public String getAccessToken() { return accessToken; }
-    public void setAccessToken(String accessToken) { this.accessToken = accessToken; }
-    public String getPublicToken() { return publicToken; }
-    public void setPublicToken(String publicToken) { this.publicToken = publicToken; }
-    public String getCreatedDate() { return createdDate; }
-    public void setCreatedDate(String createdDate) { this.createdDate = createdDate; }
-    public LocalDate getAuthDate() { return authDate; }
-    public void setAuthDate(LocalDate authDate) { this.authDate = authDate; }
 
     @PrePersist
     public void onCreate() {

@@ -58,8 +58,9 @@ public class MockKiteGateway implements KiteGateway {
     // getOrderTrades returns this so executed prices match what was "paid".
     private final ConcurrentHashMap<String, Double> executionPrices = new ConcurrentHashMap<>();
 
-    // Current simulated NIFTY spot — drifts per getLTP call
-    private volatile double niftySpot = 22500.0;
+    // Current simulated NIFTY spot — starts at a realistic level, drifts per getLTP call.
+    // Spot is seeded near 24500 so ATM options at typical signal strikes price realistically.
+    private volatile double niftySpot = 24500.0;
 
     // -----------------------------------------------------------------------
     // LTP  — dynamic, spot-driven option pricing
@@ -67,8 +68,8 @@ public class MockKiteGateway implements KiteGateway {
 
     @Override
     public Map<String, LTPQuote> getLTP(String[] instruments) {
-        // Drift the spot ±150 on each fetch (simulates intraday price movement)
-        niftySpot = Math.max(21000, Math.min(24000, niftySpot + (random.nextDouble() * 300 - 150)));
+        // Drift ±50 per fetch — simulates a 1-2 min candle on NIFTY
+        niftySpot = Math.max(23000, Math.min(26000, niftySpot + (random.nextDouble() * 100 - 50)));
         double spot = Math.round(niftySpot * 100.0) / 100.0;
 
         Map<String, LTPQuote> result = new HashMap<>();
@@ -83,26 +84,25 @@ public class MockKiteGateway implements KiteGateway {
     }
 
     /**
-     * Rough option pricing:
-     *  - Intrinsic: max(0, spot-strike) for CE, max(0, strike-spot) for PE
-     *  - Time value: 60–130, highest at ATM and decays exponentially as OTM deepens
-     *  - Total: intrinsic + timeValue * e^(-|spot-strike| / 400)
+     * Realistic weekly NIFTY option pricing:
+     *  - Intrinsic:  max(0, spot-strike) for CE; max(0, strike-spot) for PE
+     *  - Time value: 80–130 pts at ATM (models 1-2 day weekly expiry with ~16% IV)
+     *  - ATM decay:  exp(-|spot-strike| / 200) — OTM options lose value faster than
+     *                longer-dated contracts; 50-pt OTM retains ~78%, 100-pt retains ~61%
      */
     private double calcOptionLTP(String instrument, double spot) {
         Matcher m = STRIKE_PATTERN.matcher(instrument);
         if (!m.find()) {
-            // Unrecognised format — return a plausible random premium
-            return Math.round((80 + random.nextDouble() * 80) * 100.0) / 100.0;
+            return Math.round((90 + random.nextDouble() * 40) * 100.0) / 100.0;
         }
         double strike = Double.parseDouble(m.group(1));
         boolean isCE = CE.equals(m.group(2));
 
-        double intrinsic = isCE ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
-        double timeValue = 60 + random.nextDouble() * 70;  // 60–130
-        double atmDecay = Math.exp(-Math.abs(spot - strike) / 400.0);
-        double price = intrinsic + timeValue * atmDecay;
-        // Keep price realistic — options rarely trade below ₹5 and rarely above ₹1000 for weekly NIFTY
-        price = Math.max(5.0, Math.min(1000.0, price));
+        double intrinsic  = isCE ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
+        double timeValue  = 80 + random.nextDouble() * 50;          // 80–130 for ATM weekly
+        double atmDecay   = Math.exp(-Math.abs(spot - strike) / 200.0);
+        double price      = intrinsic + timeValue * atmDecay;
+        price = Math.max(5.0, Math.min(800.0, price));
         return Math.round(price * 100.0) / 100.0;
     }
 

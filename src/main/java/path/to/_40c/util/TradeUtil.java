@@ -188,13 +188,6 @@ public class TradeUtil {
     	return params;
     }
 
-    public int roundNFToNearestATM(String price) {
-        float f = Float.valueOf(price);
-        int strikePrice = Math.round(f / 50f) * 50;
-        log.info("roundNFToNearestATM: input={}, calculatedStrike={}", price, strikePrice);
-        return strikePrice;
-    }
-
     // -----------------------------------------------------------------------
     // Kite API delegates — all callers go through KiteGateway
     // -----------------------------------------------------------------------
@@ -303,19 +296,6 @@ public class TradeUtil {
     @Transactional
     public Trade findLiveTradesWithAllOrderBooks() {
         return tradeRepository.findByTradeStatus(LIVE);
-    }
-
-    @Transactional
-    public Trade findTrades(String tradeStatus, boolean filterChildRecords) {
-        Session session = entityManager.unwrap(Session.class);
-        if (filterChildRecords) {
-            session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        }
-        Trade trades = tradeRepository.findByTradeStatus(tradeStatus);
-        if (filterChildRecords) {
-            session.disableFilter("liveOrderBooks");
-        }
-        return trades;
     }
 
     public static void sleep() {

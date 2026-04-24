@@ -34,15 +34,32 @@ public class PostTradeService {
      */
     @Async("postTradeExecutor")
     public void afterOpen(Trade liveTrade) {
-        if(liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())){
+        if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
             log.warn("afterOpen skipped - trade is not LIVE (status={})",
-                liveTrade !=null ? liveTrade.getTradeStatus() : "null");
+                liveTrade != null ? liveTrade.getTradeStatus() : "null");
             return;
-        }    
+        }
         try {
+            // Compute on liveTrade which holds the LIVE legs and open order IDs
             tradeUtil.setTradeExecutedPrices(liveTrade);
             tradeUtil.calcMarginAndBrokerage(liveTrade);
-            tradeRepository.save(liveTrade);
+            // Re-fetch from DB before saving — a concurrent afterClose may have already
+            // written close prices. Merging instead of overwriting prevents wiping them.
+            Trade t = tradeRepository.findById(liveTrade.getId()).orElse(null);
+            if (t == null) { tradeRepository.save(liveTrade); return; }
+            liveTrade.getWeeklyOrderBook().forEach(liveW ->
+                t.getWeeklyOrderBook().stream()
+                    .filter(dbW -> dbW.getId().equals(liveW.getId()))
+                    .findFirst()
+                    .ifPresent(dbW -> {
+                        if (liveW.getBoughtPrice()        != null) dbW.setBoughtPrice(liveW.getBoughtPrice());
+                        if (liveW.getSoldPrice()           != null) dbW.setSoldPrice(liveW.getSoldPrice());
+                        if (liveW.getMarginToTrade()       != null) dbW.setMarginToTrade(liveW.getMarginToTrade());
+                        if (liveW.getTradeOpenBrokerage()  != null) dbW.setTradeOpenBrokerage(liveW.getTradeOpenBrokerage());
+                        if (liveW.getTradeCloseBrokerage() != null) dbW.setTradeCloseBrokerage(liveW.getTradeCloseBrokerage());
+                    })
+            );
+            tradeRepository.save(t);
             log.info("Post-open calc completed for trade id={}", liveTrade.getId());
         } catch (Exception e) {
             log.error("Exception while performing post trade open calculations", e);

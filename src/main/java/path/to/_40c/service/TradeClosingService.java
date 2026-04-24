@@ -110,43 +110,4 @@ public class TradeClosingService {
         Trade closedTrade = tradeRepository.save(tradeToClose);
         return closedTrade;
     }
-
-    /**
-     * closeTradeOnLargeMove — exit strategy for large gap / illiquid market conditions.
-     *
-     * Triggered when:
-     *   - The underlying moves so fast that LTP-based market orders risk extreme slippage
-     *   - Option spreads widen significantly (bid-ask > threshold) making market orders dangerous
-     *   - Circuit breaker / exchange halt scenarios where one leg may be frozen
-     *
-     * Key differences from closeTrade():
-     *   - Does NOT use LTP for order price. Instead fetches live order book depth (Level 2)
-     *     and places limit orders at best bid (for SELL) / best ask (for BUY) to avoid chasing
-     *   - Legs are closed SEQUENTIALLY, not in parallel — priority order:
-     *       1. Close the loss-making leg first (stop the bleed)
-     *       2. Close the profit leg after confirmation of step 1
-     *   - Each leg gets a configurable retry window (e.g. 30s) before falling back to market order
-     *   - If a leg is completely illiquid (no bids/asks), flag it as MANUAL_INTERVENTION_REQUIRED
-     *     and alert via notification — do not place a blind market order
-     *   - Partial fills must be tracked: if only part of the qty fills within the retry window,
-     *     place a follow-up order for the remaining qty at market
-     *   - A maximum slippage threshold (e.g. 2% from signal price) should be enforced —
-     *     if limit order would exceed this, escalate to alert instead of auto-executing
-     *
-     * Parameters needed (not yet wired):
-     *   - signalPrice     : the exit signal price from TradingView
-     *   - signal          : Signal metadata (action, signalType, strategyName)
-     *   - updateApiAction : whether to update lastApiAction on the trade record
-     *   - maxSlippagePct  : maximum acceptable slippage % before abandoning auto-exit (e.g. 2.0)
-     *   - retryWindowSec  : seconds to wait for limit order fill before retrying (e.g. 30)
-     *
-     * TODO: Implement once order book depth API (kite.getOrderDepth) usage is confirmed
-     * TODO: Implement notification/alert mechanism for MANUAL_INTERVENTION_REQUIRED cases
-     * TODO: Implement partial fill tracking using order status polling
-     */
-    public Trade closeTradeOnLargeMove(String signalPrice, Signal signal, boolean updateApiAction) {
-        log.warn("closeTradeOnLargeMove called — NOT YET IMPLEMENTED. Falling back to normal closeTrade.");
-        // TODO: implement large move exit logic per above specification
-        return closeTrade(signalPrice, signal, updateApiAction);
-    }
 }
