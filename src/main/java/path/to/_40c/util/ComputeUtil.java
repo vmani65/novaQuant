@@ -106,21 +106,21 @@ public class ComputeUtil {
 		if(trade != null) {
 			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySignalPrice());
 			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSignalPrice());
-			Double points = 0.0d;
+			// Points for the current (final) segment only
+			Double segmentPoints = 0.0d;
 			if(LONG.equals(trade.getSignalType())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
-					points = exitPrice.subtract(entryPrice).doubleValue();
-				else
-					points = 0.0d;
+					segmentPoints = exitPrice.subtract(entryPrice).doubleValue();
 			}
 			if(SHORT.equals(trade.getSignalType())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
-					points = entryPrice.subtract(exitPrice).doubleValue();
-				else
-					points = 0.0d;
+					segmentPoints = entryPrice.subtract(exitPrice).doubleValue();
 			}
-			trade.setPointsByTrade(points);
-			trade.setTradeOutcome(points > 0 ? WIN :LOSS);
+			// Total = accumulated points from all prior recenter segments + current segment
+			double realized = trade.getRealizedPoints() != null ? trade.getRealizedPoints() : 0.0;
+			double totalPoints = realized + segmentPoints;
+			trade.setPointsByTrade(totalPoints);
+			trade.setTradeOutcome(totalPoints > 0 ? WIN : LOSS);
 		}
 	}
 

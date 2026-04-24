@@ -10,6 +10,7 @@ import org.springframework.web.bind.annotation.RestController;
 import static path.to._40c.util.Constants.ZONE_ID;
 
 import path.to._40c.entity.SymbolConfig;
+import path.to._40c.service.ProfitRecenterService;
 import path.to._40c.service.SignalService;
 import path.to._40c.service.SymbolService;
 
@@ -22,12 +23,15 @@ public class RollOverTriggerController {
 
     private static final Logger log = LoggerFactory.getLogger(RollOverTriggerController.class);
 
-    private final SignalService signalService;
-    private final SymbolService symbolService;
+    private final SignalService          signalService;
+    private final SymbolService          symbolService;
+    private final ProfitRecenterService  profitRecenterService;
 
-    public RollOverTriggerController(SignalService signalService, SymbolService symbolService) {
-        this.signalService = signalService;
-        this.symbolService = symbolService;
+    public RollOverTriggerController(SignalService signalService, SymbolService symbolService,
+                                     ProfitRecenterService profitRecenterService) {
+        this.signalService         = signalService;
+        this.symbolService         = symbolService;
+        this.profitRecenterService = profitRecenterService;
     }
 
     /**
@@ -63,7 +67,40 @@ public class RollOverTriggerController {
 
         log.info("RollOver day matched — initiating rollover | date={} | currentPrice={}", today, sanitisedPrice);
         signalService.handleRollOver(sanitisedPrice);
+        symbolService.promoteRolloverSymbol();
         symbolService.markRolloverComplete();
-        log.info("RollOver completed and marked complete");
+        log.info("RollOver completed — symbol promoted and marked complete");
+    }
+
+    /**
+     * Called by nQ-ticker ProfitRecenterConsumer when NIFTY profit >= 500 points.
+     * Closes the current live legs and re-opens at the new ATM. Trade stays LIVE.
+     *
+     * Example: GET /api/realize-profits?currentPrice=24500.0
+     */
+    @GetMapping("/realize-profits")
+    public void handleRealizeProfits(@RequestParam String currentPrice) {
+        String sanitisedPrice = currentPrice.replace(",", "").trim();
+        log.info("Realize-profits trigger received from nQ-ticker | currentPrice={}", sanitisedPrice);
+        profitRecenterService.realizeProfits(sanitisedPrice);
+        log.info("Realize-profits completed");
+    }
+
+    /**
+     * Called by nQ-ticker OpenBufferConsumer when the 9:15 AM open buffer fires.
+     * Closes the trade directly — no 9:15 AM check, no re-delegation to nQ-ticker.
+     *
+     * This is the second leg of the open buffer flow:
+     *   AFL longExit → novaquant detects 9:15 → arms nQ-ticker buffer
+     *   → nQ-ticker fires this endpoint when target hit or 09:28:59 deadline reached
+     *
+     * Example: GET /api/execute-close?currentPrice=22463.5
+     */
+    @GetMapping("/execute-close")
+    public void handleExecuteClose(@RequestParam String currentPrice) {
+        String sanitisedPrice = currentPrice.replace(",", "").trim();
+        log.info("execute-close received from nQ-ticker open buffer | currentPrice={}", sanitisedPrice);
+        signalService.executeCloseImmediate(sanitisedPrice);
+        log.info("execute-close completed");
     }
 }
