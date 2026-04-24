@@ -1,6 +1,10 @@
 package path.to._40c.service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.List;
+
+import static path.to._40c.util.Constants.ZONE_ID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -48,6 +52,7 @@ public class KiteAuthService {
         auth.setApiKey(apiKey);
         auth.setApiSecret(apiSecret);
         kiteRepository.saveAndFlush(auth);
+        kiteRepository.deleteByAuthDateBefore(LocalDate.now(ZoneId.of(ZONE_ID)).minusDays(30));
         kiteGateway.invalidateCache();
         return "SUCCESS";
     }

@@ -10,4 +10,5 @@ import java.util.Optional;
 @Repository
 public interface KiteAuthDetailsRepository extends JpaRepository<KiteAuthDetails, Long> {
     Optional<KiteAuthDetails> findByAuthDate(LocalDate authDate);
+    void deleteByAuthDateBefore(LocalDate date);
 }
