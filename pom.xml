@@ -12,12 +12,12 @@
     </parent>
 
     <groupId>path.to</groupId>
-    <artifactId>novaquant</artifactId>
-    <version>v3</version>
+    <artifactId>nq-core</artifactId>
+    <version>2026.04</version>
     <packaging>jar</packaging>
 
-    <name>NovaQuant</name>
-    <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — novaQuant Application</description>
+    <name>nQ-core</name>
+    <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — nQ-core Application</description>
 
     <properties>
         <java.version>17</java.version>
