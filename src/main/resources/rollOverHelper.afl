@@ -1,7 +1,7 @@
 // =============================================================================
 // rollOverHelper.afl
 // Chart  : Nifty-I  |  Timeframe: 1 Minute
-// Purpose: Fire a rollover trigger to NovaQuant at exactly 14:47 IST daily.
+// Purpose: Fire a rollover trigger to nqCore at exactly 14:47 IST daily.
 //          Passes the current Nifty-I close price. Triggers only once per day.
 // Endpoint: GET http://localhost:8080/api/rollover-trigger?currentPrice=<price>
 // =============================================================================

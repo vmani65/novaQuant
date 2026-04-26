@@ -91,7 +91,7 @@ public class RollOverTriggerController {
      * Closes the trade directly — no 9:15 AM check, no re-delegation to nQ-ticker.
      *
      * This is the second leg of the open buffer flow:
-     *   AFL longExit → novaquant detects 9:15 → arms nQ-ticker buffer
+     *   AFL longExit → nqCore detects 9:15 → arms nQ-ticker buffer
      *   → nQ-ticker fires this endpoint when target hit or 09:28:59 deadline reached
      *
      * Example: GET /api/execute-close?currentPrice=22463.5

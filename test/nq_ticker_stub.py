@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
 Minimal nq-ticker stub for E2E testing.
-Runs on port 9192, simulates the two callbacks novaQuant expects from nq-ticker:
+Runs on port 9192, simulates the two callbacks nqCore expects from nq-ticker:
   - GET /arm-buffer?openPrice=N  -> waits 2s, fires GET /api/execute-close?currentPrice=N
-  - GET /realize-profits/*       -> not needed here (novaQuant calls this, nq-ticker doesn't)
+  - GET /realize-profits/*       -> not needed here (nqCore calls this, nq-ticker doesn't)
 
 Usage:
   python nq_ticker_stub.py
@@ -15,7 +15,7 @@ import urllib.request
 import threading
 import time
 
-NOVAQUANT_BASE = "http://localhost:8080"
+NQCORE_BASE = "http://localhost:8080"
 
 
 class StubHandler(BaseHTTPRequestHandler):
@@ -32,7 +32,7 @@ class StubHandler(BaseHTTPRequestHandler):
 
             def fire_callback():
                 time.sleep(2)
-                url = f"{NOVAQUANT_BASE}/api/execute-close?currentPrice={open_price}"
+                url = f"{NQCORE_BASE}/api/execute-close?currentPrice={open_price}"
                 print(f"[stub] firing -> {url}")
                 try:
                     urllib.request.urlopen(url, timeout=10)

@@ -1,4 +1,4 @@
-# NovaQuant
+# nqCore
 
 Automated options trading system for NIFTY weekly synthetic positions, built on Spring Boot 3.5.9 + Thymeleaf + JPA (SQLite) + Kite Connect.
 
@@ -16,7 +16,7 @@ Automated options trading system for NIFTY weekly synthetic positions, built on 
 
 ```bash
 mvn clean package
-java -jar target/novaquant-v3.jar
+java -jar target/nqCore-2026.04.jar
 ```
 
 Open [http://localhost:8080/signalHome](http://localhost:8080/signalHome)
@@ -26,7 +26,7 @@ Open [http://localhost:8080/signalHome](http://localhost:8080/signalHome)
 Run with the `mock` profile to test without Kite Connect credentials:
 
 ```bash
-java -jar target/novaquant-v3.jar --spring.profiles.active=mock
+java -jar target/nqCore-2026.04.jar --spring.profiles.active=mock
 ```
 
 Mock mode swaps `KiteConnectGateway` for `MockKiteGateway` (returns synthetic LTP/order data). All service logic — including rollover promotion, capital calculations, and post-trade PnL — runs normally. New DB columns (`rollover_day`, `rollover_complete`) are created automatically via `ddl-auto=update`; no schema migration needed.

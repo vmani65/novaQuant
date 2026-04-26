@@ -12,12 +12,12 @@
     </parent>
 
     <groupId>path.to</groupId>
-    <artifactId>nq-core</artifactId>
+    <artifactId>nqCore</artifactId>
     <version>2026.04</version>
     <packaging>jar</packaging>
 
-    <name>nQ-core</name>
-    <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — nQ-core Application</description>
+    <name>nqCore</name>
+    <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
         <java.version>17</java.version>

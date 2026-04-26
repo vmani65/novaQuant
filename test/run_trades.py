@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-novaQuant E2E harness — 10 realistic NIFTY weekly option scenarios.
+nqCore E2E harness — 10 realistic NIFTY weekly option scenarios.
 
 Prerequisites:
-  1. novaQuant (mock):   mvn spring-boot:run -Dspring-boot.run.profiles=mock
+  1. nqCore (mock):   mvn spring-boot:run -Dspring-boot.run.profiles=mock
   2. nq-ticker stub:     python test/nq_ticker_stub.py    (trade 9 only)
   3. pip install requests
 
@@ -151,7 +151,7 @@ def check_server():
     try:
         requests.get(f"{BASE}/api/trades", timeout=5)
     except Exception:
-        print(f"\nERROR: novaQuant not reachable at {BASE}")
+        print(f"\nERROR: nqCore not reachable at {BASE}")
         print("  Start it:  mvn spring-boot:run -Dspring-boot.run.profiles=mock")
         sys.exit(1)
 
@@ -202,7 +202,7 @@ def print_summary():
 def run_all():
     check_server()
     print("=" * 72)
-    print("  novaQuant E2E - 10 NIFTY Weekly Option Scenarios  [mock mode]")
+    print("  nqCore E2E - 10 NIFTY Weekly Option Scenarios  [mock mode]")
     print("=" * 72)
 
     for i, (strat, label, fn) in enumerate(SCENARIOS, start=1):
