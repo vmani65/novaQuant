@@ -1,38 +1,37 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <configuration scan="true">
 
-    <!-- Console Appender -->
     <appender name="CONSOLE" class="ch.qos.logback.core.ConsoleAppender">
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS,Asia/Kolkata} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
-    <!-- File Appender -->
     <appender name="FILE" class="ch.qos.logback.core.rolling.RollingFileAppender">
         <file>logs/nqCore-app.log</file>
         <rollingPolicy class="ch.qos.logback.core.rolling.TimeBasedRollingPolicy">
             <fileNamePattern>logs/nqCore-app.%d{yyyy-MM-dd}.log</fileNamePattern>
-            <maxHistory>7</maxHistory>
+            <maxHistory>30</maxHistory>
+            <totalSizeCap>500MB</totalSizeCap>
         </rollingPolicy>
         <encoder>
-            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS} [%thread] %-5level %logger{36} - %msg%n</pattern>
+            <pattern>%d{yyyy-MM-dd HH:mm:ss.SSS,Asia/Kolkata} [%thread] %-5level %logger{36} - %msg%n</pattern>
         </encoder>
     </appender>
 
     <!--
         AsyncAppender — signal thread hands off log events to a background queue instantly.
-        queueSize     : number of log events buffered before blocking (default 256, raised for burst)
-        discardingThreshold : 0 = never discard events even when queue is 80% full (default discards TRACE/DEBUG)
-        includeCallerData   : false = skip expensive stack frame lookup on the calling thread
-        neverBlock    : true = drop events rather than block the signal thread if queue fills up
+        queueSize          : events buffered before blocking (raised from default 256)
+        discardingThreshold: 0 = never discard even when queue is 80% full
+        includeCallerData  : false = skip expensive stack frame lookup on calling thread
+        neverBlock         : true = drop rather than block if queue fills under burst
     -->
     <appender name="ASYNC_CONSOLE" class="ch.qos.logback.classic.AsyncAppender">
         <queueSize>1024</queueSize>
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>false</includeCallerData>
         <neverBlock>true</neverBlock>
-        <appender-ref ref="CONSOLE" />
+        <appender-ref ref="CONSOLE"/>
     </appender>
 
     <appender name="ASYNC_FILE" class="ch.qos.logback.classic.AsyncAppender">
@@ -40,13 +39,15 @@
         <discardingThreshold>0</discardingThreshold>
         <includeCallerData>false</includeCallerData>
         <neverBlock>true</neverBlock>
-        <appender-ref ref="FILE" />
+        <appender-ref ref="FILE"/>
     </appender>
 
-    <!-- Root logger — both appenders are now async -->
+    <logger name="org.springframework" level="INFO"/>
+    <logger name="org.hibernate.SQL" level="INFO"/>
+
     <root level="INFO">
-        <appender-ref ref="ASYNC_CONSOLE" />
-        <appender-ref ref="ASYNC_FILE" />
+        <appender-ref ref="ASYNC_CONSOLE"/>
+        <appender-ref ref="ASYNC_FILE"/>
     </root>
 
 </configuration>
