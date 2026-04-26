@@ -1,4 +1,4 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
 import java.util.Optional;
 
@@ -9,8 +9,8 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import path.to._40c.entity.SymbolConfig;
-import path.to._40c.repo.SymbolConfigRepository;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.repo.SymbolConfigRepository;
 
 @Service
 public class SymbolService {

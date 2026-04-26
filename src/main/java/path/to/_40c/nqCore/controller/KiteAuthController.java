@@ -1,4 +1,4 @@
-package path.to._40c.controller;
+package path.to._40c.nqCore.controller;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -12,18 +12,18 @@ import java.util.Optional;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
-import static path.to._40c.util.Constants.BUY;
-import static path.to._40c.util.Constants.CE;
-import static path.to._40c.util.Constants.LONG;
-import static path.to._40c.util.Constants.PE;
-import static path.to._40c.util.Constants.SELL;
-import static path.to._40c.util.Constants.SHORT;
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.BUY;
+import static path.to._40c.nqCore.util.Constants.CE;
+import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.PE;
+import static path.to._40c.nqCore.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
-import path.to._40c.entity.KiteAuthDetails;
-import path.to._40c.entity.PositionSizeMatrix;
-import path.to._40c.repo.TradeLegConfigRepository;
-import path.to._40c.repo.KiteAuthDetailsRepository;
+import path.to._40c.nqCore.entity.KiteAuthDetails;
+import path.to._40c.nqCore.entity.PositionSizeMatrix;
+import path.to._40c.nqCore.repo.TradeLegConfigRepository;
+import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
@@ -33,10 +33,10 @@ import org.springframework.ui.Model;
 import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
-import path.to._40c.gateway.KiteGateway;
-import path.to._40c.service.KiteAuthService;
-import path.to._40c.service.SymbolService;
-import path.to._40c.service.TradeLegCache;
+import path.to._40c.nqCore.gateway.KiteGateway;
+import path.to._40c.nqCore.service.KiteAuthService;
+import path.to._40c.nqCore.service.SymbolService;
+import path.to._40c.nqCore.service.TradeLegCache;
 
 @Controller
 @RequestMapping

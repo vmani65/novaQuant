@@ -1,4 +1,4 @@
-package path.to._40c.entity;
+package path.to._40c.nqCore.entity;
 
 import jakarta.persistence.Column;
 import jakarta.persistence.Entity;

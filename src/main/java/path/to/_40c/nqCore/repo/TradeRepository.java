@@ -1,4 +1,4 @@
-package path.to._40c.repo;
+package path.to._40c.nqCore.repo;
 
 import java.util.List;
 
@@ -6,7 +6,7 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;
 
-import path.to._40c.entity.Trade;
+import path.to._40c.nqCore.entity.Trade;
 
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, Long> {

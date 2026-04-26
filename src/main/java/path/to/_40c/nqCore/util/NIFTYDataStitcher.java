@@ -1,4 +1,4 @@
-package path.to._40c.util;
+package path.to._40c.nqCore.util;
 import java.io.*;
 import java.time.LocalDate;
 import java.time.LocalDateTime;

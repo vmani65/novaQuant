@@ -1,7 +1,7 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
-import path.to._40c.entity.TradeCapital;
-import path.to._40c.repo.TradeCapitalRepository;
+import path.to._40c.nqCore.entity.TradeCapital;
+import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;

@@ -1,29 +1,29 @@
-package path.to._40c.util;
+package path.to._40c.nqCore.util;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import path.to._40c.entity.Trade;
-import path.to._40c.entity.TradeCapital;
-import path.to._40c.entity.WeeklyOrderBook;
-import path.to._40c.pojo.TradeLegConfig;
-import path.to._40c.pojo.WeeklyPojo;
-import path.to._40c.repo.TradeCapitalRepository;
-import path.to._40c.service.TradeLegCache;
-import path.to._40c.service.WeeklySymbolCache;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.TradeCapital;
+import path.to._40c.nqCore.entity.WeeklyOrderBook;
+import path.to._40c.nqCore.pojo.TradeLegConfig;
+import path.to._40c.nqCore.pojo.WeeklyPojo;
+import path.to._40c.nqCore.repo.TradeCapitalRepository;
+import path.to._40c.nqCore.service.TradeLegCache;
+import path.to._40c.nqCore.service.WeeklySymbolCache;
 
-import static path.to._40c.util.Constants.DATE_FORMAT;
-import static path.to._40c.util.Constants.LONG;
-import static path.to._40c.util.Constants.LOSS;
-import static path.to._40c.util.Constants.NFO_COLON;
-import static path.to._40c.util.Constants.NIFTY;
-import static path.to._40c.util.Constants.SHORT;
-import static path.to._40c.util.Constants.WIN;
-import static path.to._40c.util.Constants.ZONE_ID;
-import static path.to._40c.util.Constants.INPUT_FORMATS;
-import static path.to._40c.util.Constants.OUTPUT_FORMAT;
-import static path.to._40c.util.Constants.NA;
+import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.LOSS;
+import static path.to._40c.nqCore.util.Constants.NFO_COLON;
+import static path.to._40c.nqCore.util.Constants.NIFTY;
+import static path.to._40c.nqCore.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.WIN;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.INPUT_FORMATS;
+import static path.to._40c.nqCore.util.Constants.OUTPUT_FORMAT;
+import static path.to._40c.nqCore.util.Constants.NA;
 
 import java.math.BigDecimal;
 import java.time.LocalDateTime;

@@ -1,4 +1,4 @@
-package path.to._40c.gateway;
+package path.to._40c.nqCore.gateway;
 
 import java.util.List;
 import java.util.Map;

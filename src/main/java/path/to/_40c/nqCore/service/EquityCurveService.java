@@ -1,4 +1,4 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
@@ -7,11 +7,11 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
-import path.to._40c.entity.Trade;
-import path.to._40c.pojo.EquityCurve;
-import path.to._40c.repo.TradeRepository;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.pojo.EquityCurve;
+import path.to._40c.nqCore.repo.TradeRepository;
 
-import static path.to._40c.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 
 @Service
 public class EquityCurveService {

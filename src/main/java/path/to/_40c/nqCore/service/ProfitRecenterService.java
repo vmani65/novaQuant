@@ -1,6 +1,6 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
-import static path.to._40c.util.Constants.*;
+import static path.to._40c.nqCore.util.Constants.*;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -17,13 +17,13 @@ import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.OrderResponse;
 
-import path.to._40c.entity.SymbolConfig;
-import path.to._40c.entity.Trade;
-import path.to._40c.entity.WeeklyOrderBook;
-import path.to._40c.pojo.WeeklyPojo;
-import path.to._40c.repo.TradeRepository;
-import path.to._40c.util.ComputeUtil;
-import path.to._40c.util.TradeUtil;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.WeeklyOrderBook;
+import path.to._40c.nqCore.pojo.WeeklyPojo;
+import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.TradeUtil;
 
 /**
  * Re-centres a live trade at the new ATM when profit >= 500 points.

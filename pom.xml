@@ -100,7 +100,7 @@
                         <artifactId>maven-compiler-plugin</artifactId>
                         <configuration>
                             <excludes>
-                                <exclude>path/to/_40c/gateway/MockKiteGateway.java</exclude>
+                                <exclude>path/to/_40c/nqCore/gateway/MockKiteGateway.java</exclude>
                             </excludes>
                         </configuration>
                     </plugin>

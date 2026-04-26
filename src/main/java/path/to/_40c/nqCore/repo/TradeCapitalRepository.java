@@ -1,6 +1,6 @@
-package path.to._40c.repo;
+package path.to._40c.nqCore.repo;
 
-import path.to._40c.entity.TradeCapital;
+import path.to._40c.nqCore.entity.TradeCapital;
 import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.stereotype.Repository;

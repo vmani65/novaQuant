@@ -1,10 +1,10 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
 import java.util.List;
 
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
@@ -12,10 +12,10 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.zerodhatech.models.User;
 
-import path.to._40c.entity.KiteAuthDetails;
-import path.to._40c.gateway.KiteGateway;
-import path.to._40c.repo.KiteAuthDetailsRepository;
-import path.to._40c.util.TradeUtil;
+import path.to._40c.nqCore.entity.KiteAuthDetails;
+import path.to._40c.nqCore.gateway.KiteGateway;
+import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
+import path.to._40c.nqCore.util.TradeUtil;
 
 @Service
 public class KiteAuthService {

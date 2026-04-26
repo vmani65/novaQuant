@@ -1,4 +1,4 @@
-package path.to._40c;
+package path.to._40c.nqCore;
 
 import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;

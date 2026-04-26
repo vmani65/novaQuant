@@ -1,4 +1,4 @@
-package path.to._40c;
+package path.to._40c.nqCore;
 
 import java.util.concurrent.Executor;
 

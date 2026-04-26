@@ -1,4 +1,4 @@
-package path.to._40c.controller;
+package path.to._40c.nqCore.controller;
 
 import java.util.HashMap;
 import java.util.List;
@@ -14,11 +14,11 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import path.to._40c.entity.TradeCapital;
-import path.to._40c.pojo.EquityCurve;
-import path.to._40c.pojo.TradeCapitalDTO;
-import path.to._40c.service.EquityCurveService;
-import path.to._40c.service.TradeCapitalService;
+import path.to._40c.nqCore.entity.TradeCapital;
+import path.to._40c.nqCore.pojo.EquityCurve;
+import path.to._40c.nqCore.pojo.TradeCapitalDTO;
+import path.to._40c.nqCore.service.EquityCurveService;
+import path.to._40c.nqCore.service.TradeCapitalService;
 
 @RestController
 @RequestMapping("/api")

@@ -1,4 +1,4 @@
-package path.to._40c.gateway;
+package path.to._40c.nqCore.gateway;
 
 import java.io.IOException;
 import java.time.LocalDate;
@@ -27,10 +27,10 @@ import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.User;
 
-import path.to._40c.entity.KiteAuthDetails;
-import path.to._40c.repo.KiteAuthDetailsRepository;
+import path.to._40c.nqCore.entity.KiteAuthDetails;
+import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 /**
  * Production implementation of KiteGateway — wraps the Kite Connect SDK.

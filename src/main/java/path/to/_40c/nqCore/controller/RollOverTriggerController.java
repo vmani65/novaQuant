@@ -1,4 +1,4 @@
-package path.to._40c.controller;
+package path.to._40c.nqCore.controller;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -7,12 +7,12 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
-import path.to._40c.entity.SymbolConfig;
-import path.to._40c.service.ProfitRecenterService;
-import path.to._40c.service.SignalService;
-import path.to._40c.service.SymbolService;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.service.ProfitRecenterService;
+import path.to._40c.nqCore.service.SignalService;
+import path.to._40c.nqCore.service.SymbolService;
 
 import java.time.LocalDate;
 import java.time.ZoneId;

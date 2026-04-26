@@ -1,8 +1,8 @@
-package path.to._40c.repo;
+package path.to._40c.nqCore.repo;
 
-import static path.to._40c.util.Constants.ATM;
-import static path.to._40c.util.Constants.LONG;
-import static path.to._40c.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.ATM;
+import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.SHORT;
 
 import java.util.ArrayList;
 import java.util.List;
@@ -11,8 +11,8 @@ import org.springframework.data.jpa.repository.JpaRepository;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.query.Param;
 
-import path.to._40c.entity.PositionSizeMatrix;
-import path.to._40c.pojo.TradeLegConfig;
+import path.to._40c.nqCore.entity.PositionSizeMatrix;
+import path.to._40c.nqCore.pojo.TradeLegConfig;
 
 public interface TradeLegConfigRepository extends JpaRepository<PositionSizeMatrix, Long> {
 

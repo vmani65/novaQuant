@@ -1,4 +1,4 @@
-package path.to._40c.gateway;
+package path.to._40c.nqCore.gateway;
 
 import java.util.ArrayList;
 import java.util.Collections;
@@ -11,8 +11,8 @@ import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
-import static path.to._40c.util.Constants.BUY;
-import static path.to._40c.util.Constants.CE;
+import static path.to._40c.nqCore.util.Constants.BUY;
+import static path.to._40c.nqCore.util.Constants.CE;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;

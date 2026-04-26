@@ -1,7 +1,7 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
-import static path.to._40c.util.Constants.LIVE;
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.net.URI;
 import java.net.http.HttpClient;
@@ -18,10 +18,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
-import path.to._40c.controller.SignalController.Signal;
-import path.to._40c.entity.SymbolConfig;
-import path.to._40c.entity.Trade;
-import path.to._40c.repo.TradeRepository;
+import path.to._40c.nqCore.controller.SignalController.Signal;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.repo.TradeRepository;
 
 @Service
 public class SignalService {

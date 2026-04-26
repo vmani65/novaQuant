@@ -1,11 +1,11 @@
-package path.to._40c.util;
+package path.to._40c.nqCore.util;
 
-import static path.to._40c.util.Constants.BUY;
-import static path.to._40c.util.Constants.CLOSED;
-import static path.to._40c.util.Constants.LIVE;
-import static path.to._40c.util.Constants.NFO;
-import static path.to._40c.util.Constants.NIFTY;
-import static path.to._40c.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.BUY;
+import static path.to._40c.nqCore.util.Constants.CLOSED;
+import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.NFO;
+import static path.to._40c.nqCore.util.Constants.NIFTY;
+import static path.to._40c.nqCore.util.Constants.SELL;
 
 import java.util.ArrayList;
 import java.util.Arrays;
@@ -28,9 +28,9 @@ import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
 
 import jakarta.persistence.EntityManager;
-import path.to._40c.entity.Trade;
-import path.to._40c.gateway.KiteGateway;
-import path.to._40c.repo.TradeRepository;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.gateway.KiteGateway;
+import path.to._40c.nqCore.repo.TradeRepository;
 
 @Service
 public class TradeUtil {

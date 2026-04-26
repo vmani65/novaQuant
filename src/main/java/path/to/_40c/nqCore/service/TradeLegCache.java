@@ -1,4 +1,4 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
 import java.util.Collections;
 import java.util.List;
@@ -7,8 +7,8 @@ import java.util.concurrent.atomic.AtomicReference;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
-import path.to._40c.pojo.TradeLegConfig;
-import path.to._40c.repo.TradeLegConfigRepository;
+import path.to._40c.nqCore.pojo.TradeLegConfig;
+import path.to._40c.nqCore.repo.TradeLegConfigRepository;
 
 @Service
 public class TradeLegCache {

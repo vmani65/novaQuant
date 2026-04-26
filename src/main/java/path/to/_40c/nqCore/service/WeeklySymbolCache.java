@@ -1,8 +1,8 @@
-package path.to._40c.service;
+package path.to._40c.nqCore.service;
 
 import org.springframework.stereotype.Component;
 
-import path.to._40c.entity.SymbolConfig;
+import path.to._40c.nqCore.entity.SymbolConfig;
 
 import java.util.concurrent.atomic.AtomicReference;
 

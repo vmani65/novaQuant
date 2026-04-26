@@ -1,4 +1,4 @@
-package path.to._40c.pojo;
+package path.to._40c.nqCore.pojo;
 
 import lombok.AllArgsConstructor;
 import lombok.Data;

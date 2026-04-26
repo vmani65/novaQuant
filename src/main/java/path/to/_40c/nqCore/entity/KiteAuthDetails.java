@@ -1,4 +1,4 @@
-package path.to._40c.entity;
+package path.to._40c.nqCore.entity;
 
 import java.time.LocalDate;
 import java.time.LocalDateTime;
@@ -9,8 +9,8 @@ import jakarta.persistence.*;
 import lombok.Getter;
 import lombok.Setter;
 
-import static path.to._40c.util.Constants.ZONE_ID;
-import static path.to._40c.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 
 @Entity
 @Table(name = "KITE_AUTH_DETAILS")

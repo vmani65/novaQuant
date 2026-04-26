@@ -1,4 +1,4 @@
-package path.to._40c.util;
+package path.to._40c.nqCore.util;
 
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;

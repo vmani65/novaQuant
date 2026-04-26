@@ -1,4 +1,4 @@
-package path.to._40c.controller;
+package path.to._40c.nqCore.controller;
 
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -10,9 +10,9 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.ResponseBody;
 
-import path.to._40c.entity.BaseChildEntity;
-import path.to._40c.entity.Trade;
-import path.to._40c.repo.TradeRepository;
+import path.to._40c.nqCore.entity.BaseChildEntity;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.repo.TradeRepository;
 
 @Controller
 public class TradeLogController {

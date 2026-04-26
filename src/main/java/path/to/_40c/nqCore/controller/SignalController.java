@@ -1,11 +1,11 @@
-package path.to._40c.controller;
+package path.to._40c.nqCore.controller;
 
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.PostConstruct;
-import path.to._40c.entity.Trade;
-import path.to._40c.service.SignalService;
-import path.to._40c.util.ComputeUtil;
+import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.service.SignalService;
+import path.to._40c.nqCore.util.ComputeUtil;
 
 import org.springframework.http.ResponseEntity;
 import org.slf4j.Logger;
@@ -17,8 +17,8 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.Duration;
 
-import static path.to._40c.util.Constants.IST_FORMATTER;
-import static path.to._40c.util.Constants.ZONE_ID;
+import static path.to._40c.nqCore.util.Constants.IST_FORMATTER;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 @RestController
 @RequestMapping("/api")
