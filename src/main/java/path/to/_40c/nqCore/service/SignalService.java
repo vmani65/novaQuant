@@ -52,7 +52,7 @@ public class SignalService {
 	}
 
 	public Trade getLastTrade() {
-	    Trade liveTrade = tradeRepository.findByTradeStatus(LIVE);
+	    Trade liveTrade = tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
 	    if (liveTrade != null) {
 	        return liveTrade;
 	    }
@@ -97,8 +97,8 @@ public class SignalService {
 
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("Time taken to complete trade close is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
+	   checkAndPromoteRolloverSymbol();   // must run before afterClose to avoid SQLite BUSY on concurrent writes
 	   postTradeService.afterClose(closedTrade);
-	   checkAndPromoteRolloverSymbol();
 	   return true;
 	}
 
@@ -111,8 +111,8 @@ public class SignalService {
 	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
+	   checkAndPromoteRolloverSymbol();   // must run before afterClose to avoid SQLite BUSY on concurrent writes
 	   postTradeService.afterClose(closedTrade);
-	   checkAndPromoteRolloverSymbol();
 	}
 
 	private boolean isOpenBufferTime() {

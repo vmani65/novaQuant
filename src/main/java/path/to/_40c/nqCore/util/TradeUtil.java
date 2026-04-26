@@ -288,14 +288,14 @@ public class TradeUtil {
     public Trade findLiveTradesWithLiveOrderBooks() {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Trade trades = tradeRepository.findByTradeStatus(LIVE);
+        Trade trades = tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
 
     @Transactional
     public Trade findLiveTradesWithAllOrderBooks() {
-        return tradeRepository.findByTradeStatus(LIVE);
+        return tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
     }
 
     public static void sleep() {

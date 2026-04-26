@@ -103,4 +103,10 @@ public class RollOverTriggerController {
         signalService.executeCloseImmediate(sanitisedPrice);
         log.info("execute-close completed");
     }
+
+    @GetMapping("/refreshSymbolCache")
+    public void refreshSymbolCache() {
+        symbolService.warmCache();
+        log.info("Symbol cache refreshed from DB");
+    }
 }

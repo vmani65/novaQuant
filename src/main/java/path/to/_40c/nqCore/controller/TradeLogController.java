@@ -53,6 +53,7 @@ public class TradeLogController {
         m.put("brokerage", t.getBrokerage());
         m.put("diffPercentage", t.getDiffPercentage());
         m.put("lots", t.getLots());
+        m.put("realizedPoints", t.getRealizedPoints());
         m.put("statergyName", t.getStatergyName());
         m.put("startingCapital", t.getStartingCapital());
         m.put("endingCapital", t.getEndingCapital());

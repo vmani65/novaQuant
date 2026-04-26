@@ -11,7 +11,7 @@ import path.to._40c.nqCore.entity.Trade;
 @Repository
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 	
-	Trade findByTradeStatus(String status);
+	Trade findFirstByTradeStatusOrderByIdDesc(String status);
     
 	Trade findFirstByOrderByIdDesc();
     
