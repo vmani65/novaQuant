@@ -150,6 +150,7 @@ public class ProfitRecenterService {
                 segment, trade.getRealizedPoints(), newPrice);
 
         // ── 4. Open new legs at new ATM ───────────────────────────────────────
+        symbolService.checkAndPromoteRolloverSymbol();
         // Use rolloverSymbol if the weekly rollover already completed today;
         // otherwise use thisWeekSymbol. buildInstrument handles the lookup.
         boolean useRollover = isRolloverComplete();

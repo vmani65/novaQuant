@@ -1,5 +1,7 @@
 package path.to._40c.nqCore.service;
 
+import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 
 import org.slf4j.Logger;
@@ -9,6 +11,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.repo.SymbolConfigRepository;
 
@@ -68,6 +71,19 @@ public class SymbolService {
         return repo.findById(1L).orElse(null);
     }
     
+    public void checkAndPromoteRolloverSymbol() {
+        LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
+        SymbolConfig cfg = current();
+        if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
+        if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {
+            log.info("Rollover day — already complete, skipping symbol promotion");
+        } else {
+            log.info("Rollover day — promoting rollover symbol | {} -> thisWeek", cfg.getRolloverSymbol());
+            promoteRolloverSymbol();
+            markRolloverComplete();
+        }
+    }
+
     @EventListener(ApplicationReadyEvent.class)
     public void warmCache() {
         repo.findById(1L).ifPresent(cache::set);

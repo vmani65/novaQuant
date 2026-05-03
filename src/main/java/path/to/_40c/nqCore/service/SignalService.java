@@ -9,7 +9,6 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
-import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 
@@ -19,7 +18,6 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.controller.SignalController.Signal;
-import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.entity.Trade;
 import path.to._40c.nqCore.repo.TradeRepository;
 
@@ -136,16 +134,7 @@ public class SignalService {
 	}
 
 	private void checkAndPromoteRolloverSymbol() {
-	   LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
-	   SymbolConfig cfg = symbolService.current();
-	   if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
-	   if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {
-	       log.info("Rollover day — already complete, skipping symbol promotion");
-	   } else {
-	       log.info("Rollover day — promoting rollover symbol | {} -> thisWeek", cfg.getRolloverSymbol());
-	       symbolService.promoteRolloverSymbol();
-	       symbolService.markRolloverComplete();
-	   }
+	   symbolService.checkAndPromoteRolloverSymbol();
 	}
 
 	public boolean handleRollOver(String signalPrice) {
