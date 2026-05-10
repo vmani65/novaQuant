@@ -20,8 +20,8 @@ public class AsyncConfig {
     @Bean("postTradeExecutor")
     public Executor postTradeExecutor() {
         ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
-        executor.setCorePoolSize(2);
-        executor.setMaxPoolSize(4);
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(1);
         executor.setQueueCapacity(10);
         executor.setThreadNamePrefix("post-trade-");
         executor.initialize();

@@ -19,9 +19,9 @@ from datetime import datetime
 BASE        = "http://localhost:8080"
 POST_OPEN   = 5    # afterOpen async (exec price + margin fetch)
 POST_CLOSE  = 5    # afterClose async (PnL + capital calc)
-POST_FLIP   = 7    # afterClose old leg + afterOpen new leg
+POST_FLIP   = 12   # afterClose old leg + afterOpen new leg (serial executor: sequential, not parallel)
 POST_RECEN  = 4    # realize-profits is synchronous-ish; small buffer
-STUB_WAIT   = 14   # stub 2s delay + execute-close + afterClose
+STUB_WAIT   = 16   # stub 2s delay + execute-close + afterClose (serial executor)
 
 
 # ---------------------------------------------------------------------------

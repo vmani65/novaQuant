@@ -43,7 +43,8 @@ public class TradeClosingService {
             log.info("No Live trades to close.");
             return null;
         }
-        tradeToClose.setExitSignalPrice(Double.valueOf(signalPrice));
+        double closePrice = Double.parseDouble(signalPrice);
+        tradeToClose.setExitSignalPrice(Math.round(((tradeToClose.getExitSignalPrice() != null ? tradeToClose.getExitSignalPrice() : 0.0) + closePrice) * 100.0) / 100.0);
         log.info("Live Trade being closed is: {}", tradeToClose);
         String[] liveIns = tradeToClose.getWeeklyOrderBook().stream().map(WeeklyOrderBook::getTradedSymbol).toArray(String[]::new);
         Map<String, LTPQuote> ltp = tradeUtil.getLTP(liveIns);

@@ -96,7 +96,9 @@ public class TradeRollOverService {
             }
             tradeUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);
             List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>();
-            tradeToRollOver.setEntrySignalPrice(Math.round(((tradeToRollOver.getEntrySignalPrice() != null ? tradeToRollOver.getEntrySignalPrice() : 0.0) + (signalPrice != null ? Double.valueOf(signalPrice) : 0.0)) * 100.0) / 100.0);
+            double rolloverPrice = signalPrice != null ? Double.valueOf(signalPrice) : 0.0;
+            tradeToRollOver.setEntrySignalPrice(Math.round(((tradeToRollOver.getEntrySignalPrice() != null ? tradeToRollOver.getEntrySignalPrice() : 0.0) + rolloverPrice) * 100.0) / 100.0);
+            tradeToRollOver.setExitSignalPrice( Math.round(((tradeToRollOver.getExitSignalPrice()  != null ? tradeToRollOver.getExitSignalPrice()  : 0.0) + rolloverPrice) * 100.0) / 100.0);
             List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);
             String[] ltpIns = weeklyPojo.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new);
             log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));

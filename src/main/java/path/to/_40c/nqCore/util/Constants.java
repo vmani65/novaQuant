@@ -46,10 +46,12 @@ public class Constants {
 		    DateTimeFormatter.ofPattern("MM/dd/yyyy hh.mm.ss a"),
 		    DateTimeFormatter.ofPattern("MM/dd/yyyy hh:mm:ss a"),
 		    DateTimeFormatter.ofPattern("dd-MMM-yyyy hh.mm.ss a"),
+		    DateTimeFormatter.ofPattern("dd-MMM-yy hh:mm:ss a"),
 		    DateTimeFormatter.ofPattern("M/d/yyyy h.mm.ss a"),
 		    DateTimeFormatter.ofPattern("M/d/yyyy h:mm:ss a"),
 		    DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss"),
-		    DateTimeFormatter.ofPattern("dd/MM/yyyy hh.mm.ss a")
+		    DateTimeFormatter.ofPattern("dd/MM/yyyy hh.mm.ss a"),
+		    DateTimeFormatter.ofPattern("HH:mm:ss")
 	);
 	
 }

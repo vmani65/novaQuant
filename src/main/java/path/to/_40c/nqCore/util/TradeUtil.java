@@ -53,72 +53,58 @@ public class TradeUtil {
 
     public void setTradeExecutedPrices(Trade t) {
         if (t != null) {
-          t.getWeeklyOrderBook().forEach(w -> {
-            log.info("Fetching executed prices for trade: {} OrderID: {}", t, LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-            var trades = getOrderTrades(LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-            if (trades == null || trades.isEmpty()) {
-            	log.warn("Empty Trade list while fetching executed prices. This needs investigation");
-            	sleep();
-            	trades = getOrderTrades(LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-            }
-            if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
-              var averagePrice = trades.get(0).averagePrice;
-              var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0;
-              log.info("Average Price: {}", avgPrice);
-                if (BUY.equals(w.getTransactionType())) {
-                  if (LIVE.equals(w.getTradeStatus()))
-                    w.setBoughtPrice(avgPrice);
-                  if (CLOSED.equals(w.getTradeStatus()))
-                    w.setSoldPrice(avgPrice);
-                }
-                if (SELL.equals(w.getTransactionType())) {
-                  if (LIVE.equals(w.getTradeStatus()))
-                    w.setSoldPrice(avgPrice);
-                  if (CLOSED.equals(w.getTradeStatus()))
-                    w.setBoughtPrice(avgPrice);
-                }
-            }
-         });
-       }
-    }
-
-    public void setTradeExecPricesForRollOver(Trade t, boolean rollOverClose, boolean rollOverOpen) {
-        if(t != null) {
-            t.getWeeklyOrderBook().stream().filter(w -> rollOverClose ? CLOSED.equals(w.getTradeStatus()) : LIVE.equals(w.getTradeStatus())).forEach(w -> {
-                log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-                var trades = getOrderTrades(rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-                if (trades == null || trades.isEmpty()) {
-                	log.warn("Empty Trade list while fetching executed prices during rollover. This needs investigation");
-                	sleep();
-                    trades = getOrderTrades(rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId());
-                }
-                log.info("Trade Details for OrderID: {} is {}", rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId(), (trades != null && !trades.isEmpty()) ? trades : "");
-                if(trades != null && !trades.isEmpty() && trades.get(0) != null) {
+            t.getWeeklyOrderBook().forEach(w -> {
+                String orderId = LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+                log.info("Fetching executed prices for trade: {} OrderID: {}", t, orderId);
+                List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
+                if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
                     var averagePrice = trades.get(0).averagePrice;
                     var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0;
                     log.info("Average Price: {}", avgPrice);
-                    if(BUY.equals(w.getTransactionType())) {
-                        if(rollOverOpen) {
-                            var newPrice = (w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice;
-                            w.setBoughtPrice(Math.round(newPrice * 100.0) / 100.0);
-                        }
-                        if(rollOverClose) {
-                            var newPrice = (w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice;
-                            w.setSoldPrice(Math.round(newPrice * 100.0) / 100.0);
-                        }
+                    if (BUY.equals(w.getTransactionType())) {
+                        if (LIVE.equals(w.getTradeStatus()))   w.setBoughtPrice(avgPrice);
+                        if (CLOSED.equals(w.getTradeStatus())) w.setSoldPrice(avgPrice);
                     }
-                    if(SELL.equals(w.getTransactionType())) {
-                        if(rollOverOpen) {
-                            var newPrice = (w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice;
-                            w.setSoldPrice(Math.round(newPrice * 100.0) / 100.0);
-                        }
-                        if(rollOverClose) {
-                            var newPrice = (w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice;
-                            w.setBoughtPrice(Math.round(newPrice * 100.0) / 100.0);
-                        }
+                    if (SELL.equals(w.getTransactionType())) {
+                        if (LIVE.equals(w.getTradeStatus()))   w.setSoldPrice(avgPrice);
+                        if (CLOSED.equals(w.getTradeStatus())) w.setBoughtPrice(avgPrice);
                     }
                 }
             });
+        }
+    }
+
+    public void setTradeExecPricesForRollOver(Trade t, boolean rollOverClose, boolean rollOverOpen) {
+        if (t != null) {
+            t.getWeeklyOrderBook().stream()
+                .filter(w -> rollOverClose ? CLOSED.equals(w.getTradeStatus()) : LIVE.equals(w.getTradeStatus()))
+                .forEach(w -> {
+                    String orderId = rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+                    log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, orderId);
+                    List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "rollover executed prices");
+                    log.info("Trade Details for OrderID: {} is {}", orderId, (trades != null && !trades.isEmpty()) ? trades : "");
+                    if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
+                        var averagePrice = trades.get(0).averagePrice;
+                        var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0;
+                        log.info("Average Price: {}", avgPrice);
+                        if (BUY.equals(w.getTransactionType())) {
+                            if (rollOverOpen) {
+                                w.setBoughtPrice(Math.round(((w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                            }
+                            if (rollOverClose) {
+                                w.setSoldPrice(Math.round(((w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                            }
+                        }
+                        if (SELL.equals(w.getTransactionType())) {
+                            if (rollOverOpen) {
+                                w.setSoldPrice(Math.round(((w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                            }
+                            if (rollOverClose) {
+                                w.setBoughtPrice(Math.round(((w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                            }
+                        }
+                    }
+                });
         }
     }
 
@@ -296,6 +282,21 @@ public class TradeUtil {
     @Transactional
     public Trade findLiveTradesWithAllOrderBooks() {
         return tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
+    }
+
+    private List<com.zerodhatech.models.Trade> fetchWithRetry(String orderId, String context) {
+        int maxAttempts = 3;
+        for (int attempt = 1; attempt <= maxAttempts; attempt++) {
+            List<com.zerodhatech.models.Trade> trades = getOrderTrades(orderId);
+            if (trades != null && !trades.isEmpty()) return trades;
+            if (attempt < maxAttempts) {
+                log.warn("Empty fills for orderId={} ({}) — attempt {}/{}, retrying in 10s", orderId, context, attempt, maxAttempts);
+                sleep();
+            } else {
+                log.error("Empty fills for orderId={} ({}) after {} attempts — execution price will default to 0", orderId, context, maxAttempts);
+            }
+        }
+        return new ArrayList<>();
     }
 
     public static void sleep() {

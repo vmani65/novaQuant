@@ -11,6 +11,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.concurrent.CompletableFuture;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -60,9 +61,23 @@ public class SignalService {
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 	   Trade trade = new Trade(signal);
-	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, false);
+	   // Rollover check runs before the async task so prepareOpen sees the correct symbol.
 	   checkAndPromoteRolloverSymbol();
-	   Trade liveTrade = openingService.openTrade(signalPrice, type, trade);
+	   // buildInstrument is pure computation; getLTP(open) is independent of the close result.
+	   // Fire both concurrently with closeTrade — close takes ~400-600ms, prep takes ~100ms,
+	   // so the future is always complete before join() is reached.
+	   CompletableFuture<TradeOpeningService.OpenPrep> openPrepFuture =
+	       CompletableFuture.supplyAsync(() -> openingService.prepareOpen(signalPrice, type, trade));
+	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, false);
+	   TradeOpeningService.OpenPrep prep = null;
+	   try {
+	       prep = openPrepFuture.join();
+	   } catch (Exception e) {
+	       log.error("Open-leg pre-fetch failed — falling back to inline open: {}", e.getMessage());
+	   }
+	   Trade liveTrade = (prep != null)
+	       ? openingService.openTrade(signalPrice, type, trade, prep)
+	       : openingService.openTrade(signalPrice, type, trade);
 	   log.info("Time taken to complete flip is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
 	   postTradeService.afterOpen(liveTrade);
 	   postTradeService.afterClose(closedTrade);

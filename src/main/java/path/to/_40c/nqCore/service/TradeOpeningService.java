@@ -38,14 +38,50 @@ public class TradeOpeningService {
         this.computeUtil = computeUtil;
     }
 
+    /**
+     * Instruments + LTP pre-fetched by the flip path's async task while close orders execute.
+     */
+    public record OpenPrep(List<WeeklyPojo> pojos, Map<String, LTPQuote> ltp) {}
+
+    /**
+     * Called by handleFlip's CompletableFuture concurrently with closeTrade.
+     * Builds instruments and fetches LTP for the open leg so both are ready
+     * the moment the close completes (~100ms work vs ~500ms close execution).
+     */
+    public OpenPrep prepareOpen(String signalPrice, String type, Trade trade) {
+        trade.setEntrySignalPrice(Double.valueOf(signalPrice));
+        trade.setSignalType(CE.equals(type) ? LONG : SHORT);
+        List<WeeklyPojo> pojos = computeUtil.buildInstrument(signalPrice, trade, false);
+        String[] symbols = pojos.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new);
+        Map<String, LTPQuote> ltp = tradeUtil.getLTP(symbols);
+        return new OpenPrep(pojos, ltp);
+    }
+
+    /**
+     * Standard open path used by handleTradeOpen — builds instruments and fetches LTP inline.
+     */
     public Trade openTrade(String signalPrice, String type, Trade trade) {
-    	List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>();
     	trade.setEntrySignalPrice(Double.valueOf(signalPrice));
     	trade.setSignalType(CE.equals(type) ? LONG : SHORT);
     	List<WeeklyPojo> weeklyPojo = computeUtil.buildInstrument(signalPrice, trade, false);
     	String[] ltpIns = weeklyPojo.stream().map(WeeklyPojo::getTradedSymbol).toArray(String[]::new);
-	log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
+	    log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
     	Map<String, LTPQuote> ltp = tradeUtil.getLTP(ltpIns);
+    	return placeAndSave(trade, weeklyPojo, ltp);
+    }
+
+    /**
+     * Optimised flip path — skips buildInstrument and getLTP since both were
+     * pre-computed by prepareOpen while the close orders were executing on Zerodha.
+     */
+    public Trade openTrade(String signalPrice, String type, Trade trade, OpenPrep prep) {
+        trade.setEntrySignalPrice(Double.valueOf(signalPrice));
+        trade.setSignalType(CE.equals(type) ? LONG : SHORT);
+        return placeAndSave(trade, prep.pojos(), prep.ltp());
+    }
+
+    private Trade placeAndSave(Trade trade, List<WeeklyPojo> weeklyPojo, Map<String, LTPQuote> ltp) {
+    	List<WeeklyOrderBook> childOrderBook = new ArrayList<>();
     	if (ltp.isEmpty()) {
     	    log.error("LTP map is empty — aborting trade open for all instruments");
     	    trade.setWeeklyOrderBook(weeklyPojo.stream().map(pojo -> {
@@ -89,7 +125,6 @@ public class TradeOpeningService {
     	        log.error("Exception placing order for {} ({} qty): {}", w.getMarginCalcSymbol(), totalQty, e.getMessage(), e);
     	    }
     	});
-
     	weeklyPojo.forEach(pojo -> {
     		WeeklyOrderBook b = new WeeklyOrderBook();
     		b.setMarginCalcSymbol(pojo.getMarginCalcSymbol());
