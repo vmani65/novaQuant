@@ -40,7 +40,7 @@ public class SymbolService {
     @Transactional
     public void promoteRolloverSymbol() {
         repo.findById(1L).ifPresent(cfg -> {
-            log.info("Promoting rollover symbol to this week | {} -> {}", cfg.getRolloverSymbol(), cfg.getThisWeekSymbol());
+            log.info("Promoting rollover symbol to this week: thisWeek {} -> {}", cfg.getThisWeekSymbol(), cfg.getRolloverSymbol());
             cfg.setThisWeekSymbol(cfg.getRolloverSymbol());
             SymbolConfig saved = repo.save(cfg);
             cache.set(saved);

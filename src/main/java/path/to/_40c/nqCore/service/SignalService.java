@@ -137,13 +137,13 @@ public class SignalService {
 	   String url = nqTickerUrl + "/arm-buffer?openPrice=" + openPrice;
 	   try {
 	       HttpResponse<String> resp = httpClient.send(
-	               HttpRequest.newBuilder().uri(URI.create(url)).GET().build(),
+	               HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(3)).GET().build(),
 	               HttpResponse.BodyHandlers.ofString());
 	       boolean ok = resp.statusCode() == 200;
 	       if (!ok) log.warn("arm-buffer returned HTTP {} — {}", resp.statusCode(), resp.body());
 	       return ok;
 	   } catch (Exception e) {
-	       log.error("arm-buffer HTTP call failed: {}", e.getMessage());
+	       log.error("arm-buffer HTTP call failed — is nqTicker open-buffer running on {}?", nqTickerUrl, e);
 	       return false;
 	   }
 	}

@@ -13,7 +13,7 @@
 
     <groupId>path.to</groupId>
     <artifactId>nqCore</artifactId>
-    <version>2026.04</version>
+    <version>2026.05</version>
     <packaging>jar</packaging>
 
     <name>nqCore</name>
@@ -115,6 +115,7 @@
                         <directory>src/main/resources</directory>
                         <excludes>
                             <exclude>application-mock.properties</exclude>
+                            <exclude>application-test.properties</exclude>
                         </excludes>
                     </resource>
                 </resources>
