@@ -58,14 +58,15 @@ public class SignalService {
 	    return tradeRepository.findFirstByOrderByIdDesc();
 	}
 
+	/**
+	 * Flip = close current + open new in opposite direction. Rollover symbol check runs first
+	 * so prepareOpen sees the correct symbol; then open prep runs concurrently with closeTrade
+	 * (prep ~100ms, close ~400-600ms) so the future is ready by the time we join().
+	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 	   Trade trade = new Trade(signal);
-	   // Rollover check runs before the async task so prepareOpen sees the correct symbol.
 	   checkAndPromoteRolloverSymbol();
-	   // buildInstrument is pure computation; getLTP(open) is independent of the close result.
-	   // Fire both concurrently with closeTrade — close takes ~400-600ms, prep takes ~100ms,
-	   // so the future is always complete before join() is reached.
 	   CompletableFuture<TradeOpeningService.OpenPrep> openPrepFuture =
 	       CompletableFuture.supplyAsync(() -> openingService.prepareOpen(signalPrice, type, trade));
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, false);
@@ -93,38 +94,38 @@ public class SignalService {
 	   return true;
 	}
 
+	/**
+	 * Close handler. 9:15 AM longExit is delegated to nQ-ticker's open buffer (which calls
+	 * back via /api/execute-close once the open-window target or deadline hits); other
+	 * close paths run inline. Rollover-symbol promotion runs before afterClose to avoid
+	 * SQLite BUSY from concurrent writes.
+	 */
 	public boolean handleTradeClose(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 
-	   // 9:15 AM long exit: delegate to nQ-ticker open buffer.
-	   // nQ-ticker will monitor NIFTY and call /api/execute-close when target is hit or
-	   // deadline (09:28:59) is reached. That endpoint closes directly — no 9:15 re-check.
 	   if ("longExit".equals(signal.action) && isOpenBufferTime()) {
 	       if (armNqTickerBuffer(signalPrice)) {
 	           log.info("9:15 AM long exit delegated to nQ-ticker open buffer | openPrice={} | {}ms",
 	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
-	           return true;  // actual close fires async from nQ-ticker
+	           return true;
 	       }
 	       log.warn("nQ-ticker arm-buffer call failed — falling back to immediate close");
 	   }
 
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("Time taken to complete trade close is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
-	   checkAndPromoteRolloverSymbol();   // must run before afterClose to avoid SQLite BUSY on concurrent writes
+	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
 	   return true;
 	}
 
-	/**
-	 * Called by /api/execute-close — the callback from nQ-ticker's open buffer.
-	 * Closes the trade directly, no 9:15 AM check, no re-delegation.
-	 */
+	/** Called by /api/execute-close — nQ-ticker open-buffer callback. Closes directly, no re-check. */
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
 	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
-	   checkAndPromoteRolloverSymbol();   // must run before afterClose to avoid SQLite BUSY on concurrent writes
+	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
 	}
 

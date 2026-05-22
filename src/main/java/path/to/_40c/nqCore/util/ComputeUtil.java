@@ -102,11 +102,14 @@ public class ComputeUtil {
         };
     }
 
+	/**
+	 * Sets pointsByTrade = realizedPoints (from prior recenter segments) + current segment's
+	 * (exit-entry) for LONG, (entry-exit) for SHORT. Sets tradeOutcome WIN/LOSS by sign.
+	 */
 	public void calcTradeOutcome(Trade trade) {
 		if(trade != null) {
 			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySignalPrice());
 			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSignalPrice());
-			// Points for the current (final) segment only
 			Double segmentPoints = 0.0d;
 			if(LONG.equals(trade.getSignalType())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
@@ -116,7 +119,6 @@ public class ComputeUtil {
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
 					segmentPoints = entryPrice.subtract(exitPrice).doubleValue();
 			}
-			// Total = accumulated points from all prior recenter segments + current segment
 			double realized = trade.getRealizedPoints() != null ? trade.getRealizedPoints() : 0.0;
 			double totalPoints = realized + segmentPoints;
 			trade.setPointsByTrade(totalPoints);
@@ -124,10 +126,18 @@ public class ComputeUtil {
 		}
 	}
 
+	/**
+	 * Groups legs by moneyness (each group is one CE+PE pair across all segments at that
+	 * strike offset), computes per-leg actualPnL = qty × (sold − bought), aggregates pair-level
+	 * actual/expected PnL and brokerage, then sets trade-level brokerage, expectedPnL,
+	 * actualPnL (= total actual − brokerage), diffPercentage, and lots.
+	 *
+	 * Pair-level expectedPnL uses the first leg's quantity since CE qty == PE qty by design
+	 * and synthetic delta ≈ 1. Skips any pair group with missing prices or brokerage.
+	 */
 	public void calcPnL(Trade trade) {
 		if (trade == null || trade.getPointsByTrade() == null) return;
 
-		// Group legs by moneyness — each group is one synthetic pair (CE + PE at same strike)
 		Map<String, List<WeeklyOrderBook>> pairs = trade.getWeeklyOrderBook().stream()
 				.collect(Collectors.groupingBy(WeeklyOrderBook::getMoneyness));
 
@@ -143,22 +153,17 @@ public class ComputeUtil {
 					w.getTradeOpenBrokerage()  != null && w.getTradeCloseBrokerage() != null);
 			if (!allPresent) continue;
 
-			// Per-leg actual PnL is real and meaningful — set it on each leg
 			pairLegs.forEach(w -> w.setActualPnL(rnd(w.getQuantity() * (w.getSoldPrice() - w.getBoughtPrice()))));
 
-			// Pair-level aggregations
 			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyOrderBook::getActualPnL).sum();
 			double pairBrokerage  = pairLegs.stream()
 					.mapToDouble(w -> w.getTradeOpenBrokerage() + w.getTradeCloseBrokerage()).sum();
-			// Expected PnL belongs to the pair, not individual legs.
-			// Synthetic delta ≈ 1, so expected = 1 leg's quantity × pointsByTrade.
-			// CE qty == PE qty by design; use the first leg as representative.
 			double pairExpectedPnL = rnd(pairLegs.get(0).getQuantity() * trade.getPointsByTrade());
 
 			totalActualPnL  += pairActualPnL;
 			totalBrokerage  += pairBrokerage;
 			totalExpectedPnL += pairExpectedPnL;
-			totalLots       += pairLegs.get(0).getLots(); // count once per pair, not per leg
+			totalLots       += pairLegs.get(0).getLots();
 		}
 
 		trade.setBrokerage(rnd(totalBrokerage));

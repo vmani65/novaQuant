@@ -26,7 +26,11 @@ public class PostTradeService {
         this.tradeRepository = tradeRepository;
     }
 
-    /** Async: enrich newly-opened legs (fills, margin, exact brokerage, running peak) then persist. */
+    /**
+     * Async: enrich newly-opened legs with fill prices, margin/brokerage estimates, exact
+     * brokerage from /charges/orders, then update running peakMargin. Re-fetches and merges
+     * to avoid clobbering concurrent close-side writes on the same trade.
+     */
     @Async("postTradeExecutor")
     public void afterOpen(Trade liveTrade) {
         if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
@@ -38,7 +42,6 @@ public class PostTradeService {
             tradeUtil.setTradeExecutedPrices(liveTrade);
             tradeUtil.calcMarginAndBrokerage(liveTrade);
             tradeUtil.applyActualCharges(liveTrade);
-            // Re-fetch and merge to avoid clobbering concurrent close-side writes on the same trade.
             Trade t = tradeRepository.findById(liveTrade.getId()).orElse(null);
             if (t == null) { tradeRepository.save(liveTrade); return; }
             liveTrade.getWeeklyOrderBook().forEach(liveW ->

@@ -49,8 +49,7 @@ public class KiteConnectGateway implements KiteGateway {
     private final String userId;
     private final KiteAuthDetailsRepository repository;
 
-    // Session cache — avoids a DB hit on every order/LTP/margin call.
-    // Keyed by today's date; invalidated when new auth is saved.
+    /** Session cache keyed by today's date; avoids a DB hit on every call. Invalidated on new auth. */
     private volatile KiteConnect cachedKiteConnect = null;
     private volatile LocalDate cacheDate = null;
 

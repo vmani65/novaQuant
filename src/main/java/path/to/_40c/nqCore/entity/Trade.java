@@ -131,11 +131,12 @@ public class Trade extends BaseEntity {
         this.monthlyOrderBook  = new ArrayList<>();
     }
 
-    // addAll semantics preserved — Lombok setter suppressed on these two fields above
+    /** addAll semantics (not replace) — Lombok setter suppressed above so prior CLOSED legs survive across rollover/recenter. */
     public void setWeeklyOrderBook(List<WeeklyOrderBook> weeklyOrderBook) {
         this.weeklyOrderBook.addAll(weeklyOrderBook);
     }
 
+    /** addAll semantics (not replace) — same rationale as setWeeklyOrderBook. */
     public void setMonthlyOrderBook(List<MonthlyOrderBook> monthlyOrderBook) {
         this.monthlyOrderBook.addAll(monthlyOrderBook);
     }

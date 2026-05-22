@@ -33,17 +33,9 @@ import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.User;
 
 /**
- * Mock implementation of KiteGateway for local integration testing.
- * Active when: spring.profiles.active=mock
- *
- * All values are dynamic per call:
- *  - NIFTY spot drifts randomly ±300 on each getLTP call (range 21000–24000)
- *  - Option LTPs are calculated from spot vs strike — ITM options cost more, OTM less
- *  - Execution prices include realistic slippage (±0.3%)
- *  - Margin varies with spot level (~15% of notional, NRML)
- *  - Brokerage varies ±₹5 around ₹20 per leg
- *
- * MOCK-* order IDs are written to DB so every trade looks distinct in the equity curve.
+ * Mock KiteGateway for local testing (active when spring.profiles.active=mock).
+ * Simulates spot drift, slippage, margin/brokerage, and MOCK-* order IDs so flows
+ * exercise end-to-end without hitting Zerodha.
  */
 @Service
 @Profile("mock")
@@ -51,28 +43,20 @@ public class MockKiteGateway implements KiteGateway {
 
     private static final Logger log = LoggerFactory.getLogger(MockKiteGateway.class);
 
-    // Strike parser: matches the last 4–6 digits followed by CE or PE at end of string
-    // e.g. "NIFTY24D1922500CE" → group(1)=22500, group(2)=CE
+    /** Parses trailing strike+option-type from instrument symbols: e.g. NIFTY24D1922500CE → 22500/CE. */
     private static final Pattern STRIKE_PATTERN = Pattern.compile("(\\d{4,6})(CE|PE)$");
 
     private static final AtomicLong orderCounter = new AtomicLong(1000);
     private final Random random = new Random();
 
-    // Tracks the execution price stored at order placement time, keyed by mock order ID.
-    // getOrderTrades returns this so executed prices match what was "paid".
+    /** Execution price recorded per mock order ID; replayed by getOrderTrades for consistency. */
     private final ConcurrentHashMap<String, Double> executionPrices = new ConcurrentHashMap<>();
 
-    // Current simulated NIFTY spot — starts at a realistic level, drifts per getLTP call.
-    // Spot is seeded near 24500 so ATM options at typical signal strikes price realistically.
+    /** Simulated NIFTY spot — drifts ±50 per getLTP call, clamped to [23000, 26000]. */
     private volatile double niftySpot = 24500.0;
-
-    // -----------------------------------------------------------------------
-    // LTP  — dynamic, spot-driven option pricing
-    // -----------------------------------------------------------------------
 
     @Override
     public Map<String, LTPQuote> getLTP(String[] instruments) {
-        // Drift ±50 per fetch — simulates a 1-2 min candle on NIFTY
         niftySpot = Math.max(23000, Math.min(26000, niftySpot + (random.nextDouble() * 100 - 50)));
         double spot = Math.round(niftySpot * 100.0) / 100.0;
 
@@ -88,11 +72,9 @@ public class MockKiteGateway implements KiteGateway {
     }
 
     /**
-     * Realistic weekly NIFTY option pricing:
-     *  - Intrinsic:  max(0, spot-strike) for CE; max(0, strike-spot) for PE
-     *  - Time value: 80–130 pts at ATM (models 1-2 day weekly expiry with ~16% IV)
-     *  - ATM decay:  exp(-|spot-strike| / 200) — OTM options lose value faster than
-     *                longer-dated contracts; 50-pt OTM retains ~78%, 100-pt retains ~61%
+     * Approximates weekly NIFTY option price as intrinsic + time-value × ATM-decay.
+     * Time value 80–130 pts at ATM (≈16% IV, 1-2d expiry); decay = exp(-|spot-strike|/200)
+     * so 50-pt OTM retains ~78%, 100-pt OTM ~61%. Clamped to [5, 800].
      */
     private double calcOptionLTP(String instrument, double spot) {
         Matcher m = STRIKE_PATTERN.matcher(instrument);
@@ -103,16 +85,12 @@ public class MockKiteGateway implements KiteGateway {
         boolean isCE = CE.equals(m.group(2));
 
         double intrinsic  = isCE ? Math.max(0, spot - strike) : Math.max(0, strike - spot);
-        double timeValue  = 80 + random.nextDouble() * 50;          // 80–130 for ATM weekly
+        double timeValue  = 80 + random.nextDouble() * 50;
         double atmDecay   = Math.exp(-Math.abs(spot - strike) / 200.0);
         double price      = intrinsic + timeValue * atmDecay;
         price = Math.max(5.0, Math.min(800.0, price));
         return Math.round(price * 100.0) / 100.0;
     }
-
-    // -----------------------------------------------------------------------
-    // Order placement — dynamic IDs + slippage-adjusted execution prices
-    // -----------------------------------------------------------------------
 
     @Override
     public OrderResponse placeOrder(OrderParams params, String variety) {
@@ -140,29 +118,21 @@ public class MockKiteGateway implements KiteGateway {
         return List.of(response);
     }
 
-    /**
-     * Simulates market order slippage:
-     *  - BUY:  pays slightly more than quoted LTP (0.1–0.4% above)
-     *  - SELL: receives slightly less than quoted LTP (0.1–0.4% below)
-     */
+    /** Market-order slippage: BUYs pay 0.1–0.4% above LTP, SELLs receive 0.1–0.4% below. */
     private double applySlippage(Double basePrice, String transactionType) {
         if (basePrice == null) return 0.0;
-        double slippagePct = 0.001 + random.nextDouble() * 0.003;  // 0.1% – 0.4%
+        double slippagePct = 0.001 + random.nextDouble() * 0.003;
         double multiplier = BUY.equals(transactionType) ? (1 + slippagePct) : (1 - slippagePct);
         return Math.round(basePrice * multiplier * 100.0) / 100.0;
     }
 
-    // -----------------------------------------------------------------------
-    // Margin calculation — dynamic, spot and quantity driven
-    // -----------------------------------------------------------------------
-
     @Override
     public List<MarginCalculationData> getMarginCalculation(List<MarginCalculationParams> params) {
         List<MarginCalculationData> result = new ArrayList<>();
-        double spot = niftySpot;  // snapshot current spot for this calc batch
+        double spot = niftySpot;
         for (MarginCalculationParams p : params) {
             double margin = calcMargin(p.quantity, spot);
-            double brokerage = Math.round((18 + random.nextDouble() * 7) * 100.0) / 100.0; // ₹18–₹25
+            double brokerage = Math.round((18 + random.nextDouble() * 7) * 100.0) / 100.0;
             MarginCalculationData data = new MarginCalculationData();
             data.tradingSymbol = p.tradingSymbol;
             data.total = margin;
@@ -175,22 +145,13 @@ public class MockKiteGateway implements KiteGateway {
         return result;
     }
 
-    /**
-     * Realistic NRML margin estimate:
-     *  Approx = spot × lotSize × lots × NRML_MULTIPLIER
-     *  NRML for NIFTY options ≈ 15% of notional for short legs, less for long.
-     *  Simplified: (spot * qty * 0.15) with ±5% noise.
-     */
+    /** Approximates NRML margin as 15% of notional (spot × qty) with ±5% noise. */
     private double calcMargin(int quantity, double spot) {
         double notional = spot * quantity;
         double baseMargin = notional * 0.15;
-        double noise = 1 + (random.nextDouble() * 0.10 - 0.05); // ±5%
+        double noise = 1 + (random.nextDouble() * 0.10 - 0.05);
         return Math.round(baseMargin * noise * 100.0) / 100.0;
     }
-
-    // -----------------------------------------------------------------------
-    // Virtual contract note + basket margin (mock Kite /charges/orders, /margins/basket)
-    // -----------------------------------------------------------------------
 
     @Override
     public CombinedMarginData getCombinedMarginCalculation(List<MarginCalculationParams> params,
@@ -213,6 +174,11 @@ public class MockKiteGateway implements KiteGateway {
         return combined;
     }
 
+    /**
+     * Synthetic per-order charges matching Zerodha's F&O formula: brokerage ₹20 flat,
+     * STT 0.05% of turnover on sells of options, exchange/SEBI on turnover, GST 18% on
+     * (brokerage+exch+SEBI). Calibrated to live API responses (BUY ~₹27, SELL ~₹42).
+     */
     @Override
     public List<ContractNote> getVirtualContractNote(List<ContractNoteParams> params) {
         List<ContractNote> result = new ArrayList<>();
@@ -255,10 +221,6 @@ public class MockKiteGateway implements KiteGateway {
         return result;
     }
 
-    // -----------------------------------------------------------------------
-    // Order trades — returns the execution price stored at order placement
-    // -----------------------------------------------------------------------
-
     @Override
     public List<com.zerodhatech.models.Trade> getOrderTrades(String singleOrderId) {
         double execPrice = executionPrices.getOrDefault(singleOrderId, 120.50);
@@ -270,19 +232,11 @@ public class MockKiteGateway implements KiteGateway {
         return List.of(trade);
     }
 
-    // -----------------------------------------------------------------------
-    // Instruments
-    // -----------------------------------------------------------------------
-
     @Override
     public List<Instrument> getInstruments(String exchange) {
         log.info("[MOCK] getInstruments: exchange={} → returning empty list", exchange);
         return Collections.emptyList();
     }
-
-    // -----------------------------------------------------------------------
-    // Auth
-    // -----------------------------------------------------------------------
 
     @Override
     public User generateSession(String requestToken, String apiSecret) {

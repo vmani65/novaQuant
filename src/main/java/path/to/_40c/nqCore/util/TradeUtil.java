@@ -51,10 +51,6 @@ public class TradeUtil {
         this.entityManager = entityManager;
     }
 
-    // -----------------------------------------------------------------------
-    // Execution price enrichment
-    // -----------------------------------------------------------------------
-
     /** Capture fill prices for legs that don't already have them. Idempotent. */
     public void setTradeExecutedPrices(Trade t) {
         if (t != null) {
@@ -142,10 +138,6 @@ public class TradeUtil {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Margin & brokerage
-    // -----------------------------------------------------------------------
-
     /**
      * Set margin + open/close brokerage estimate for LIVE legs via two parallel /margins/orders calls
      * (real-txn and opposite-txn baskets). Uniform-direction baskets are avoided — Kite collapses them
@@ -225,10 +217,6 @@ public class TradeUtil {
         return brokerage + c.transactionTax + exch + sebi + c.stampDuty + gst;
     }
 
-    // -----------------------------------------------------------------------
-    // Exact charges via virtual contract note
-    // -----------------------------------------------------------------------
-
     /**
      * Overwrite brokerage estimates with EOD-exact charges from /charges/orders.
      * LIVE leg → tradeOpenBrokerage, CLOSED leg → tradeCloseBrokerage. Idempotent.
@@ -279,10 +267,6 @@ public class TradeUtil {
         }
     }
 
-    // -----------------------------------------------------------------------
-    // Peak margin (Trade-level, lifetime)
-    // -----------------------------------------------------------------------
-
     /** Running max of Σ(LIVE legs.marginToTrade) across the trade's lifetime. */
     public void calcPeakMargin(Trade trade) {
         if (trade == null || trade.getWeeklyOrderBook() == null) return;
@@ -306,10 +290,6 @@ public class TradeUtil {
     	params.quantity = quantity;
     	return params;
     }
-
-    // -----------------------------------------------------------------------
-    // Kite API delegates — all callers go through KiteGateway
-    // -----------------------------------------------------------------------
 
     public Map<String, LTPQuote> getLTP(String[] ins) {
         return kiteGateway.getLTP(ins);
@@ -385,10 +365,6 @@ public class TradeUtil {
             .toList();
     }
 
-    // -----------------------------------------------------------------------
-    // Order params builder
-    // -----------------------------------------------------------------------
-
     public static OrderParams buildOrderParams() {
         OrderParams orderParams = new OrderParams();
         orderParams.orderType = Constants.ORDER_TYPE_MARKET;
@@ -398,10 +374,6 @@ public class TradeUtil {
         orderParams.marketProtection = 1;
         return orderParams;
     }
-
-    // -----------------------------------------------------------------------
-    // DB helpers
-    // -----------------------------------------------------------------------
 
     @Transactional
     public Trade findLiveTradesWithLiveOrderBooks() {

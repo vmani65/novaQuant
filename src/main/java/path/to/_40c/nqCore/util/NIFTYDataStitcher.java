@@ -57,6 +57,7 @@ public class NIFTYDataStitcher {
         stitcher.stitchData();
     }
     
+    /** Collects all daily files in chronological order, stitches their NIFTY-I rows into one CSV. */
     public void stitchData() {
         System.out.println("=".repeat(100));
         System.out.println("NIFTY-I.NFO CONTINUOUS DATA STITCHER");
@@ -64,34 +65,31 @@ public class NIFTYDataStitcher {
         System.out.println("Output File: " + OUTPUT_PATH);
         System.out.println("=".repeat(100));
         System.out.println();
-        
+
         long startTime = System.currentTimeMillis();
-        
+
         try {
-            // Collect all files in chronological order
             List<FileInfo> allFiles = collectAllFiles();
-            
+
             if (allFiles.isEmpty()) {
                 System.out.println("ERROR: No files found to process!");
                 return;
             }
-            
+
             System.out.println("Found " + allFiles.size() + " files to process");
             System.out.println("Date range: " + allFiles.get(0).date + " to " + allFiles.get(allFiles.size() - 1).date);
             System.out.println();
-            
-            // Process and write data
+
             try (BufferedWriter writer = new BufferedWriter(new FileWriter(OUTPUT_PATH), 65536)) {
                 for (FileInfo fileInfo : allFiles) {
                     processFile(fileInfo, writer);
                 }
             }
-            
+
             long endTime = System.currentTimeMillis();
-            
-            // Print results
+
             printResults(endTime - startTime);
-            
+
         } catch (Exception e) {
             System.err.println("ERROR: " + e.getMessage());
             e.printStackTrace();
@@ -132,24 +130,27 @@ public class NIFTYDataStitcher {
                         DateTimeFormatter.ofPattern("dd-MM-yyyy"));
                     
                     allFiles.add(new FileInfo(file, date, month));
-                    
+
                 } catch (Exception e) {
                     validationIssues.add("Error parsing date from file: " + file.getName() + " - " + e.getMessage());
                 }
             }
         }
-        
-        // Sort all files by date
+
         Collections.sort(allFiles);
-        
+
         return allFiles;
     }
-    
+
+    /**
+     * Reads NIFTY-I.NFO rows from one daily file, sorts by intra-day time, validates against
+     * the previous file's last timestamp (overlap / >4-day gap warnings), rewrites the ticker
+     * column to NIFTY-I, and appends to the output. Gaps up to 4 days are tolerated for weekends/holidays.
+     */
     private void processFile(FileInfo fileInfo, BufferedWriter writer) throws Exception {
         List<DailyRecord> dayRecords = new ArrayList<>();
         int recordCount = 0;
-        
-        // Read all NIFTY-I.NFO records from this file
+
         try (BufferedReader br = new BufferedReader(new FileReader(fileInfo.file), 65536)) {
             String line;
             while ((line = br.readLine()) != null) {
@@ -159,7 +160,6 @@ public class NIFTYDataStitcher {
                         try {
                             String date = parts[1].trim();
                             String time = parts[2].trim();
-                            // Replace NIFTY-I.NFO with NIFTY-I
                             String modifiedLine = line.replaceFirst("^NIFTY-I\\.NFO", "NIFTY-I");
                             dayRecords.add(new DailyRecord(modifiedLine, date, time));
                             recordCount++;
@@ -170,44 +170,38 @@ public class NIFTYDataStitcher {
                 }
             }
         }
-        
+
         if (dayRecords.isEmpty()) {
             validationIssues.add("No NIFTY-I.NFO records found in: " + fileInfo.file.getName());
             return;
         }
-        
-        // Sort records by time
+
         Collections.sort(dayRecords);
-        
-        // Validate sequencing within the day
+
         LocalDateTime firstTime = dayRecords.get(0).dateTime;
         LocalDateTime lastTime = dayRecords.get(dayRecords.size() - 1).dateTime;
-        
-        // Check for time sequence issues within the day
+
         for (int i = 1; i < dayRecords.size(); i++) {
             if (dayRecords.get(i).dateTime.isBefore(dayRecords.get(i - 1).dateTime)) {
-                validationIssues.add("Time sequence issue in " + fileInfo.file.getName() + 
+                validationIssues.add("Time sequence issue in " + fileInfo.file.getName() +
                     " at record " + i + ": " + dayRecords.get(i - 1).dateTime + " -> " + dayRecords.get(i).dateTime);
             }
         }
-        
-        // Check sequencing with previous day
+
         if (lastDateTime != null) {
             if (firstTime.isBefore(lastDateTime) || firstTime.isEqual(lastDateTime)) {
                 validationIssues.add("CRITICAL: Date/time overlap detected! " +
                     "Previous file ended at " + lastDateTime + ", current file starts at " + firstTime +
                     " (File: " + fileInfo.file.getName() + ")");
             }
-            
-            // Check if dates are consecutive or if there's a gap
+
             long daysBetween = java.time.temporal.ChronoUnit.DAYS.between(lastDateTime.toLocalDate(), firstTime.toLocalDate());
-            if (daysBetween > 4) { // Allow for weekends/holidays
-                validationIssues.add("Large gap detected: " + daysBetween + " days between " + 
+            if (daysBetween > 4) {
+                validationIssues.add("Large gap detected: " + daysBetween + " days between " +
                     lastDateTime.toLocalDate() + " and " + firstTime.toLocalDate());
             }
         }
-        
-        // Write all records to output
+
         for (DailyRecord record : dayRecords) {
             writer.write(record.fullLine);
             writer.newLine();

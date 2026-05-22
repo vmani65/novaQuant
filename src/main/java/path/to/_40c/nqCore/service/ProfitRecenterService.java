@@ -26,23 +26,12 @@ import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.TradeUtil;
 
 /**
- * Re-centres a live trade at the new ATM when profit >= 500 points.
+ * Re-centres a live trade at the new ATM when profit >= 500 points: closes current LIVE legs,
+ * accumulates realized points, opens new legs at the new ATM (using rolloverSymbol if the
+ * weekly rollover already happened today, else thisWeekSymbol). Trade stays LIVE.
  *
- * Flow:
- *   1. Close all current LIVE legs at market.
- *   2. Accumulate close execution prices only on the just-closed legs
- *      (NOT all CLOSED legs — avoids double-counting across multiple recenters).
- *   3. Add segment points to realizedPoints; reset entrySignalPrice to currentPrice.
- *   4. Open new legs at the new ATM (thisWeekSymbol normally; rolloverSymbol
- *      if rolloverComplete=true — i.e., weekly rollover already happened today).
- *   5. Accumulate open execution prices only on the just-opened legs.
- *   6. Recalculate margin/brokerage for new LIVE legs only.
- *   7. Save — trade stays LIVE.
- *
- * P&L correctness across N recenters:
- *   - Each recenter's legs accumulate their own soldPrice/boughtPrice independently.
- *   - calcPnL groups all legs by moneyness; accumulated prices sum naturally.
- *   - calcTradeOutcome: totalPoints = realizedPoints + (exit - entry of final segment).
+ * Per-segment close/open prices are accumulated independently so calcPnL can sum across
+ * recenters; calcTradeOutcome adds realizedPoints to the current segment's (exit - entry).
  */
 @Service
 public class ProfitRecenterService {
@@ -74,7 +63,6 @@ public class ProfitRecenterService {
         log.info("realizeProfits start | tradeId={} direction={} entryPrice={} currentPrice={}",
                 trade.getId(), trade.getSignalType(), trade.getEntrySignalPrice(), currentPrice);
 
-        // ── 1. Close all current LIVE legs ────────────────────────────────────
         String[] liveSymbols = trade.getWeeklyOrderBook().stream()
                 .map(WeeklyOrderBook::getTradedSymbol).toArray(String[]::new);
 
@@ -85,7 +73,6 @@ public class ProfitRecenterService {
         }
 
         AtomicBoolean allClosed = new AtomicBoolean(true);
-        // Snapshot exactly the legs being closed in this recenter — needed for step 2
         List<WeeklyOrderBook> legsBeingClosed = new ArrayList<>(trade.getWeeklyOrderBook());
 
         IntStream.range(0, legsBeingClosed.size()).parallel().forEach(i -> {
@@ -135,12 +122,8 @@ public class ProfitRecenterService {
             return;
         }
 
-        // ── 2. Accumulate close prices for ONLY the just-closed legs ─────────
-        // IMPORTANT: must NOT use setTradeExecPricesForRollOver (which processes all CLOSED legs)
-        // because that would double-count prices from previous recenter segments.
         accumulateExecPrices(legsBeingClosed, true);
 
-        // ── 3. Accumulate realized points; reset entry price to new baseline ──
         double newPrice = Double.parseDouble(currentPrice);
         double entry    = trade.getEntrySignalPrice() != null ? trade.getEntrySignalPrice() : 0.0;
         double segment  = LONG.equals(trade.getSignalType())
@@ -152,10 +135,7 @@ public class ProfitRecenterService {
         log.info("realizeProfits: segment={}pts totalRealized={}pts newBaseline={}",
                 segment, trade.getRealizedPoints(), newPrice);
 
-        // ── 4. Open new legs at new ATM ───────────────────────────────────────
         symbolService.checkAndPromoteRolloverSymbol();
-        // Use rolloverSymbol if the weekly rollover already completed today;
-        // otherwise use thisWeekSymbol. buildInstrument handles the lookup.
         boolean useRollover = isRolloverComplete();
         List<WeeklyPojo> newLegs = computeUtil.buildInstrument(currentPrice, trade, useRollover);
         log.info("realizeProfits: opening {} new legs (useRollover={})", newLegs.size(), useRollover);
@@ -204,7 +184,6 @@ public class ProfitRecenterService {
             }
         });
 
-        // ── 5. Build new WeeklyOrderBook children ─────────────────────────────
         List<WeeklyOrderBook> newChildren = new ArrayList<>();
         newLegs.forEach(pojo -> {
             WeeklyOrderBook b = new WeeklyOrderBook();
@@ -220,36 +199,22 @@ public class ProfitRecenterService {
             newChildren.add(b);
         });
 
-        // Trade.setWeeklyOrderBook does addAll (not replace) — keeps prior CLOSED legs
-        // in the list so calcPnL can accumulate prices across all segments.
         trade.setWeeklyOrderBook(newChildren);
 
-        // ── 6. Accumulate open prices for ONLY the just-opened legs ──────────
         accumulateExecPrices(newChildren, false);
 
         Trade saved = tradeRepository.save(trade);
         log.info("realizeProfits complete | tradeId={} realizedPoints={} newEntryPrice={}",
                 saved.getId(), saved.getRealizedPoints(), saved.getEntrySignalPrice());
 
-        // Margin/brokerage enrichment runs async on postTradeExecutor.
         postTradeService.afterOpen(saved);
     }
 
-    // ── Helpers ───────────────────────────────────────────────────────────────
-
     /**
-     * Fetches and accumulates execution prices for a specific list of legs only.
-     *
-     * isClose=false (open event):
-     *   BUY leg  → boughtPrice += avgFillPrice
-     *   SELL leg → soldPrice   += avgFillPrice
-     *
-     * isClose=true (close event):
-     *   BUY leg  → soldPrice   += avgFillPrice  (the BUY was opened; now being sold to close)
-     *   SELL leg → boughtPrice += avgFillPrice  (the SELL was opened; now being bought to close)
-     *
-     * Accumulation (+=) rather than assignment (=) preserves prices from prior segments,
-     * which is essential for calcPnL to sum correctly across multiple recenters.
+     * Fetch fills for the given legs and accumulate (+=) into bought/soldPrice.
+     * isClose=false → BUY adds to boughtPrice, SELL adds to soldPrice (open event).
+     * isClose=true  → BUY adds to soldPrice, SELL adds to boughtPrice (close event — opposite txn).
+     * += (not =) preserves prices from prior segments so calcPnL sums correctly across recenters.
      */
     private void accumulateExecPrices(List<WeeklyOrderBook> legs, boolean isClose) {
         legs.forEach(w -> {
@@ -280,7 +245,7 @@ public class ProfitRecenterService {
                     double prev = w.getSoldPrice() != null ? w.getSoldPrice() : 0.0;
                     w.setSoldPrice(Math.round((prev + avg) * 100.0) / 100.0);
                 }
-            } else { // SELL
+            } else {
                 if (!isClose) {
                     double prev = w.getSoldPrice() != null ? w.getSoldPrice() : 0.0;
                     w.setSoldPrice(Math.round((prev + avg) * 100.0) / 100.0);
@@ -295,11 +260,7 @@ public class ProfitRecenterService {
         });
     }
 
-    /**
-     * Returns true if the weekly rollover has already been completed today.
-     * In that case, new legs should use rolloverSymbol (the new week's expiry),
-     * not thisWeekSymbol (the old week which was just rolled out of).
-     */
+    /** True if today's weekly rollover already ran (so new legs should use rolloverSymbol). */
     private boolean isRolloverComplete() {
         SymbolConfig cfg = symbolService.current();
         return cfg != null && Boolean.TRUE.equals(cfg.getRolloverComplete());

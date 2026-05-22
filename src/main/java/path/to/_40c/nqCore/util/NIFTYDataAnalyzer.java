@@ -59,6 +59,11 @@ public class NIFTYDataAnalyzer {
         analyzer.analyze();
     }
     
+    /**
+     * Walks all monthly folders under BASE_PATH, counts NIFTY-I.NFO records per file, then
+     * prints daily breakdowns, per-month consistency summaries (avg/stddev/anomalies beyond ±2σ),
+     * any file/parse issues, and an overall summary.
+     */
     public void analyze() {
         System.out.println("=".repeat(100));
         System.out.println("NIFTY-I.NFO DATA CONSISTENCY ANALYSIS");
@@ -66,27 +71,23 @@ public class NIFTYDataAnalyzer {
         System.out.println("Analysis Date: " + LocalDate.now());
         System.out.println("=".repeat(100));
         System.out.println();
-        
+
         long startTime = System.currentTimeMillis();
-        
+
         String[] months = {
             "1_JAN", "2_FEB", "3_MAR", "4_APR", "5_MAY", "6_JUN",
             "7_JUL", "8_AUG", "9_SEP", "10_OCT", "11_NOV", "12_DEC"
         };
-        
+
         for (String month : months) {
             processMonth(month);
         }
-        
+
         long endTime = System.currentTimeMillis();
-        
-        // Print detailed daily logs
+
         printDetailedDailyLogs();
-        
-        // Print monthly summaries
         printMonthlySummaries();
-        
-        // Print file issues if any
+
         if (!fileIssues.isEmpty()) {
             System.out.println("\n" + "=".repeat(100));
             System.out.println("FILE ISSUES DETECTED:");
@@ -95,8 +96,7 @@ public class NIFTYDataAnalyzer {
                 System.out.println("  ⚠ " + issue);
             }
         }
-        
-        // Print overall summary
+
         printOverallSummary(endTime - startTime);
     }
     
@@ -256,8 +256,7 @@ public class NIFTYDataAnalyzer {
                 .orElse(0);
             
             summary.stdDev = calculateStdDev(tradingDayCounts, summary.avgRecordsPerDay);
-            
-            // Detect anomalies (counts beyond 2 standard deviations)
+
             double lowerThreshold = summary.avgRecordsPerDay - (2 * summary.stdDev);
             double upperThreshold = summary.avgRecordsPerDay + (2 * summary.stdDev);
             
