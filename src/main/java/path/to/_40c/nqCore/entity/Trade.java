@@ -103,6 +103,10 @@ public class Trade extends BaseEntity {
     @Column(name = "REALIZED_POINTS")
     private Double realizedPoints = 0.0;
 
+    /** Running max of Σ(LIVE legs.marginToTrade) across the trade's lifetime. */
+    @Column(name = "PEAK_MARGIN")
+    private Double peakMargin;
+
     @Setter(AccessLevel.NONE)
     @OneToMany(mappedBy = "trade", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
     @Filter(name = "liveOrderBooks", condition = "TRADE_STATUS = :status")

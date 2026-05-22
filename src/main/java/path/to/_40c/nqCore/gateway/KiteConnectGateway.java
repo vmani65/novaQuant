@@ -19,6 +19,9 @@ import org.springframework.stereotype.Service;
 import com.zerodhatech.kiteconnect.KiteConnect;
 import com.zerodhatech.kiteconnect.kitehttp.exceptions.KiteException;
 import com.zerodhatech.models.BulkOrderResponse;
+import com.zerodhatech.models.CombinedMarginData;
+import com.zerodhatech.models.ContractNote;
+import com.zerodhatech.models.ContractNoteParams;
 import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
@@ -118,6 +121,37 @@ public class KiteConnectGateway implements KiteGateway {
             log.error("Exception while fetching margin calculation", e);
         }
         return new ArrayList<>();
+    }
+
+    @Override
+    public List<ContractNote> getVirtualContractNote(List<ContractNoteParams> params) {
+        var kite = getKiteConnectObject();
+        if (kite == null) {
+            log.error("KiteConnect null — skipping virtual contract note");
+            return new ArrayList<>();
+        }
+        try {
+            return kite.getVirtualContractNote(params);
+        } catch (JSONException | IOException | KiteException e) {
+            log.error("Exception while fetching virtual contract note", e);
+        }
+        return new ArrayList<>();
+    }
+
+    @Override
+    public CombinedMarginData getCombinedMarginCalculation(List<MarginCalculationParams> params,
+                                                           boolean considerPositions) {
+        var kite = getKiteConnectObject();
+        if (kite == null) {
+            log.error("KiteConnect null — skipping combined margin calculation");
+            return null;
+        }
+        try {
+            return kite.getCombinedMarginCalculation(params, considerPositions, false);
+        } catch (JSONException | IOException | KiteException e) {
+            log.error("Exception while fetching combined margin calculation", e);
+        }
+        return null;
     }
 
     @Override

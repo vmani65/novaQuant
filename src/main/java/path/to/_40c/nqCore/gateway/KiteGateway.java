@@ -4,6 +4,9 @@ import java.util.List;
 import java.util.Map;
 
 import com.zerodhatech.models.BulkOrderResponse;
+import com.zerodhatech.models.CombinedMarginData;
+import com.zerodhatech.models.ContractNote;
+import com.zerodhatech.models.ContractNoteParams;
 import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
@@ -36,6 +39,13 @@ public interface KiteGateway {
 
     /** Fetch margin + brokerage for a basket of params. Returns empty list on failure. */
     List<MarginCalculationData> getMarginCalculation(List<MarginCalculationParams> params);
+
+    /** EOD-exact per-order charges via /charges/orders. Empty list on failure. */
+    List<ContractNote> getVirtualContractNote(List<ContractNoteParams> params);
+
+    /** Basket margin (initial + final with hedge benefit) via /margins/basket. Null on failure. */
+    CombinedMarginData getCombinedMarginCalculation(List<MarginCalculationParams> params,
+                                                    boolean considerPositions);
 
     /** Fetch executed trades for a single orderId. Returns empty list on failure. */
     List<com.zerodhatech.models.Trade> getOrderTrades(String singleOrderId);

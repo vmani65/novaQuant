@@ -26,12 +26,7 @@ public class PostTradeService {
         this.tradeRepository = tradeRepository;
     }
 
-    /**
-     * Runs asynchronously after a trade is opened.
-     * Fetches actual execution prices, calculates margin/brokerage, then persists.
-     * The save lives here (not in SignalService) so the enriched data is guaranteed
-     * to be set before the record is written.
-     */
+    /** Async: enrich newly-opened legs (fills, margin, exact brokerage, running peak) then persist. */
     @Async("postTradeExecutor")
     public void afterOpen(Trade liveTrade) {
         if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
@@ -40,11 +35,10 @@ public class PostTradeService {
             return;
         }
         try {
-            // Compute on liveTrade which holds the LIVE legs and open order IDs
             tradeUtil.setTradeExecutedPrices(liveTrade);
             tradeUtil.calcMarginAndBrokerage(liveTrade);
-            // Re-fetch from DB before saving — a concurrent afterClose may have already
-            // written close prices. Merging instead of overwriting prevents wiping them.
+            tradeUtil.applyActualCharges(liveTrade);
+            // Re-fetch and merge to avoid clobbering concurrent close-side writes on the same trade.
             Trade t = tradeRepository.findById(liveTrade.getId()).orElse(null);
             if (t == null) { tradeRepository.save(liveTrade); return; }
             liveTrade.getWeeklyOrderBook().forEach(liveW ->
@@ -59,6 +53,7 @@ public class PostTradeService {
                         if (liveW.getTradeCloseBrokerage() != null) dbW.setTradeCloseBrokerage(liveW.getTradeCloseBrokerage());
                     })
             );
+            tradeUtil.calcPeakMargin(t);
             tradeRepository.save(t);
             log.info("Post-open calc completed for trade id={}", liveTrade.getId());
         } catch (Exception e) {
@@ -67,17 +62,31 @@ public class PostTradeService {
     }
 
     /**
-     * Runs asynchronously after a trade is closed.
-     * Re-fetches the full trade (parent + all children) from DB, then calculates
-     * execution prices, outcome, PnL, and capital, then persists.
+     * Async: enrich just-closed legs then merge into the full trade for outcome/PnL/capital.
+     * Earlier-segment legs are skipped here (already enriched, orderIDs are stale-day).
      */
     @Async("postTradeExecutor")
     public void afterClose(Trade closedTrade) {
         if (closedTrade == null) return;
         try {
+            tradeUtil.setTradeExecutedPrices(closedTrade);
+            tradeUtil.applyActualCharges(closedTrade);
+
             Trade t = tradeRepository.findById(closedTrade.getId()).orElse(null);
+            if (t == null) { tradeRepository.save(closedTrade); return; }
             log.info("Trade(Parent+All Child) used for computing post close calc: {}", t);
-            tradeUtil.setTradeExecutedPrices(t);
+
+            closedTrade.getWeeklyOrderBook().forEach(closedW ->
+                t.getWeeklyOrderBook().stream()
+                    .filter(dbW -> dbW.getId().equals(closedW.getId()))
+                    .findFirst()
+                    .ifPresent(dbW -> {
+                        if (closedW.getBoughtPrice()        != null) dbW.setBoughtPrice(closedW.getBoughtPrice());
+                        if (closedW.getSoldPrice()           != null) dbW.setSoldPrice(closedW.getSoldPrice());
+                        if (closedW.getTradeCloseBrokerage() != null) dbW.setTradeCloseBrokerage(closedW.getTradeCloseBrokerage());
+                    })
+            );
+
             computeUtil.calcTradeOutcome(t);
             computeUtil.calcPnL(t);
             computeUtil.recalculateCapital(t);

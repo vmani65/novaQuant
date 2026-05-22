@@ -13,6 +13,7 @@ import java.util.regex.Pattern;
 
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
+import static path.to._40c.nqCore.util.Constants.SELL;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -20,6 +21,9 @@ import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.BulkOrderResponse;
+import com.zerodhatech.models.CombinedMarginData;
+import com.zerodhatech.models.ContractNote;
+import com.zerodhatech.models.ContractNoteParams;
 import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
@@ -182,6 +186,73 @@ public class MockKiteGateway implements KiteGateway {
         double baseMargin = notional * 0.15;
         double noise = 1 + (random.nextDouble() * 0.10 - 0.05); // ±5%
         return Math.round(baseMargin * noise * 100.0) / 100.0;
+    }
+
+    // -----------------------------------------------------------------------
+    // Virtual contract note + basket margin (mock Kite /charges/orders, /margins/basket)
+    // -----------------------------------------------------------------------
+
+    @Override
+    public CombinedMarginData getCombinedMarginCalculation(List<MarginCalculationParams> params,
+                                                           boolean considerPositions) {
+        List<MarginCalculationData> perOrder = getMarginCalculation(params);
+        double sumTotal = perOrder.stream().mapToDouble(d -> d.total).sum();
+        double finalTotal = Math.round(sumTotal * 0.93 * 100.0) / 100.0;
+
+        MarginCalculationData initial = new MarginCalculationData();
+        initial.total = Math.round(sumTotal * 100.0) / 100.0;
+        MarginCalculationData finalM  = new MarginCalculationData();
+        finalM.total = finalTotal;
+
+        CombinedMarginData combined = new CombinedMarginData();
+        combined.initialMargin = initial;
+        combined.finalMargin   = finalM;
+        combined.orders        = perOrder;
+        log.info("[MOCK] getCombinedMarginCalculation: legs={} initial={} final={}",
+                params.size(), initial.total, finalM.total);
+        return combined;
+    }
+
+    @Override
+    public List<ContractNote> getVirtualContractNote(List<ContractNoteParams> params) {
+        List<ContractNote> result = new ArrayList<>();
+        for (ContractNoteParams p : params) {
+            double turnover    = p.averagePrice * p.quantity;
+            double brokerage   = 20.0;
+            double stt         = SELL.equals(p.transactionType) ? Math.round(turnover * 0.0005 * 100.0) / 100.0 : 0.0;
+            double exch        = Math.round(turnover * 0.000035 * 100.0) / 100.0;
+            double sebi        = Math.round(turnover * 0.0000001 * 100.0) / 100.0;
+            double gstTotal    = Math.round((brokerage + exch + sebi) * 0.18 * 100.0) / 100.0;
+            double total       = Math.round((brokerage + stt + exch + sebi + gstTotal) * 100.0) / 100.0;
+
+            MarginCalculationData parent  = new MarginCalculationData();
+            MarginCalculationData.Charges charges = parent.new Charges();
+            charges.brokerage              = brokerage;
+            charges.transactionTax         = stt;
+            charges.transactionTaxType     = "stt";
+            charges.exchangeTurnoverCharge = exch;
+            charges.SEBITurnoverCharge     = sebi;
+            charges.stampDuty              = 0.0;
+            MarginCalculationData.GST gst  = parent.new GST();
+            gst.total                      = gstTotal;
+            charges.gst                    = gst;
+            charges.total                  = total;
+
+            ContractNote note      = new ContractNote();
+            note.tradingSymbol     = p.tradingSymbol;
+            note.transactionType   = p.transactionType;
+            note.exchange          = p.exchange;
+            note.variety           = p.variety;
+            note.product           = p.product;
+            note.orderType         = p.orderType;
+            note.quantity          = p.quantity;
+            note.price             = p.averagePrice;
+            note.charges           = charges;
+            result.add(note);
+            log.info("[MOCK] getVirtualContractNote: {} {} qty={} px={} → total={}",
+                    p.tradingSymbol, p.transactionType, p.quantity, p.averagePrice, total);
+        }
+        return result;
     }
 
     // -----------------------------------------------------------------------

@@ -33,11 +33,14 @@ public class TradeRollOverService {
     private final TradeRepository tradeRepository;
     private final TradeUtil tradeUtil;
     private final ComputeUtil computeUtil;
+    private final PostTradeService postTradeService;
 
-    public TradeRollOverService(TradeRepository tradeRepository, TradeUtil tradeUtil, ComputeUtil computeUtil) {
+    public TradeRollOverService(TradeRepository tradeRepository, TradeUtil tradeUtil, ComputeUtil computeUtil,
+                                PostTradeService postTradeService) {
         this.tradeRepository = tradeRepository;
         this.tradeUtil = tradeUtil;
         this.computeUtil = computeUtil;
+        this.postTradeService = postTradeService;
     }
 
     /**
@@ -148,10 +151,10 @@ public class TradeRollOverService {
                 childOrderBook.add(b);
             });
             tradeToRollOver.setWeeklyOrderBook(childOrderBook);
-            tradeUtil.calcMarginAndBrokerage(tradeToRollOver);
             tradeUtil.setTradeExecPricesForRollOver(tradeToRollOver, false, true);
             var liveTrade = tradeRepository.save(tradeToRollOver);
             log.info("Live Trade after rollOver completed is: {}", liveTrade);
+            postTradeService.afterOpen(liveTrade);
         }
     }
 }

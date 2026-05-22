@@ -3,6 +3,7 @@ package path.to._40c.nqCore.util;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CLOSED;
 import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.SELL;
@@ -21,6 +22,8 @@ import org.springframework.transaction.annotation.Transactional;
 
 import com.zerodhatech.kiteconnect.utils.Constants;
 import com.zerodhatech.models.BulkOrderResponse;
+import com.zerodhatech.models.ContractNote;
+import com.zerodhatech.models.ContractNoteParams;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
@@ -29,6 +32,7 @@ import com.zerodhatech.models.OrderResponse;
 
 import jakarta.persistence.EntityManager;
 import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.WeeklyOrderBook;
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.repo.TradeRepository;
 
@@ -51,16 +55,17 @@ public class TradeUtil {
     // Execution price enrichment
     // -----------------------------------------------------------------------
 
+    /** Capture fill prices for legs that don't already have them. Idempotent. */
     public void setTradeExecutedPrices(Trade t) {
         if (t != null) {
             t.getWeeklyOrderBook().forEach(w -> {
+                if (isPriceAlreadyCaptured(w)) return;
                 String orderId = LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
                 log.info("Fetching executed prices for trade: {} OrderID: {}", t, orderId);
                 List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
-                if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
-                    var averagePrice = trades.get(0).averagePrice;
-                    var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0;
-                    log.info("Average Price: {}", avgPrice);
+                if (trades != null && !trades.isEmpty()) {
+                    double avgPrice = weightedAvgFillPrice(trades);
+                    log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
                     if (BUY.equals(w.getTransactionType())) {
                         if (LIVE.equals(w.getTradeStatus()))   w.setBoughtPrice(avgPrice);
                         if (CLOSED.equals(w.getTradeStatus())) w.setSoldPrice(avgPrice);
@@ -74,6 +79,36 @@ public class TradeUtil {
         }
     }
 
+    /** Σ(qty × price) / Σ(qty) across all fills. Handles multi-slice auto-orders correctly. */
+    public static double weightedAvgFillPrice(List<com.zerodhatech.models.Trade> trades) {
+        if (trades == null || trades.isEmpty()) return 0.0;
+        double totalQty = 0.0;
+        double totalValue = 0.0;
+        for (com.zerodhatech.models.Trade tr : trades) {
+            if (tr == null || tr.averagePrice == null || tr.quantity == null) continue;
+            try {
+                double q = Double.parseDouble(tr.quantity);
+                double p = Double.parseDouble(tr.averagePrice);
+                totalQty   += q;
+                totalValue += q * p;
+            } catch (NumberFormatException e) {
+                log.warn("weightedAvgFillPrice: malformed trade record (qty={} price={}) — skipping",
+                        tr.quantity, tr.averagePrice);
+            }
+        }
+        return totalQty > 0.0 ? Math.round((totalValue / totalQty) * 100.0) / 100.0 : 0.0;
+    }
+
+    /** True if the price side relevant to this leg's status is already populated. */
+    private boolean isPriceAlreadyCaptured(WeeklyOrderBook w) {
+        boolean isBuy  = BUY.equals(w.getTransactionType());
+        boolean isLive = LIVE.equals(w.getTradeStatus());
+        Double target = isLive
+                ? (isBuy ? w.getBoughtPrice() : w.getSoldPrice())
+                : (isBuy ? w.getSoldPrice()   : w.getBoughtPrice());
+        return target != null;
+    }
+
     public void setTradeExecPricesForRollOver(Trade t, boolean rollOverClose, boolean rollOverOpen) {
         if (t != null) {
             t.getWeeklyOrderBook().stream()
@@ -83,10 +118,9 @@ public class TradeUtil {
                     log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, orderId);
                     List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "rollover executed prices");
                     log.info("Trade Details for OrderID: {} is {}", orderId, (trades != null && !trades.isEmpty()) ? trades : "");
-                    if (trades != null && !trades.isEmpty() && trades.get(0) != null) {
-                        var averagePrice = trades.get(0).averagePrice;
-                        var avgPrice = averagePrice != null ? Double.valueOf(averagePrice) : 0.0;
-                        log.info("Average Price: {}", avgPrice);
+                    if (trades != null && !trades.isEmpty()) {
+                        double avgPrice = weightedAvgFillPrice(trades);
+                        log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
                         if (BUY.equals(w.getTransactionType())) {
                             if (rollOverOpen) {
                                 w.setBoughtPrice(Math.round(((w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
@@ -113,55 +147,154 @@ public class TradeUtil {
     // -----------------------------------------------------------------------
 
     /**
-     * Called only during TRADE OPEN. Fills buy/sell brokerage and trade margin for all live legs.
-     * The two Kite API calls (buy params, sell params) run in parallel on ForkJoinPool.commonPool()
-     * — intentionally NOT postTradeExecutor to avoid deadlock when called from an async thread.
+     * Set margin + open/close brokerage estimate for LIVE legs via two parallel /margins/orders calls
+     * (real-txn and opposite-txn baskets). Uniform-direction baskets are avoided — Kite collapses them
+     * as straddles and redistributes margin. Runs on ForkJoinPool to avoid postTradeExecutor deadlock.
      */
     public void calcMarginAndBrokerage(Trade trade) {
-    	if (trade != null) {
-	    	var buyParams = new ArrayList<MarginCalculationParams>();
-	    	buildMarginCalcParams(trade, buyParams, Constants.TRANSACTION_TYPE_BUY);
-	    	var sellParams = new ArrayList<MarginCalculationParams>();
-	    	buildMarginCalcParams(trade, sellParams, Constants.TRANSACTION_TYPE_SELL);
-	    	var buyFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(buyParams));
-	    	var sellFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(sellParams));
-	    	List<MarginCalculationData> tradeBuyMargins;
-	    	List<MarginCalculationData> tradeSellMargins;
-	    	try {
-	    	    tradeBuyMargins = buyFuture.get();
-	    	    tradeSellMargins = sellFuture.get();
-	    	} catch (Exception e) {
-	    	    log.error("Exception during parallel margin calculation", e);
-	    	    return;
-	    	}
-	    	tradeBuyMargins.forEach(tradeBuyMargin -> {
-	    		trade.getWeeklyOrderBook().forEach(weekly -> {
-	    			if ((tradeBuyMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
-	    				weekly.setTradeOpenBrokerage(ComputeUtil.rnd(tradeBuyMargin.charges.total));
-	        			if (BUY.equals(weekly.getTransactionType()))
-	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeBuyMargin.total));
-	    			}
-	    		});
-	    	});
-	    	tradeSellMargins.forEach(tradeSellMargin -> {
-	    		trade.getWeeklyOrderBook().forEach(weekly -> {
-	    			if ((tradeSellMargin.tradingSymbol).equals(weekly.getMarginCalcSymbol()) && LIVE.equals(weekly.getTradeStatus())) {
-	    				weekly.setTradeCloseBrokerage(ComputeUtil.rnd(tradeSellMargin.charges.total));
-	        			if (SELL.equals(weekly.getTransactionType()))
-	        				weekly.setMarginToTrade(ComputeUtil.rnd(tradeSellMargin.total));
-	    			}
-	    		});
-	    	});
-    	}
+        if (trade == null) return;
+
+        List<MarginCalculationParams> realParams     = new ArrayList<>();
+        List<MarginCalculationParams> oppositeParams = new ArrayList<>();
+        trade.getWeeklyOrderBook().stream()
+                .filter(c -> LIVE.equals(c.getTradeStatus()))
+                .forEach(c -> {
+                    realParams.add(buildParam(c, c.getTransactionType()));
+                    oppositeParams.add(buildParam(c, opposite(c.getTransactionType())));
+                });
+        if (realParams.isEmpty()) return;
+
+        var realFuture     = CompletableFuture.supplyAsync(() -> getMarginCalculation(realParams));
+        var oppositeFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(oppositeParams));
+        List<MarginCalculationData> realMargins;
+        List<MarginCalculationData> oppositeMargins;
+        try {
+            realMargins     = realFuture.get();
+            oppositeMargins = oppositeFuture.get();
+        } catch (Exception e) {
+            log.error("Exception during parallel margin calculation", e);
+            return;
+        }
+
+        realMargins.forEach(m -> trade.getWeeklyOrderBook().stream()
+                .filter(w -> m.tradingSymbol.equals(w.getMarginCalcSymbol()) && LIVE.equals(w.getTradeStatus()))
+                .findFirst()
+                .ifPresent(w -> {
+                    w.setMarginToTrade(ComputeUtil.rnd(m.total));
+                    w.setTradeOpenBrokerage(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, true))));
+                }));
+        oppositeMargins.forEach(m -> trade.getWeeklyOrderBook().stream()
+                .filter(w -> m.tradingSymbol.equals(w.getMarginCalcSymbol()) && LIVE.equals(w.getTradeStatus()))
+                .findFirst()
+                .ifPresent(w -> w.setTradeCloseBrokerage(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, false))))));
     }
 
-    public void buildMarginCalcParams(Trade t, List<MarginCalculationParams> params, String transactionType) {
-    	t.getWeeklyOrderBook().stream().filter(c -> LIVE.equals(c.getTradeStatus())).forEach(c -> {
-    		var param = initCalcParam(c.getQuantity());
-           	param.tradingSymbol = c.getMarginCalcSymbol();
-           	param.transactionType = transactionType;
-           	params.add(param);
-    	});
+    private MarginCalculationParams buildParam(WeeklyOrderBook c, String transactionType) {
+        var p = initCalcParam(c.getQuantity());
+        p.tradingSymbol   = c.getMarginCalcSymbol();
+        p.transactionType = transactionType;
+        return p;
+    }
+
+    private static String opposite(String txn) {
+        return BUY.equals(txn) ? SELL : BUY;
+    }
+
+    /** Slice count from stored comma-separated orderIds, or estimated from qty if not yet placed. */
+    static int sliceCount(WeeklyOrderBook w, boolean openSide) {
+        String orderId = openSide ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+        if (orderId != null && !orderId.isBlank()) {
+            return orderId.split("\\s*,\\s*").length;
+        }
+        Integer qty = w.getQuantity();
+        if (qty == null || qty <= MAX_SIZE_PER_ORDER) return 1;
+        return (int) Math.ceil((double) qty / MAX_SIZE_PER_ORDER);
+    }
+
+    /**
+     * Total charges adjusted for auto-slicing: brokerage scales with order count (Zerodha charges
+     * per-order), turnover-based charges (STT/exch/SEBI) don't, GST is recomputed.
+     */
+    static double totalChargesForSliceCount(MarginCalculationData.Charges c, int sliceCount) {
+        if (c == null) return 0.0;
+        if (sliceCount <= 1) return c.total;
+        double brokerage = c.brokerage * sliceCount;
+        double exch      = c.exchangeTurnoverCharge;
+        double sebi      = c.SEBITurnoverCharge;
+        double gst       = (brokerage + exch + sebi) * 0.18;
+        return brokerage + c.transactionTax + exch + sebi + c.stampDuty + gst;
+    }
+
+    // -----------------------------------------------------------------------
+    // Exact charges via virtual contract note
+    // -----------------------------------------------------------------------
+
+    /**
+     * Overwrite brokerage estimates with EOD-exact charges from /charges/orders.
+     * LIVE leg → tradeOpenBrokerage, CLOSED leg → tradeCloseBrokerage. Idempotent.
+     */
+    public void applyActualCharges(Trade trade) {
+        if (trade == null) return;
+        List<WeeklyOrderBook>   legs   = new ArrayList<>();
+        List<ContractNoteParams> params = new ArrayList<>();
+        trade.getWeeklyOrderBook().forEach(w -> {
+            boolean isLive = LIVE.equals(w.getTradeStatus());
+            boolean isBuy  = BUY.equals(w.getTransactionType());
+            String  orderId = isLive ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+            Double  avgPrice = isLive
+                    ? (isBuy ? w.getBoughtPrice() : w.getSoldPrice())
+                    : (isBuy ? w.getSoldPrice()   : w.getBoughtPrice());
+            if (orderId == null || orderId.isBlank() || avgPrice == null || avgPrice <= 0.0) return;
+            ContractNoteParams p = new ContractNoteParams();
+            p.orderID         = orderId;
+            p.tradingSymbol   = w.getMarginCalcSymbol();
+            p.exchange        = Constants.EXCHANGE_NFO;
+            p.transactionType = isLive
+                    ? (isBuy ? Constants.TRANSACTION_TYPE_BUY : Constants.TRANSACTION_TYPE_SELL)
+                    : (isBuy ? Constants.TRANSACTION_TYPE_SELL : Constants.TRANSACTION_TYPE_BUY);
+            p.variety      = Constants.VARIETY_REGULAR;
+            p.product      = Constants.PRODUCT_NRML;
+            p.orderType    = Constants.ORDER_TYPE_MARKET;
+            p.quantity     = w.getQuantity();
+            p.averagePrice = avgPrice;
+            params.add(p);
+            legs.add(w);
+        });
+        if (params.isEmpty()) return;
+
+        List<ContractNote> notes = kiteGateway.getVirtualContractNote(params);
+        if (notes == null || notes.size() != legs.size()) {
+            log.warn("applyActualCharges: response size mismatch (expected {} got {}) — skipping",
+                    legs.size(), notes == null ? 0 : notes.size());
+            return;
+        }
+        for (int i = 0; i < legs.size(); i++) {
+            WeeklyOrderBook w = legs.get(i);
+            ContractNote    n = notes.get(i);
+            if (n == null || n.charges == null) continue;
+            boolean isLive = LIVE.equals(w.getTradeStatus());
+            Double exact = ComputeUtil.rnd(totalChargesForSliceCount(n.charges, sliceCount(w, isLive)));
+            if (isLive) w.setTradeOpenBrokerage(exact);
+            else        w.setTradeCloseBrokerage(exact);
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    // Peak margin (Trade-level, lifetime)
+    // -----------------------------------------------------------------------
+
+    /** Running max of Σ(LIVE legs.marginToTrade) across the trade's lifetime. */
+    public void calcPeakMargin(Trade trade) {
+        if (trade == null || trade.getWeeklyOrderBook() == null) return;
+        double currentSegmentMargin = trade.getWeeklyOrderBook().stream()
+                .filter(w -> LIVE.equals(w.getTradeStatus()) && w.getMarginToTrade() != null)
+                .mapToDouble(WeeklyOrderBook::getMarginToTrade)
+                .sum();
+        if (currentSegmentMargin <= 0.0) return;
+        double currentPeak = trade.getPeakMargin() != null ? trade.getPeakMargin() : 0.0;
+        if (currentSegmentMargin > currentPeak) {
+            trade.setPeakMargin(ComputeUtil.rnd(currentSegmentMargin));
+        }
     }
 
     public MarginCalculationParams initCalcParam(int quantity) {

@@ -49,17 +49,20 @@ public class ProfitRecenterService {
 
     private static final Logger log = LoggerFactory.getLogger(ProfitRecenterService.class);
 
-    private final TradeRepository tradeRepository;
-    private final TradeUtil       tradeUtil;
-    private final ComputeUtil     computeUtil;
-    private final SymbolService   symbolService;
+    private final TradeRepository  tradeRepository;
+    private final TradeUtil        tradeUtil;
+    private final ComputeUtil      computeUtil;
+    private final SymbolService    symbolService;
+    private final PostTradeService postTradeService;
 
     public ProfitRecenterService(TradeRepository tradeRepository, TradeUtil tradeUtil,
-                                 ComputeUtil computeUtil, SymbolService symbolService) {
-        this.tradeRepository = tradeRepository;
-        this.tradeUtil       = tradeUtil;
-        this.computeUtil     = computeUtil;
-        this.symbolService   = symbolService;
+                                 ComputeUtil computeUtil, SymbolService symbolService,
+                                 PostTradeService postTradeService) {
+        this.tradeRepository  = tradeRepository;
+        this.tradeUtil        = tradeUtil;
+        this.computeUtil      = computeUtil;
+        this.symbolService    = symbolService;
+        this.postTradeService = postTradeService;
     }
 
     public void realizeProfits(String currentPrice) {
@@ -224,12 +227,12 @@ public class ProfitRecenterService {
         // ── 6. Accumulate open prices for ONLY the just-opened legs ──────────
         accumulateExecPrices(newChildren, false);
 
-        // ── 7. Margin/brokerage — calcMarginAndBrokerage filters to LIVE only ─
-        tradeUtil.calcMarginAndBrokerage(trade);
-
         Trade saved = tradeRepository.save(trade);
         log.info("realizeProfits complete | tradeId={} realizedPoints={} newEntryPrice={}",
                 saved.getId(), saved.getRealizedPoints(), saved.getEntrySignalPrice());
+
+        // Margin/brokerage enrichment runs async on postTradeExecutor.
+        postTradeService.afterOpen(saved);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
@@ -262,13 +265,12 @@ public class ProfitRecenterService {
                 TradeUtil.sleep();
                 fills = tradeUtil.getOrderTrades(orderId);
             }
-            if (fills == null || fills.isEmpty() || fills.get(0) == null) {
+            if (fills == null || fills.isEmpty()) {
                 log.error("accumulateExecPrices: still no fills for orderId={} — price not recorded",
                         orderId);
                 return;
             }
-            double avg = fills.get(0).averagePrice != null
-                    ? Double.parseDouble(fills.get(0).averagePrice) : 0.0;
+            double avg = TradeUtil.weightedAvgFillPrice(fills);
 
             if (BUY.equals(w.getTransactionType())) {
                 if (!isClose) {
