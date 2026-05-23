@@ -58,6 +58,13 @@ public class TradeClosingService {
             WeeklyOrderBook w = tradeToClose.getWeeklyOrderBook().get(i);
             log.debug("WeeklyOrderBook to close is: {}", w);
             String oppositeTransaction = BUY.equals(w.getTransactionType()) ? SELL : BUY;
+            LTPQuote q = ltp.get(w.getTradedSymbol());
+            if (q != null) {
+                if (BUY.equals(oppositeTransaction))
+                    w.setBuyIntendedPrice(q.lastPrice);
+                else
+                    w.setSellIntendedPrice(q.lastPrice);
+            }
             try {
                 if (w.getQuantity() >= MAX_SIZE_PER_ORDER) {
                     List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,oppositeTransaction,w.getQuantity());

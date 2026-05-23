@@ -70,6 +70,8 @@ public class SignalService {
 	   CompletableFuture<TradeOpeningService.OpenPrep> openPrepFuture =
 	       CompletableFuture.supplyAsync(() -> openingService.prepareOpen(signalPrice, type, trade));
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, false);
+	   Instant closeEnd = Instant.now();
+	   long closeMs = Duration.between(start, closeEnd).toMillis();
 	   TradeOpeningService.OpenPrep prep = null;
 	   try {
 	       prep = openPrepFuture.join();
@@ -79,7 +81,8 @@ public class SignalService {
 	   Trade liveTrade = (prep != null)
 	       ? openingService.openTrade(signalPrice, type, trade, prep)
 	       : openingService.openTrade(signalPrice, type, trade);
-	   log.info("Time taken to complete flip is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
+	   long openMs = Duration.between(closeEnd, Instant.now()).toMillis();
+	   log.info("[PERF] flip | close={}ms | open={}ms | total={}ms", closeMs, openMs, closeMs + openMs);
 	   postTradeService.afterOpen(liveTrade);
 	   postTradeService.afterClose(closedTrade);
 	   return true;
@@ -89,7 +92,7 @@ public class SignalService {
 	   Instant start = Instant.now();
 	   Trade trade = new Trade(signal);
 	   Trade liveTrade = openingService.openTrade(signalPrice, type, trade);
-	   log.info("Time taken to complete trade open is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
+	   log.info("[PERF] open | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   postTradeService.afterOpen(liveTrade);
 	   return true;
 	}
@@ -113,7 +116,7 @@ public class SignalService {
 	   }
 
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
-	   log.info("Time taken to complete trade close is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
+	   log.info("[PERF] close | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
 	   return true;
@@ -154,9 +157,7 @@ public class SignalService {
 	}
 
 	public boolean handleRollOver(String signalPrice) {
-	   Instant start = Instant.now();
 	   rollOverService.rollOver(signalPrice);
-	   log.info("Time taken to complete trade rollover is : {} ms", String.format("%,d", Duration.between(start, Instant.now()).toMillis()));
 	   return true;
 	}
 }

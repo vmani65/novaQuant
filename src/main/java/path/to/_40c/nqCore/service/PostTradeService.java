@@ -5,6 +5,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Transactional;
 
 import path.to._40c.nqCore.entity.Trade;
 import path.to._40c.nqCore.repo.TradeRepository;
@@ -28,10 +29,13 @@ public class PostTradeService {
 
     /**
      * Async: enrich newly-opened legs with fill prices, margin/brokerage estimates, exact
-     * brokerage from /charges/orders, then update running peakMargin. Re-fetches and merges
-     * to avoid clobbering concurrent close-side writes on the same trade.
+     * brokerage from /charges/orders, then update running peakMargin and capture per-slice
+     * fills for slippage analytics. Re-fetches and merges to avoid clobbering concurrent
+     * close-side writes on the same trade. @Transactional keeps the Hibernate session open
+     * for the lazy fills collection.
      */
     @Async("postTradeExecutor")
+    @Transactional
     public void afterOpen(Trade liveTrade) {
         if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
             log.warn("afterOpen skipped - trade is not LIVE (status={})",
@@ -57,6 +61,7 @@ public class PostTradeService {
                     })
             );
             tradeUtil.calcPeakMargin(t);
+            tradeUtil.captureSliceFills(t);
             tradeRepository.save(t);
             log.info("Post-open calc completed for trade id={}", liveTrade.getId());
         } catch (Exception e) {
@@ -67,8 +72,10 @@ public class PostTradeService {
     /**
      * Async: enrich just-closed legs then merge into the full trade for outcome/PnL/capital.
      * Earlier-segment legs are skipped here (already enriched, orderIDs are stale-day).
+     * @Transactional keeps the Hibernate session open for the lazy fills collection.
      */
     @Async("postTradeExecutor")
+    @Transactional
     public void afterClose(Trade closedTrade) {
         if (closedTrade == null) return;
         try {
@@ -93,6 +100,7 @@ public class PostTradeService {
             computeUtil.calcTradeOutcome(t);
             computeUtil.calcPnL(t);
             computeUtil.recalculateCapital(t);
+            tradeUtil.captureSliceFills(t);
             tradeRepository.save(t);
             log.info("Post-close calc completed for trade id={}", closedTrade.getId());
         } catch (Exception e) {

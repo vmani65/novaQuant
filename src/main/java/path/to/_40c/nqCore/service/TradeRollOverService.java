@@ -2,6 +2,8 @@ package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.*;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -53,6 +55,7 @@ public class TradeRollOverService {
         if (tradeToRollOver != null) log.info("Live Trade being rolled over is: {}", tradeToRollOver);
         else log.info("No Live trades to rollover.");
         if (tradeToRollOver != null) {
+            Instant closeStart = Instant.now();
             String[] liveIns = tradeToRollOver.getWeeklyOrderBook().stream().map(WeeklyOrderBook::getTradedSymbol).toArray(String[]::new);
             Map<String, LTPQuote> ltpOfToCloseTrade = tradeUtil.getLTP(liveIns);
             if (ltpOfToCloseTrade.isEmpty()) {
@@ -65,6 +68,13 @@ public class TradeRollOverService {
                 WeeklyOrderBook toClose = tradeToRollOver.getWeeklyOrderBook().get(i);
                 log.debug("WeeklyOrderBook to rollover is: {}", toClose);
                 String oppositeTransaction = BUY.equals(toClose.getTransactionType()) ? SELL : BUY;
+                LTPQuote q = ltpOfToCloseTrade.get(toClose.getTradedSymbol());
+                if (q != null) {
+                    if (BUY.equals(oppositeTransaction))
+                        toClose.setBuyIntendedPrice(q.lastPrice);
+                    else
+                        toClose.setSellIntendedPrice(q.lastPrice);
+                }
                 try {
                     if (toClose.getQuantity() >= MAX_SIZE_PER_ORDER) {
                         List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
@@ -93,11 +103,14 @@ public class TradeRollOverService {
                 }
             });
 
+            long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
             if (!allClosesSucceeded.get()) {
                 log.error("Rollover aborted - not all positions closed successfully");
+                log.info("[PERF] rollover | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
                 return;
             }
             tradeUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);
+            Instant openStart = Instant.now();
             List<WeeklyOrderBook> childOrderBook = new ArrayList<WeeklyOrderBook>();
             double rolloverPrice = signalPrice != null ? Double.valueOf(signalPrice) : 0.0;
             tradeToRollOver.setEntrySignalPrice(Math.round(((tradeToRollOver.getEntrySignalPrice() != null ? tradeToRollOver.getEntrySignalPrice() : 0.0) + rolloverPrice) * 100.0) / 100.0);
@@ -108,6 +121,8 @@ public class TradeRollOverService {
             Map<String, LTPQuote> ltpOfToOpenTrade = tradeUtil.getLTP(ltpIns);
             if (ltpOfToOpenTrade.isEmpty()) {
                 log.error("LTP map is empty for open leg — aborting rollover open (close already executed, manual intervention needed)");
+                long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
+                log.info("[PERF] rollover | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
                 return;
             }
             IntStream.range(0, weeklyPojo.size()).parallel().forEach(i -> {
@@ -136,6 +151,8 @@ public class TradeRollOverService {
                     log.error("Exception opening order during rollover for {}: {}", w.getMarginCalcSymbol(), e.getMessage(), e);
                 }
             });
+            long openMs = Duration.between(openStart, Instant.now()).toMillis();
+            log.info("[PERF] rollover | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
 
             weeklyPojo.forEach(pojo -> {
                 WeeklyOrderBook b = new WeeklyOrderBook();
@@ -148,6 +165,13 @@ public class TradeRollOverService {
                 b.setLots(pojo.getLots());
                 b.setQuantity(pojo.getLots() * LOT_SIZE);
                 b.setTradeStatus(b.getTradeOpenOrderId() != null ? LIVE : FAILED);
+                LTPQuote q = ltpOfToOpenTrade.get(pojo.getTradedSymbol());
+                if (q != null) {
+                    if (BUY.equals(pojo.getTransactionType()))
+                        b.setBuyIntendedPrice(q.lastPrice);
+                    else
+                        b.setSellIntendedPrice(q.lastPrice);
+                }
                 childOrderBook.add(b);
             });
             tradeToRollOver.setWeeklyOrderBook(childOrderBook);

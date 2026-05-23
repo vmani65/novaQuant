@@ -136,6 +136,13 @@ public class TradeOpeningService {
     		b.setLots(pojo.getLots());
     		b.setQuantity(pojo.getLots() * LOT_SIZE);
     		b.setTradeStatus(b.getTradeOpenOrderId() != null ? LIVE : FAILED);
+    		LTPQuote q = ltp.get(pojo.getTradedSymbol());
+    		if (q != null) {
+    			if (BUY.equals(pojo.getTransactionType())) 
+					b.setBuyIntendedPrice(q.lastPrice);
+    			else                                       
+					b.setSellIntendedPrice(q.lastPrice);
+    		}
     		childOrderBook.add(b);
     	});
     	trade.setWeeklyOrderBook(childOrderBook);

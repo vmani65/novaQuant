@@ -2,17 +2,26 @@ package path.to._40c.nqCore.util;
 
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CLOSED;
+import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
+import java.time.Instant;
+import java.time.LocalDateTime;
+import java.time.ZoneId;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import org.hibernate.Session;
 import org.slf4j.Logger;
@@ -33,6 +42,7 @@ import com.zerodhatech.models.OrderResponse;
 import jakarta.persistence.EntityManager;
 import path.to._40c.nqCore.entity.Trade;
 import path.to._40c.nqCore.entity.WeeklyOrderBook;
+import path.to._40c.nqCore.entity.WeeklyOrderFill;
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.repo.TradeRepository;
 
@@ -280,6 +290,139 @@ public class TradeUtil {
             trade.setPeakMargin(ComputeUtil.rnd(currentSegmentMargin));
         }
     }
+
+    /**
+     * Persist per-slice fill data into WEEKLY_ORDER_FILL for slippage analytics.
+     *
+     * For each leg with a populated tradeOpenOrderId / tradeCloseOrderId, parses the
+     * comma-separated slice orderIDs, fetches per-slice fills from Kite, weighted-averages
+     * each slice's fills, and INSERTs (open) or UPDATEs (close) one row per slice.
+     *
+     * Idempotent — re-runs are no-ops because we check existing fill rows before writing.
+     * Must run inside a transaction (caller marks @Transactional) because it lazy-loads
+     * the fills collection per leg.
+     */
+    public void captureSliceFills(Trade trade) {
+        if (trade == null || trade.getWeeklyOrderBook() == null) return;
+        trade.getWeeklyOrderBook().forEach(this::captureSliceFillsForLeg);
+    }
+
+    private void captureSliceFillsForLeg(WeeklyOrderBook w) {
+        if (w == null) return;
+        String openOrderIds  = w.getTradeOpenOrderId();
+        String closeOrderIds = w.getTradeCloseOrderId();
+        boolean hasOpen  = openOrderIds  != null && !openOrderIds.isBlank();
+        boolean hasClose = closeOrderIds != null && !closeOrderIds.isBlank();
+        if (!hasOpen && !hasClose) return;
+
+        boolean legIsBuy = BUY.equals(w.getTransactionType());
+
+        if (hasOpen) {
+            boolean openSideIsBuy = legIsBuy;
+            boolean alreadyCaptured = w.getFills().stream()
+                    .anyMatch(f -> openSideIsBuy ? f.getBuyFillPrice() != null : f.getSellFillPrice() != null);
+            if (!alreadyCaptured) captureSliceFillsForSide(w, openSideIsBuy, openOrderIds);
+        }
+        if (hasClose) {
+            boolean closeSideIsBuy = !legIsBuy;
+            boolean alreadyCaptured = w.getFills().stream()
+                    .anyMatch(f -> closeSideIsBuy ? f.getBuyFillPrice() != null : f.getSellFillPrice() != null);
+            if (!alreadyCaptured) captureSliceFillsForSide(w, closeSideIsBuy, closeOrderIds);
+        }
+    }
+
+    private void captureSliceFillsForSide(WeeklyOrderBook w, boolean buySide, String orderIdsStr) {
+        String[] sliceIds = orderIdsStr.split("\\s*,\\s*");
+        if (sliceIds.length == 0) return;
+
+        List<com.zerodhatech.models.Trade> allFills = fetchWithRetry(orderIdsStr,
+                (buySide ? "BUY" : "SELL") + " slice fills");
+        if (allFills == null || allFills.isEmpty()) {
+            log.warn("captureSliceFills: no fills returned for {} side of leg {} after retry (orderIds={})",
+                    buySide ? "BUY" : "SELL", w.getMarginCalcSymbol(), orderIdsStr);
+            return;
+        }
+
+        Map<String, List<com.zerodhatech.models.Trade>> bySliceId = allFills.stream()
+                .filter(t -> t != null && t.orderId != null)
+                .collect(Collectors.groupingBy(t -> t.orderId));
+
+        List<SliceFillData> slices = new ArrayList<>();
+        for (String sliceId : sliceIds) {
+            String id = sliceId.trim();
+            if (id.isEmpty()) continue;
+            List<com.zerodhatech.models.Trade> sliceFills = bySliceId.getOrDefault(id, Collections.emptyList());
+            if (sliceFills.isEmpty()) continue;
+            SliceFillData computed = computeSliceFill(id, sliceFills);
+            if (computed != null) slices.add(computed);
+        }
+        if (slices.isEmpty()) return;
+
+        slices.sort(Comparator.comparing(SliceFillData::time,
+                Comparator.nullsLast(Comparator.naturalOrder())));
+
+        Map<Integer, WeeklyOrderFill> byIndex = w.getFills().stream()
+                .collect(Collectors.toMap(WeeklyOrderFill::getSliceIndex, x -> x, (a, b) -> a));
+
+        for (int i = 0; i < slices.size(); i++) {
+            SliceFillData s = slices.get(i);
+            WeeklyOrderFill row = byIndex.get(i);
+            if (row == null) {
+                row = new WeeklyOrderFill();
+                row.setWeeklyOrderBook(w);
+                row.setSliceIndex(i);
+                w.getFills().add(row);
+                byIndex.put(i, row);
+            }
+            String timeStr = formatFillTime(s.time());
+            if (buySide) {
+                row.setBuySliceQty(s.qty());
+                row.setBuySliceOrderId(s.orderId());
+                row.setBuyFillPrice(s.price());
+                row.setBuyFillTime(timeStr);
+            } else {
+                row.setSellSliceQty(s.qty());
+                row.setSellSliceOrderId(s.orderId());
+                row.setSellFillPrice(s.price());
+                row.setSellFillTime(timeStr);
+            }
+        }
+    }
+
+    private static SliceFillData computeSliceFill(String sliceOrderId,
+                                                  List<com.zerodhatech.models.Trade> sliceFills) {
+        double totalQty = 0.0;
+        double totalValue = 0.0;
+        java.util.Date earliestTime = null;
+        for (com.zerodhatech.models.Trade tr : sliceFills) {
+            if (tr == null || tr.averagePrice == null || tr.quantity == null) continue;
+            try {
+                double q = Double.parseDouble(tr.quantity);
+                double p = Double.parseDouble(tr.averagePrice);
+                totalQty += q;
+                totalValue += q * p;
+                if (tr.fillTimestamp != null &&
+                        (earliestTime == null || tr.fillTimestamp.before(earliestTime))) {
+                    earliestTime = tr.fillTimestamp;
+                }
+            } catch (NumberFormatException ignored) {
+            }
+        }
+        if (totalQty <= 0.0) return null;
+        return new SliceFillData(
+                sliceOrderId,
+                (int) totalQty,
+                Math.round((totalValue / totalQty) * 100.0) / 100.0,
+                earliestTime != null ? earliestTime.toInstant() : null);
+    }
+
+    private static String formatFillTime(Instant t) {
+        if (t == null) return null;
+        return LocalDateTime.ofInstant(t, ZoneId.of(ZONE_ID))
+                .format(DateTimeFormatter.ofPattern(DATE_FORMAT));
+    }
+
+    private record SliceFillData(String orderId, int qty, double price, Instant time) {}
 
     public MarginCalculationParams initCalcParam(int quantity) {
     	var params = new MarginCalculationParams();

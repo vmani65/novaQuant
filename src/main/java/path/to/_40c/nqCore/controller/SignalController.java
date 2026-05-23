@@ -28,9 +28,10 @@ public class SignalController {
 
     private final Map<String, Instant> signalCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> duplicateCount = new ConcurrentHashMap<>();
-    private final ConcurrentHashMap<String, Instant> lastLogDuplicate = new ConcurrentHashMap<>();
     private static final Duration CACHE_TTL = Duration.ofDays(60);
     private static final Duration LOG_THROTTLE = Duration.ofMinutes(1);
+    private final java.util.concurrent.atomic.AtomicInteger duplicatesSinceLastLog = new java.util.concurrent.atomic.AtomicInteger();
+    private volatile Instant lastDuplicateSummaryAt = Instant.now();
     private final Map<String, LastProcessed> previousByStrategy = new ConcurrentHashMap<>();
     private final SignalService signalService;
     private final ComputeUtil util;
@@ -160,17 +161,19 @@ public class SignalController {
 
         if (firstSeen != null) {
             if (Duration.between(firstSeen, now).compareTo(CACHE_TTL) <= 0) {
-                int count = duplicateCount.merge(cacheKey, 1, Integer::sum);
-                Instant lastLogged = lastLogDuplicate.get(cacheKey);
-                if (lastLogged == null || Duration.between(lastLogged, now).compareTo(LOG_THROTTLE) > 0) {
-                    log.warn("DUPLICATE ignored | key={} | firstSeenAt={} | duplicateCount={}",cacheKey, firstSeen.atZone(ZoneId.of(ZONE_ID)), count);
-                    lastLogDuplicate.put(cacheKey, now);
-                }                
+                duplicateCount.merge(cacheKey, 1, Integer::sum);
+                duplicatesSinceLastLog.incrementAndGet();
+                if (Duration.between(lastDuplicateSummaryAt, now).compareTo(LOG_THROTTLE) > 0) {
+                    int filtered = duplicatesSinceLastLog.getAndSet(0);
+                    Duration window = Duration.between(lastDuplicateSummaryAt, now);
+                    lastDuplicateSummaryAt = now;
+                    log.warn("DUPLICATES filtered: {} in last {}s (across {} unique keys cached)",
+                            filtered, window.toSeconds(), duplicateCount.size());
+                }
                 return true;
             }
             signalCache.put(cacheKey, now);
             duplicateCount.remove(cacheKey);
-            lastLogDuplicate.remove(cacheKey);
             log.info("TTL EXPIRED -> accepting and refreshing key={} | previousFirstSeen={}", cacheKey, firstSeen.atZone(ZoneId.of(ZONE_ID)));
             return false;
         }

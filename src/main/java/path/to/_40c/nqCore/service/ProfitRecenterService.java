@@ -2,6 +2,8 @@ package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.*;
 
+import java.time.Duration;
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -63,6 +65,7 @@ public class ProfitRecenterService {
         log.info("realizeProfits start | tradeId={} direction={} entryPrice={} currentPrice={}",
                 trade.getId(), trade.getSignalType(), trade.getEntrySignalPrice(), currentPrice);
 
+        Instant closeStart = Instant.now();
         String[] liveSymbols = trade.getWeeklyOrderBook().stream()
                 .map(WeeklyOrderBook::getTradedSymbol).toArray(String[]::new);
 
@@ -78,6 +81,13 @@ public class ProfitRecenterService {
         IntStream.range(0, legsBeingClosed.size()).parallel().forEach(i -> {
             WeeklyOrderBook leg      = legsBeingClosed.get(i);
             String          opposite = BUY.equals(leg.getTransactionType()) ? SELL : BUY;
+            LTPQuote q = ltpClose.get(leg.getTradedSymbol());
+            if (q != null) {
+                if (BUY.equals(opposite))
+                    leg.setBuyIntendedPrice(q.lastPrice);
+                else
+                    leg.setSellIntendedPrice(q.lastPrice);
+            }
             try {
                 if (leg.getQuantity() >= MAX_SIZE_PER_ORDER) {
                     List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(
@@ -116,8 +126,10 @@ public class ProfitRecenterService {
             }
         });
 
+        long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
         if (!allClosed.get()) {
             log.error("realizeProfits: not all legs closed — aborting recenter. Saving partial state.");
+            log.info("[PERF] recenter | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
             tradeRepository.save(trade);
             return;
         }
@@ -135,6 +147,7 @@ public class ProfitRecenterService {
         log.info("realizeProfits: segment={}pts totalRealized={}pts newBaseline={}",
                 segment, trade.getRealizedPoints(), newPrice);
 
+        Instant openStart = Instant.now();
         symbolService.checkAndPromoteRolloverSymbol();
         boolean useRollover = isRolloverComplete();
         List<WeeklyPojo> newLegs = computeUtil.buildInstrument(currentPrice, trade, useRollover);
@@ -144,6 +157,8 @@ public class ProfitRecenterService {
         Map<String, LTPQuote> ltpOpen = tradeUtil.getLTP(openSymbols);
         if (ltpOpen.isEmpty()) {
             log.error("realizeProfits: LTP map empty for open leg — close already executed, manual intervention needed");
+            long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
+            log.info("[PERF] recenter | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
             tradeRepository.save(trade);
             return;
         }
@@ -183,6 +198,8 @@ public class ProfitRecenterService {
                         pojo.getMarginCalcSymbol(), e.getMessage(), e);
             }
         });
+        long openMs = Duration.between(openStart, Instant.now()).toMillis();
+        log.info("[PERF] recenter | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
 
         List<WeeklyOrderBook> newChildren = new ArrayList<>();
         newLegs.forEach(pojo -> {
@@ -196,6 +213,13 @@ public class ProfitRecenterService {
             b.setLots(pojo.getLots());
             b.setQuantity(pojo.getLots() * LOT_SIZE);
             b.setTradeStatus(pojo.getTradeOpenOrderId() != null ? LIVE : FAILED);
+            LTPQuote q = ltpOpen.get(pojo.getTradedSymbol());
+            if (q != null) {
+                if (BUY.equals(pojo.getTransactionType()))
+                    b.setBuyIntendedPrice(q.lastPrice);
+                else
+                    b.setSellIntendedPrice(q.lastPrice);
+            }
             newChildren.add(b);
         });
 

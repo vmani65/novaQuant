@@ -65,4 +65,10 @@ public abstract class BaseChildEntity extends BaseEntity {
 
     @Column(name = "TRADE_CLOSE_ORDER_ID")
     protected String tradeCloseOrderId;
+
+    @Column(name = "BUY_INTENDED_PRICE")
+    protected Double buyIntendedPrice;
+
+    @Column(name = "SELL_INTENDED_PRICE")
+    protected Double sellIntendedPrice;
 }
