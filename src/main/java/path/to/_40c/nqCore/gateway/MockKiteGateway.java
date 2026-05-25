@@ -26,11 +26,17 @@ import com.zerodhatech.models.ContractNote;
 import com.zerodhatech.models.ContractNoteParams;
 import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
+import com.zerodhatech.models.Depth;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
+import com.zerodhatech.models.MarketDepth;
+import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
+
+import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_COMPLETE;
 
 /**
  * Mock KiteGateway for local testing (active when spring.profiles.active=mock).
@@ -90,6 +96,53 @@ public class MockKiteGateway implements KiteGateway {
         double price      = intrinsic + timeValue * atmDecay;
         price = Math.max(5.0, Math.min(800.0, price));
         return Math.round(price * 100.0) / 100.0;
+    }
+
+    @Override
+    public Map<String, Quote> getQuote(String[] instruments) {
+        niftySpot = Math.max(23000, Math.min(26000, niftySpot + (random.nextDouble() * 100 - 50)));
+        double spot = Math.round(niftySpot * 100.0) / 100.0;
+        Map<String, Quote> result = new HashMap<>();
+        for (String ins : instruments) {
+            double mid = calcOptionLTP(ins, spot);
+            Quote q = new Quote();
+            q.lastPrice = mid;
+            q.depth = new MarketDepth();
+            q.depth.buy = new ArrayList<>();
+            q.depth.sell = new ArrayList<>();
+            double tick = 0.05;
+            for (int i = 0; i < 5; i++) {
+                Depth b = new Depth();
+                b.setPrice(Math.round((mid - (i + 1) * tick) * 100.0) / 100.0);
+                b.setQuantity(65 + i * 65);
+                b.setOrders(1 + i);
+                q.depth.buy.add(b);
+                Depth s = new Depth();
+                s.setPrice(Math.round((mid + (i + 1) * tick) * 100.0) / 100.0);
+                s.setQuantity(65 + i * 65);
+                s.setOrders(1 + i);
+                q.depth.sell.add(s);
+            }
+            result.put(ins, q);
+            log.info("[MOCK] getQuote: {} | spot={} → lastPrice={} | bestBid={} bestAsk={}",
+                    ins, spot, mid, q.depth.buy.get(0).getPrice(), q.depth.sell.get(0).getPrice());
+        }
+        return result;
+    }
+
+    @Override
+    public List<Order> getOrderHistory(String orderId) {
+        Order o = new Order();
+        o.orderId = orderId;
+        o.status = ORDER_COMPLETE;
+        Double execPrice = executionPrices.get(orderId);
+        o.averagePrice = execPrice != null ? String.valueOf(execPrice) : "0";
+        o.filledQuantity = "65";
+        o.quantity = "65";
+        o.pendingQuantity = "0";
+        log.info("[MOCK] getOrderHistory: orderId={} → status={} filled={}/{}",
+                orderId, o.status, o.filledQuantity, o.quantity);
+        return List.of(o);
     }
 
     @Override

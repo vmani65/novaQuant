@@ -22,6 +22,7 @@ public class WeeklyPojo {
     private Trade parentTrade;
     private int lots;
     private String tradeOpenOrderId;
+    private Boolean openFullyFilled;
     private List<BulkOrderResponse> orderResponse;
 
     public WeeklyPojo() {}

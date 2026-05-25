@@ -26,8 +26,10 @@ import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
+import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
@@ -75,6 +77,35 @@ public class KiteConnectGateway implements KiteGateway {
             log.error("Exception while fetching LTP", e);
         }
         return Collections.emptyMap();
+    }
+
+    @Override
+    public Map<String, Quote> getQuote(String[] instruments) {
+        var kite = getKiteConnectObject();
+        if (kite == null) {
+            log.error("KiteConnect object is null — cannot fetch Quote (auth not set for today?)");
+            return Collections.emptyMap();
+        }
+        try {
+            return kite.getQuote(instruments);
+        } catch (JSONException | IOException | KiteException e) {
+            log.error("Exception while fetching Quote", e);
+        }
+        return Collections.emptyMap();
+    }
+
+    @Override
+    public List<Order> getOrderHistory(String orderId) {
+        var kite = getKiteConnectObject();
+        if (kite == null) { log.error("KiteConnect null — cannot fetch order history"); return Collections.emptyList(); }
+        try {
+            return kite.getOrderHistory(orderId);
+        } catch (KiteException e) {
+            log.error("Exception while fetching order history for {} — code={} message={}", orderId, e.code, e.getMessage());
+        } catch (JSONException | IOException e) {
+            log.error("Exception while fetching order history for {}", orderId, e);
+        }
+        return Collections.emptyList();
     }
 
     @Override

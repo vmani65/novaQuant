@@ -8,16 +8,13 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.entity.Trade;
@@ -26,6 +23,7 @@ import path.to._40c.nqCore.pojo.WeeklyPojo;
 import path.to._40c.nqCore.repo.TradeRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.TradeUtil.ExecResult;
 
 /**
  * Re-centres a live trade at the new ATM when profit >= 500 points: closes current LIVE legs,
@@ -89,35 +87,18 @@ public class ProfitRecenterService {
                     leg.setSellIntendedPrice(q.lastPrice);
             }
             try {
-                if (leg.getQuantity() >= MAX_SIZE_PER_ORDER) {
-                    List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(
-                            leg.getMarginCalcSymbol(),
-                            ltpClose.get(leg.getTradedSymbol()).lastPrice,
-                            opposite, leg.getQuantity());
-                    if (o != null && !o.isEmpty()) {
-                        log.info("Auto-sliced close order placed for {} ({} qty, {} slices)",
-                                leg.getMarginCalcSymbol(), leg.getQuantity(), o.size());
-                        leg.setTradeCloseOrderId(o.stream().map(a -> a.orderId)
-                                .collect(Collectors.joining(", ")));
-                        leg.setTradeStatus(CLOSED);
-                    } else {
-                        log.error("realizeProfits close failed for {} — null/empty", leg.getMarginCalcSymbol());
-                        allClosed.set(false);
-                    }
+                Double openPrice = SELL.equals(opposite) ? leg.getBoughtPrice() : leg.getSoldPrice();
+                ExecResult er = tradeUtil.placeAggressiveOrder(leg.getMarginCalcSymbol(), opposite, leg.getQuantity(), openPrice, "EXIT");
+                if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                    leg.setTradeCloseOrderId(er.aggregateOrderIds());
+                }
+                if (er.fullyFilled()) {
+                    leg.setTradeStatus(CLOSED);
                 } else {
-                    OrderResponse o = tradeUtil.placeOrder(
-                            leg.getMarginCalcSymbol(),
-                            ltpClose.get(leg.getTradedSymbol()).lastPrice,
-                            opposite, leg.getQuantity());
-                    if (o != null && o.orderId != null) {
-                        log.info("Close order placed for {} (qty={} orderId={})",
-                                leg.getMarginCalcSymbol(), leg.getQuantity(), o.orderId);
-                        leg.setTradeCloseOrderId(o.orderId);
-                        leg.setTradeStatus(CLOSED);
-                    } else {
-                        log.error("realizeProfits close failed for {} — null response", leg.getMarginCalcSymbol());
-                        allClosed.set(false);
-                    }
+                    log.error("[EXIT] {} recenter close NOT fully filled: filled={}/{} term={}",
+                        leg.getMarginCalcSymbol(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
+                    leg.setTradeStatus(FAILED);
+                    allClosed.set(false);
                 }
             } catch (Exception e) {
                 log.error("Exception closing {} during realizeProfits: {}",
@@ -167,31 +148,15 @@ public class ProfitRecenterService {
             WeeklyPojo pojo     = newLegs.get(i);
             int        totalQty = pojo.getLots() * LOT_SIZE;
             try {
-                if (totalQty >= MAX_SIZE_PER_ORDER) {
-                    List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(
-                            pojo.getMarginCalcSymbol(),
-                            ltpOpen.get(pojo.getTradedSymbol()).lastPrice,
-                            pojo.getTransactionType(), totalQty);
-                    if (o != null && !o.isEmpty()) {
-                        log.info("Auto-sliced open order placed for {} ({} qty, {} slices)",
-                                pojo.getMarginCalcSymbol(), totalQty, o.size());
-                        pojo.setTradeOpenOrderId(o.stream().map(a -> a.orderId)
-                                .collect(Collectors.joining(", ")));
-                    } else {
-                        log.error("realizeProfits open failed for {} — null/empty", pojo.getMarginCalcSymbol());
-                    }
-                } else {
-                    OrderResponse o = tradeUtil.placeOrder(
-                            pojo.getMarginCalcSymbol(),
-                            ltpOpen.get(pojo.getTradedSymbol()).lastPrice,
-                            pojo.getTransactionType(), totalQty);
-                    if (o != null && o.orderId != null) {
-                        log.info("Open order placed for {} (qty={} orderId={})",
-                                pojo.getMarginCalcSymbol(), totalQty, o.orderId);
-                        pojo.setTradeOpenOrderId(o.orderId);
-                    } else {
-                        log.error("realizeProfits open failed for {} — null response", pojo.getMarginCalcSymbol());
-                    }
+                Double intendedPrice = ltpOpen.get(pojo.getTradedSymbol()) != null ? ltpOpen.get(pojo.getTradedSymbol()).lastPrice : null;
+                ExecResult er = tradeUtil.placeAggressiveOrder(pojo.getMarginCalcSymbol(), pojo.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+                if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                    pojo.setTradeOpenOrderId(er.aggregateOrderIds());
+                }
+                pojo.setOpenFullyFilled(er.fullyFilled());
+                if (!er.fullyFilled()) {
+                    log.error("[ENTRY] {} recenter open NOT fully filled: filled={}/{} term={}",
+                        pojo.getMarginCalcSymbol(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
                 }
             } catch (Exception e) {
                 log.error("Exception opening {} during realizeProfits: {}",
@@ -212,7 +177,7 @@ public class ProfitRecenterService {
             b.setMoneyness(pojo.getMoneyness());
             b.setLots(pojo.getLots());
             b.setQuantity(pojo.getLots() * LOT_SIZE);
-            b.setTradeStatus(pojo.getTradeOpenOrderId() != null ? LIVE : FAILED);
+            b.setTradeStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
             LTPQuote q = ltpOpen.get(pojo.getTradedSymbol());
             if (q != null) {
                 if (BUY.equals(pojo.getTransactionType()))

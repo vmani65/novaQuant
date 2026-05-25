@@ -9,16 +9,13 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.nqCore.entity.Trade;
 import path.to._40c.nqCore.entity.WeeklyOrderBook;
@@ -26,6 +23,7 @@ import path.to._40c.nqCore.pojo.WeeklyPojo;
 import path.to._40c.nqCore.repo.TradeRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.TradeUtil.ExecResult;
 
 @Service
 public class TradeRollOverService {
@@ -76,26 +74,18 @@ public class TradeRollOverService {
                         toClose.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    if (toClose.getQuantity() >= MAX_SIZE_PER_ORDER) {
-                        List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
-                        if (o != null && !o.isEmpty()) {
-                            log.info("Auto-sliced order placed for {} ({} qty, {} slices)", toClose.getMarginCalcSymbol(), toClose.getQuantity(), o.size());
-                            toClose.setTradeCloseOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-                            toClose.setTradeStatus(CLOSED);
-                        } else {
-                            log.error("Rollover close failed for {} - returned null/empty", toClose.getMarginCalcSymbol());
-                            allClosesSucceeded.set(false);
-                        }
+                    Double openPrice = SELL.equals(oppositeTransaction) ? toClose.getBoughtPrice() : toClose.getSoldPrice();
+                    ExecResult er = tradeUtil.placeAggressiveOrder(toClose.getMarginCalcSymbol(), oppositeTransaction, toClose.getQuantity(), openPrice, "EXIT");
+                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                        toClose.setTradeCloseOrderId(er.aggregateOrderIds());
+                    }
+                    if (er.fullyFilled()) {
+                        toClose.setTradeStatus(CLOSED);
                     } else {
-                        OrderResponse o = tradeUtil.placeOrder(toClose.getMarginCalcSymbol(),ltpOfToCloseTrade.get(toClose.getTradedSymbol()).lastPrice,oppositeTransaction,toClose.getQuantity());
-                        if (o != null && o.orderId != null) {
-                            log.info("Direct order placed for {} ({} qty, orderId={})", toClose.getMarginCalcSymbol(), toClose.getQuantity(), o.orderId);
-                            toClose.setTradeCloseOrderId(o.orderId);
-                            toClose.setTradeStatus(CLOSED);
-                        } else {
-                            log.error("Rollover close failed for {} ({} qty) - returned null", toClose.getMarginCalcSymbol(), toClose.getQuantity());
-                            allClosesSucceeded.set(false);
-                        }
+                        log.error("[EXIT] {} rollover close NOT fully filled: filled={}/{} term={}",
+                            toClose.getMarginCalcSymbol(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
+                        toClose.setTradeStatus(FAILED);
+                        allClosesSucceeded.set(false);
                     }
                 } catch (Exception e) {
                     log.error("Exception closing order during rollover for {}: {}", toClose.getMarginCalcSymbol(), e.getMessage(), e);
@@ -130,22 +120,15 @@ public class TradeRollOverService {
                 log.debug("WeeklyPojo to place order is: {}", w);
                 int totalQty = w.getLots() * LOT_SIZE;
                 try {
-                    if (totalQty >= MAX_SIZE_PER_ORDER) {
-                        List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder( w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(), totalQty);
-                        if (o != null && !o.isEmpty()) {
-                            log.info("Auto-sliced order placed for {} ({} qty, {} slices)", w.getMarginCalcSymbol(), totalQty, o.size());
-                            w.setTradeOpenOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-                        } else {
-                            log.error("Rollover open failed for {} - returned null/empty", w.getMarginCalcSymbol());
-                        }
-                    } else {
-                        OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(), ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice, w.getTransactionType(),totalQty);
-                        if (o != null && o.orderId != null) {
-                            log.info("Direct order placed for {} ({} qty, orderId={})", w.getMarginCalcSymbol(), totalQty, o.orderId);
-                            w.setTradeOpenOrderId(o.orderId);
-                        } else {
-                            log.error("Rollover open failed for {} ({} qty) - returned null", w.getMarginCalcSymbol(), totalQty);
-                        }
+                    Double intendedPrice = ltpOfToOpenTrade.get(w.getTradedSymbol()) != null ? ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice : null;
+                    ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                        w.setTradeOpenOrderId(er.aggregateOrderIds());
+                    }
+                    w.setOpenFullyFilled(er.fullyFilled());
+                    if (!er.fullyFilled()) {
+                        log.error("[ENTRY] {} rollover open NOT fully filled: filled={}/{} term={}",
+                            w.getMarginCalcSymbol(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
                     }
                 } catch (Exception e) {
                     log.error("Exception opening order during rollover for {}: {}", w.getMarginCalcSymbol(), e.getMessage(), e);
@@ -164,7 +147,7 @@ public class TradeRollOverService {
                 b.setMoneyness(pojo.getMoneyness());
                 b.setLots(pojo.getLots());
                 b.setQuantity(pojo.getLots() * LOT_SIZE);
-                b.setTradeStatus(b.getTradeOpenOrderId() != null ? LIVE : FAILED);
+                b.setTradeStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
                 LTPQuote q = ltpOfToOpenTrade.get(pojo.getTradedSymbol());
                 if (q != null) {
                     if (BUY.equals(pojo.getTransactionType()))

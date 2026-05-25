@@ -2,18 +2,14 @@ package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.*;
 
-import java.util.List;
 import java.util.Map;
-import java.util.stream.Collectors;
 import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.nqCore.controller.SignalController.Signal;
 import path.to._40c.nqCore.entity.Trade;
@@ -21,6 +17,7 @@ import path.to._40c.nqCore.entity.WeeklyOrderBook;
 import path.to._40c.nqCore.repo.TradeRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.TradeUtil.ExecResult;
 
 @Service
 public class TradeClosingService {
@@ -66,34 +63,17 @@ public class TradeClosingService {
                     w.setSellIntendedPrice(q.lastPrice);
             }
             try {
-                if (w.getQuantity() >= MAX_SIZE_PER_ORDER) {
-                    List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,oppositeTransaction,w.getQuantity());
-                    if (o != null && !o.isEmpty()) {
-                        log.info("Auto-sliced order placed for {} ({} qty, {} slices)",w.getMarginCalcSymbol(), w.getQuantity(), o.size());
-                        synchronized (w) {
-                            w.setTradeCloseOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-                            w.setTradeStatus(CLOSED);
-                        }
-                    } else {
-                        log.error("Auto-slice close order failed for {} ({} qty) - returned null/empty",w.getMarginCalcSymbol(), w.getQuantity());
-                        synchronized (w) {
-                            w.setTradeStatus(FAILED);
-                        }
+                Double openPrice = SELL.equals(oppositeTransaction) ? w.getBoughtPrice() : w.getSoldPrice();
+                ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), oppositeTransaction, w.getQuantity(), openPrice, "EXIT");
+                synchronized (w) {
+                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                        w.setTradeCloseOrderId(er.aggregateOrderIds());
                     }
-                } else {
-                    OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,oppositeTransaction,w.getQuantity());
-                    if (o != null && o.orderId != null) {
-                        log.info("Direct order placed for {} ({} qty, orderId={})", w.getMarginCalcSymbol(), w.getQuantity(), o.orderId);
-                        synchronized (w) {
-                            w.setTradeCloseOrderId(o.orderId);
-                            w.setTradeStatus(CLOSED);
-                        }
-                    } else {
-                        log.error("Close order failed for {} ({} qty) - returned null", w.getMarginCalcSymbol(), w.getQuantity());
-                        synchronized (w) {
-                            w.setTradeStatus(FAILED);
-                        }
-                    }
+                    w.setTradeStatus(er.fullyFilled() ? CLOSED : FAILED);
+                }
+                if (!er.fullyFilled()) {
+                    log.error("[EXIT] {} ({} qty) NOT fully closed: filled={}/{} term={}",
+                        w.getMarginCalcSymbol(), w.getQuantity(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
                 }
             } catch (Exception e) {
                 log.error("Exception closing order for {} ({} qty): {}",

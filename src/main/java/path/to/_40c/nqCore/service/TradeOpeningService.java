@@ -10,9 +10,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.LTPQuote;
-import com.zerodhatech.models.OrderResponse;
 
 import path.to._40c.nqCore.entity.Trade;
 import path.to._40c.nqCore.entity.WeeklyOrderBook;
@@ -20,6 +18,7 @@ import path.to._40c.nqCore.pojo.WeeklyPojo;
 import path.to._40c.nqCore.repo.TradeRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.TradeUtil.ExecResult;
 
 import static path.to._40c.nqCore.util.Constants.*;
 
@@ -100,25 +99,22 @@ public class TradeOpeningService {
     	    log.debug("WeeklyPojo to place order is: {}", w);
     	    int totalQty = w.getLots() * LOT_SIZE;
     	    try {
-    	        if (totalQty >= MAX_SIZE_PER_ORDER) {
-    	            List<BulkOrderResponse> o = tradeUtil.placeAutoSliceOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
-    	            if (o != null && !o.isEmpty()) {
-    	                log.info("Auto-sliced order placed for {} ({} qty, {} slices)", w.getMarginCalcSymbol(), totalQty, o.size());
-    	                synchronized (w) {
-    	                    w.setTradeOpenOrderId(o.stream().map(a -> a.orderId).collect(Collectors.joining(", ")));
-    	                }
-    	            } else {
-    	                log.error("Auto-slice order failed for {} (returned null/empty)", w.getMarginCalcSymbol());
+    	        Double intendedPrice = ltp.get(w.getTradedSymbol()) != null ? ltp.get(w.getTradedSymbol()).lastPrice : null;
+    	        ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+    	        if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+    	            synchronized (w) {
+    	                w.setTradeOpenOrderId(er.aggregateOrderIds());
+    	            }
+    	        }
+    	        if (!er.fullyFilled()) {
+    	            log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
+    	                w.getMarginCalcSymbol(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
+    	            synchronized (w) {
+    	                w.setOpenFullyFilled(false);
     	            }
     	        } else {
-    	            OrderResponse o = tradeUtil.placeOrder(w.getMarginCalcSymbol(),ltp.get(w.getTradedSymbol()).lastPrice,w.getTransactionType(),totalQty);
-    	            if (o != null && o.orderId != null) {
-    	                log.info("Direct order placed for {} ({} qty, orderId={})",w.getMarginCalcSymbol(), totalQty, o.orderId);
-    	                synchronized (w) {
-    	                    w.setTradeOpenOrderId(o.orderId);
-    	                }
-    	            } else {
-    	                log.error("Order placement failed for {} ({} qty) - returned null",w.getMarginCalcSymbol(), totalQty);
+    	            synchronized (w) {
+    	                w.setOpenFullyFilled(true);
     	            }
     	        }
     	    } catch (Exception e) {
@@ -135,22 +131,22 @@ public class TradeOpeningService {
     		b.setTradeOpenOrderId(pojo.getTradeOpenOrderId());
     		b.setLots(pojo.getLots());
     		b.setQuantity(pojo.getLots() * LOT_SIZE);
-    		b.setTradeStatus(b.getTradeOpenOrderId() != null ? LIVE : FAILED);
+    		b.setTradeStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
     		LTPQuote q = ltp.get(pojo.getTradedSymbol());
     		if (q != null) {
-    			if (BUY.equals(pojo.getTransactionType())) 
+    			if (BUY.equals(pojo.getTransactionType()))
 					b.setBuyIntendedPrice(q.lastPrice);
-    			else                                       
+    			else
 					b.setSellIntendedPrice(q.lastPrice);
     		}
     		childOrderBook.add(b);
     	});
     	trade.setWeeklyOrderBook(childOrderBook);
-    	if (trade.getWeeklyOrderBook().stream().allMatch(ob -> ob.getTradeOpenOrderId() != null)) {
+    	if (trade.getWeeklyOrderBook().stream().allMatch(ob -> LIVE.equals(ob.getTradeStatus()))) {
     		trade.setTradeStatus(LIVE);
         } else {
         	trade.setTradeStatus(FAILED);
-            log.error("Trade opening operation failed - not all order openings succeeded");
+            log.error("Trade opening operation failed - not all legs fully filled");
         }
     	var liveTrade = tradeRepository.save(trade);
     	log.info("Live Trade Being Opened: {}", trade);

@@ -11,8 +11,10 @@ import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
+import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 /**
@@ -31,8 +33,14 @@ public interface KiteGateway {
     /** Fetch last traded price for one or more instruments. Returns empty map on auth/network failure. */
     Map<String, LTPQuote> getLTP(String[] instruments);
 
+    /** Fetch full quote (lastPrice + 5-level depth + circuit limits) for one or more instruments. Returns empty map on failure. */
+    Map<String, Quote> getQuote(String[] instruments);
+
     /** Place a single market order. Returns null on failure. */
     OrderResponse placeOrder(OrderParams params, String variety);
+
+    /** Fetch status-transition history for an order. Last entry = current state. Returns empty list on failure. */
+    List<Order> getOrderHistory(String orderId);
 
     /** Place an auto-sliced order for large quantities. Returns empty list on failure. */
     List<BulkOrderResponse> placeAutoSliceOrder(OrderParams params, String variety);
