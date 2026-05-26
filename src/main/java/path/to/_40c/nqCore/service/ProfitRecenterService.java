@@ -87,8 +87,7 @@ public class ProfitRecenterService {
                     leg.setSellIntendedPrice(q.lastPrice);
             }
             try {
-                Double openPrice = SELL.equals(opposite) ? leg.getBoughtPrice() : leg.getSoldPrice();
-                ExecResult er = tradeUtil.placeAggressiveOrder(leg.getMarginCalcSymbol(), opposite, leg.getQuantity(), openPrice, "EXIT");
+                ExecResult er = tradeUtil.placeAggressiveOrder(leg.getMarginCalcSymbol(), opposite, leg.getQuantity(), "EXIT");
                 if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                     leg.setTradeCloseOrderId(er.aggregateOrderIds());
                 }
@@ -148,8 +147,7 @@ public class ProfitRecenterService {
             WeeklyPojo pojo     = newLegs.get(i);
             int        totalQty = pojo.getLots() * LOT_SIZE;
             try {
-                Double intendedPrice = ltpOpen.get(pojo.getTradedSymbol()) != null ? ltpOpen.get(pojo.getTradedSymbol()).lastPrice : null;
-                ExecResult er = tradeUtil.placeAggressiveOrder(pojo.getMarginCalcSymbol(), pojo.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+                ExecResult er = tradeUtil.placeAggressiveOrder(pojo.getMarginCalcSymbol(), pojo.getTransactionType(), totalQty, "ENTRY");
                 if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                     pojo.setTradeOpenOrderId(er.aggregateOrderIds());
                 }

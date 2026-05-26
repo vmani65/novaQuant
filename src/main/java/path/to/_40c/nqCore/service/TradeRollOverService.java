@@ -74,8 +74,7 @@ public class TradeRollOverService {
                         toClose.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    Double openPrice = SELL.equals(oppositeTransaction) ? toClose.getBoughtPrice() : toClose.getSoldPrice();
-                    ExecResult er = tradeUtil.placeAggressiveOrder(toClose.getMarginCalcSymbol(), oppositeTransaction, toClose.getQuantity(), openPrice, "EXIT");
+                    ExecResult er = tradeUtil.placeAggressiveOrder(toClose.getMarginCalcSymbol(), oppositeTransaction, toClose.getQuantity(), "EXIT");
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         toClose.setTradeCloseOrderId(er.aggregateOrderIds());
                     }
@@ -120,8 +119,7 @@ public class TradeRollOverService {
                 log.debug("WeeklyPojo to place order is: {}", w);
                 int totalQty = w.getLots() * LOT_SIZE;
                 try {
-                    Double intendedPrice = ltpOfToOpenTrade.get(w.getTradedSymbol()) != null ? ltpOfToOpenTrade.get(w.getTradedSymbol()).lastPrice : null;
-                    ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+                    ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, "ENTRY");
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         w.setTradeOpenOrderId(er.aggregateOrderIds());
                     }

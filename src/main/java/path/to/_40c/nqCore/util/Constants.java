@@ -39,8 +39,6 @@ public class Constants {
 	public static final int LOT_SIZE = 65;
 	public static final int MAX_SIZE_PER_ORDER = 1755;
 
-	public static final double DEPTH_WALK_CUSHION = 1.2;
-
 	public static final String NA = "N/A";
 	
 	public static final DateTimeFormatter OUTPUT_FORMAT = DateTimeFormatter.ofPattern("dd-MMM-yyyy hh.mm.ss a");

@@ -29,7 +29,6 @@ import com.zerodhatech.models.MarginCalculationParams;
 import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
-import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
@@ -75,21 +74,6 @@ public class KiteConnectGateway implements KiteGateway {
             return kite.getLTP(instruments);
         } catch (JSONException | IOException | KiteException e) {
             log.error("Exception while fetching LTP", e);
-        }
-        return Collections.emptyMap();
-    }
-
-    @Override
-    public Map<String, Quote> getQuote(String[] instruments) {
-        var kite = getKiteConnectObject();
-        if (kite == null) {
-            log.error("KiteConnect object is null — cannot fetch Quote (auth not set for today?)");
-            return Collections.emptyMap();
-        }
-        try {
-            return kite.getQuote(instruments);
-        } catch (JSONException | IOException | KiteException e) {
-            log.error("Exception while fetching Quote", e);
         }
         return Collections.emptyMap();
     }

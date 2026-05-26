@@ -99,8 +99,7 @@ public class TradeOpeningService {
     	    log.debug("WeeklyPojo to place order is: {}", w);
     	    int totalQty = w.getLots() * LOT_SIZE;
     	    try {
-    	        Double intendedPrice = ltp.get(w.getTradedSymbol()) != null ? ltp.get(w.getTradedSymbol()).lastPrice : null;
-    	        ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, intendedPrice, "ENTRY");
+    	        ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), w.getTransactionType(), totalQty, "ENTRY");
     	        if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
     	            synchronized (w) {
     	                w.setTradeOpenOrderId(er.aggregateOrderIds());

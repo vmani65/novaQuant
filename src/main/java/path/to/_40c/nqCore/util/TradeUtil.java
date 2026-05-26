@@ -7,7 +7,6 @@ import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_REJECTED;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CLOSED;
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
-import static path.to._40c.nqCore.util.Constants.DEPTH_WALK_CUSHION;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
@@ -38,15 +37,12 @@ import com.zerodhatech.kiteconnect.utils.Constants;
 import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.ContractNote;
 import com.zerodhatech.models.ContractNoteParams;
-import com.zerodhatech.models.Depth;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
-import com.zerodhatech.models.MarketDepth;
 import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
-import com.zerodhatech.models.Quote;
 
 import jakarta.persistence.EntityManager;
 import path.to._40c.nqCore.entity.Trade;
@@ -447,10 +443,6 @@ public class TradeUtil {
         return kiteGateway.getLTP(ins);
     }
 
-    public Map<String, Quote> getQuote(String[] ins) {
-        return kiteGateway.getQuote(ins);
-    }
-
     public List<MarginCalculationData> getMarginCalculation(List<MarginCalculationParams> params) {
         return kiteGateway.getMarginCalculation(params);
     }
@@ -496,58 +488,38 @@ public class TradeUtil {
     }
 
     /**
-     * Aggressive order pipeline shared by entries and exits.
-     * Step 1: getQuote → walk depth (with 1.2× cushion) → place LIMIT IOC at the depth-walked price.
-     * Step 2: verify via getOrderHistory; if partial, re-walk depth and retry once.
-     * Step 3: if still partial, MARKET + protection=0 for the remainder (caller-accepted slippage cost).
-     * contextLabel ("ENTRY"|"EXIT") drives only logging; refPrice is intendedPx for entry, openPx for exit
-     * (the projEdge math is sign-symmetric: positive = better than refPrice in both contexts).
+     * Order pipeline shared by entries and exits.
+     * For qty < MAX_SIZE_PER_ORDER: single MARKET + protection=1 + verify via getOrderHistory.
+     * For qty ≥ MAX_SIZE_PER_ORDER: Kite broker-side auto-slice (MARKET per slice).
+     * contextLabel ("ENTRY"|"EXIT") drives only logging.
      */
-    public ExecResult placeAggressiveOrder(String ins, String txn, int qty, Double refPrice, String contextLabel) {
+    public ExecResult placeAggressiveOrder(String ins, String txn, int qty, String contextLabel) {
         if (qty >= MAX_SIZE_PER_ORDER) {
             log.warn("[{}] {} qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", contextLabel, ins, qty);
             return autoSliceFallback(ins, txn, qty, contextLabel);
         }
 
-        StringBuilder allIds = new StringBuilder();
-        int totalFilled = 0;
-        double weightedSum = 0.0;
-        int remaining = qty;
+        OrderParams params = buildAggressiveOrderParams();
+        params.orderType        = Constants.ORDER_TYPE_MARKET;
+        params.validity         = Constants.VALIDITY_DAY;
+        params.transactionType  = txn;
+        params.tradingsymbol    = ins;
+        params.quantity         = qty;
+        params.marketProtection = 1;
+        OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
+        if (resp == null || resp.orderId == null) {
+            log.error("[{}] {} placeOrder returned null", contextLabel, ins);
+            return new ExecResult("", 0, qty, 0.0, false, "PLACE_FAILED");
+        }
+        log.info("[{}] {} MARKET protection=1 placed: orderId={}", contextLabel, ins, resp.orderId);
 
-        AttemptResult a1 = attemptLimitIoc(ins, txn, remaining, refPrice, "attempt1", contextLabel);
-        if (a1.orderId() != null) {
-            appendId(allIds, a1.orderId());
-            totalFilled += a1.filledQty();
-            weightedSum += a1.filledQty() * a1.avgFillPrice();
-            remaining   -= a1.filledQty();
-        }
-        if (remaining > 0) {
-            log.warn("[{}] {} attempt1 partial: filled={}/{} | retrying remainder={}", contextLabel, ins, totalFilled, qty, remaining);
-            AttemptResult a2 = attemptLimitIoc(ins, txn, remaining, refPrice, "attempt2", contextLabel);
-            if (a2.orderId() != null) {
-                appendId(allIds, a2.orderId());
-                totalFilled += a2.filledQty();
-                weightedSum += a2.filledQty() * a2.avgFillPrice();
-                remaining   -= a2.filledQty();
-            }
-        }
-        if (remaining > 0) {
-            log.warn("[{}] {} attempt2 partial: filled={}/{} | MARKET fallback for remainder={}", contextLabel, ins, totalFilled, qty, remaining);
-            AttemptResult a3 = attemptMarketFallback(ins, txn, remaining, contextLabel);
-            if (a3.orderId() != null) {
-                appendId(allIds, a3.orderId());
-                totalFilled += a3.filledQty();
-                weightedSum += a3.filledQty() * a3.avgFillPrice();
-                remaining   -= a3.filledQty();
-            }
-        }
-
-        double avg = totalFilled > 0 ? Math.round((weightedSum / totalFilled) * 100.0) / 100.0 : 0.0;
-        boolean full = totalFilled == qty;
-        String term = full ? ORDER_COMPLETE : (totalFilled > 0 ? "PARTIAL" : "FAILED");
+        AttemptResult ar = verifyAttempt(resp.orderId, ins, contextLabel);
+        boolean full = ar.filledQty() == qty;
+        String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
+        String ids   = ar.filledQty() > 0 ? resp.orderId : "";
         log.info("[{}] {} done | filled={}/{} | avgFill={} | term={} | ids={}",
-                contextLabel, ins, totalFilled, qty, avg, term, allIds);
-        return new ExecResult(allIds.toString(), totalFilled, qty, avg, full, term);
+                contextLabel, ins, ar.filledQty(), qty, ar.avgFillPrice(), term, ids);
+        return new ExecResult(ids, ar.filledQty(), qty, ar.avgFillPrice(), full, term);
     }
 
     /** Fallback for qty >= MAX_SIZE_PER_ORDER — Kite broker-side auto-slice using MARKET orders. */
@@ -561,78 +533,26 @@ public class TradeUtil {
         double weightedSum = 0.0;
         for (BulkOrderResponse b : bulk) {
             if (b.orderId == null) continue;
-            appendId(ids, b.orderId);
-            AttemptResult ar = verifyAttempt(b.orderId, "autoslice", ins, contextLabel);
-            totalFilled += ar.filledQty();
-            weightedSum += ar.filledQty() * ar.avgFillPrice();
+            AttemptResult ar = verifyAttempt(b.orderId, ins, contextLabel);
+            if (ar.filledQty() > 0) {
+                appendId(ids, b.orderId);
+                totalFilled += ar.filledQty();
+                weightedSum += ar.filledQty() * ar.avgFillPrice();
+            }
         }
         double avg = totalFilled > 0 ? Math.round((weightedSum / totalFilled) * 100.0) / 100.0 : 0.0;
         boolean full = totalFilled == qty;
-        return new ExecResult(ids.toString(), totalFilled, qty, avg, full,
-                full ? ORDER_COMPLETE : (totalFilled > 0 ? "PARTIAL" : "FAILED"));
-    }
-
-    /** One LIMIT-IOC attempt: getQuote (with one 200ms retry on empty depth) → walk depth → place → verify. */
-    private AttemptResult attemptLimitIoc(String ins, String txn, int qty, Double refPrice, String label, String contextLabel) {
-        Map<String, Quote> quotes = kiteGateway.getQuote(new String[]{ins});
-        Quote q = quotes.get(ins);
-        if (q == null || q.depth == null || isDepthInsufficient(q.depth, txn, qty)) {
-            sleepMillis(200);
-            quotes = kiteGateway.getQuote(new String[]{ins});
-            q = quotes.get(ins);
-        }
-        if (q == null || q.depth == null || isDepthInsufficient(q.depth, txn, qty)) {
-            log.warn("[{}][{}] {} insufficient depth after retry — caller will fall back to MARKET", contextLabel, label, ins);
-            return new AttemptResult(null, 0, 0.0, "NO_DEPTH");
-        }
-
-        DepthWalkResult dw = walkDepth(q.depth, txn, qty);
-        Double projEdge = refPrice != null
-                ? Math.round((SELL.equals(txn) ? dw.projectedAvg() - refPrice : refPrice - dw.projectedAvg()) * 100.0) / 100.0
-                : null;
-        log.info("[{}][{}] {} {} {}qty | bestPx={} | limitPx={} | projAvg={} | refPx={} | projEdge/sh={}",
-                contextLabel, label, ins, txn, qty, dw.bestPrice(), dw.limitPrice(), dw.projectedAvg(), refPrice, projEdge);
-
-        OrderParams params = buildAggressiveOrderParams();
-        params.orderType        = Constants.ORDER_TYPE_LIMIT;
-        params.validity         = Constants.VALIDITY_IOC;
-        params.transactionType  = txn;
-        params.tradingsymbol    = ins;
-        params.quantity         = qty;
-        params.price            = dw.limitPrice();
-        params.marketProtection = 0;
-        OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
-        if (resp == null || resp.orderId == null) {
-            log.error("[{}][{}] {} placeOrder returned null", contextLabel, label, ins);
-            return new AttemptResult(null, 0, 0.0, "PLACE_FAILED");
-        }
-        log.info("[{}][{}] {} LIMIT IOC placed: orderId={} limitPx={}", contextLabel, label, ins, resp.orderId, dw.limitPrice());
-        return verifyAttempt(resp.orderId, label, ins, contextLabel);
-    }
-
-    /** Last-resort: MARKET + protection=0. Used only when LIMIT IOC attempts left a remainder. */
-    private AttemptResult attemptMarketFallback(String ins, String txn, int qty, String contextLabel) {
-        OrderParams params = buildAggressiveOrderParams();
-        params.orderType        = Constants.ORDER_TYPE_MARKET;
-        params.validity         = Constants.VALIDITY_DAY;
-        params.transactionType  = txn;
-        params.tradingsymbol    = ins;
-        params.quantity         = qty;
-        params.marketProtection = 0;
-        OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
-        if (resp == null || resp.orderId == null) {
-            log.error("[{}][fallback] {} placeOrder returned null", contextLabel, ins);
-            return new AttemptResult(null, 0, 0.0, "PLACE_FAILED");
-        }
-        log.info("[{}][fallback] {} MARKET protection=0 placed: orderId={}", contextLabel, ins, resp.orderId);
-        return verifyAttempt(resp.orderId, "fallback", ins, contextLabel);
+        String term = full ? ORDER_COMPLETE : (totalFilled > 0 ? "PARTIAL" : "FAILED");
+        log.info("[{}] {} autoslice done | filled={}/{} | avgFill={} | term={} | ids={}",
+                contextLabel, ins, totalFilled, qty, avg, term, ids);
+        return new ExecResult(ids.toString(), totalFilled, qty, avg, full, term);
     }
 
     /**
      * Reads getOrderHistory; if status is non-terminal, retries up to 2× with 200ms gaps
-     * (LIMIT IOC normally settles within ms but Kite's order-state propagation can lag).
+     * (MARKET normally settles within ms but Kite's order-state propagation can lag).
      */
-    private AttemptResult verifyAttempt(String orderId, String label, String ins, String contextLabel) {
+    private AttemptResult verifyAttempt(String orderId, String ins, String contextLabel) {
         Order last = null;
         for (int i = 0; i < 3; i++) {
             List<Order> history = kiteGateway.getOrderHistory(orderId);
@@ -643,54 +563,14 @@ public class TradeUtil {
             sleepMillis(200);
         }
         if (last == null) {
-            log.error("[{}][{}] {} orderId={} getOrderHistory empty after retries", contextLabel, label, ins, orderId);
+            log.error("[{}] {} orderId={} getOrderHistory empty after retries", contextLabel, ins, orderId);
             return new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
         }
         int filledQty = parseIntSafe(last.filledQuantity);
         double avgPrice = parseDoubleSafe(last.averagePrice);
-        log.info("[{}][{}] {} orderId={} status={} filled={}/{} avgPx={} statusMsg={}",
-                contextLabel, label, ins, orderId, last.status, last.filledQuantity, last.quantity, avgPrice, last.statusMessage);
+        log.info("[{}] {} orderId={} status={} filled={}/{} avgPx={} statusMsg={}",
+                contextLabel, ins, orderId, last.status, last.filledQuantity, last.quantity, avgPrice, last.statusMessage);
         return new AttemptResult(orderId, filledQty, avgPrice, last.status);
-    }
-
-    /**
-     * Walks visible depth on the appropriate side (buy for SELL, sell for BUY), accumulating
-     * quantity until cumulative ≥ qty × DEPTH_WALK_CUSHION. Returns the deepest level price
-     * (= LIMIT price guaranteed to fill against visible book even if it shrinks 20% by route time)
-     * plus a projected weighted-avg fill price across the first qty units.
-     */
-    private DepthWalkResult walkDepth(MarketDepth depth, String txn, int qty) {
-        List<Depth> levels = SELL.equals(txn) ? depth.buy : depth.sell;
-        int cushioned = (int) Math.ceil(qty * DEPTH_WALK_CUSHION);
-        int cum = 0;
-        int filledForProjection = 0;
-        double sumValue = 0.0;
-        double limitPrice = levels.get(0).getPrice();
-        double bestPrice  = levels.get(0).getPrice();
-        for (Depth lvl : levels) {
-            int lvlQty = lvl.getQuantity();
-            if (lvlQty <= 0) continue;
-            int useForProj = Math.min(lvlQty, qty - filledForProjection);
-            if (useForProj > 0) {
-                sumValue += useForProj * lvl.getPrice();
-                filledForProjection += useForProj;
-            }
-            cum += lvlQty;
-            limitPrice = lvl.getPrice();
-            if (cum >= cushioned) break;
-        }
-        double projAvg = filledForProjection > 0
-                ? Math.round((sumValue / filledForProjection) * 100.0) / 100.0
-                : limitPrice;
-        return new DepthWalkResult(bestPrice, limitPrice, projAvg, cum);
-    }
-
-    private static boolean isDepthInsufficient(MarketDepth depth, String txn, int qty) {
-        List<Depth> levels = SELL.equals(txn) ? depth.buy : depth.sell;
-        if (levels == null || levels.isEmpty()) return true;
-        int sum = 0;
-        for (Depth lvl : levels) sum += Math.max(0, lvl.getQuantity());
-        return sum < qty;
     }
 
     private static boolean isTerminal(String status) {
@@ -730,8 +610,6 @@ public class TradeUtil {
                              double weightedAvgFillPrice, boolean fullyFilled, String terminalStatus) {}
 
     private record AttemptResult(String orderId, int filledQty, double avgFillPrice, String status) {}
-
-    private record DepthWalkResult(double bestPrice, double limitPrice, double projectedAvg, int cumulativeQty) {}
 
     public List<String> getNiftyInstruments() {
         return kiteGateway.getInstruments(NFO).stream()

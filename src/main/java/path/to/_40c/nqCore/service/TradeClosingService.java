@@ -63,8 +63,7 @@ public class TradeClosingService {
                     w.setSellIntendedPrice(q.lastPrice);
             }
             try {
-                Double openPrice = SELL.equals(oppositeTransaction) ? w.getBoughtPrice() : w.getSoldPrice();
-                ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), oppositeTransaction, w.getQuantity(), openPrice, "EXIT");
+                ExecResult er = tradeUtil.placeAggressiveOrder(w.getMarginCalcSymbol(), oppositeTransaction, w.getQuantity(), "EXIT");
                 synchronized (w) {
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         w.setTradeCloseOrderId(er.aggregateOrderIds());
