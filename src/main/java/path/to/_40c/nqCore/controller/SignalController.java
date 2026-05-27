@@ -8,6 +8,7 @@ import path.to._40c.nqCore.service.SignalService;
 import path.to._40c.nqCore.util.ComputeUtil;
 
 import org.springframework.http.ResponseEntity;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import java.util.concurrent.ConcurrentHashMap;
@@ -29,9 +30,7 @@ public class SignalController {
     private final Map<String, Instant> signalCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> duplicateCount = new ConcurrentHashMap<>();
     private static final Duration CACHE_TTL = Duration.ofDays(60);
-    private static final Duration LOG_THROTTLE = Duration.ofMinutes(1);
     private final java.util.concurrent.atomic.AtomicInteger duplicatesSinceLastLog = new java.util.concurrent.atomic.AtomicInteger();
-    private volatile Instant lastDuplicateSummaryAt = Instant.now();
     private final Map<String, LastProcessed> previousByStrategy = new ConcurrentHashMap<>();
     private final SignalService signalService;
     private final ComputeUtil util;
@@ -163,13 +162,6 @@ public class SignalController {
             if (Duration.between(firstSeen, now).compareTo(CACHE_TTL) <= 0) {
                 duplicateCount.merge(cacheKey, 1, Integer::sum);
                 duplicatesSinceLastLog.incrementAndGet();
-                if (Duration.between(lastDuplicateSummaryAt, now).compareTo(LOG_THROTTLE) > 0) {
-                    int filtered = duplicatesSinceLastLog.getAndSet(0);
-                    Duration window = Duration.between(lastDuplicateSummaryAt, now);
-                    lastDuplicateSummaryAt = now;
-                    log.warn("DUPLICATES filtered: {} in last {}s (across {} unique keys cached)",
-                            filtered, window.toSeconds(), duplicateCount.size());
-                }
                 return true;
             }
             signalCache.put(cacheKey, now);
@@ -183,6 +175,15 @@ public class SignalController {
 
     private void updatePrevious(String strategyName, String action, String signalType, String time, String currentPrice) {
         previousByStrategy.put(strategyName, new LastProcessed(action, signalType, time, currentPrice, Instant.now()));
+    }
+
+    /** One-per-day summary of filtered duplicate signals at 15:45 IST (after market close). Skips when nothing was filtered. */
+    @Scheduled(cron = "0 45 15 * * *", zone = ZONE_ID)
+    public void logDailyDuplicateSummary() {
+        int filtered = duplicatesSinceLastLog.getAndSet(0);
+        if (filtered > 0) {
+            log.warn("DUPLICATES filtered today: {} (across {} unique keys)", filtered, duplicateCount.size());
+        }
     }
 
     private void logAcceptedWithPrev(String strategyName, String action, String signalType, String time, String currentPrice, LastProcessed prev) {

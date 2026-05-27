@@ -82,7 +82,7 @@ public class SignalService {
 	       ? openingService.openTrade(signalPrice, type, trade, prep)
 	       : openingService.openTrade(signalPrice, type, trade);
 	   long openMs = Duration.between(closeEnd, Instant.now()).toMillis();
-	   log.info("[PERF] flip | close={}ms | open={}ms | total={}ms", closeMs, openMs, closeMs + openMs);
+	   log.info("[PERFORMANCE] flip | close={}ms | open={}ms | total={}ms", closeMs, openMs, closeMs + openMs);
 	   postTradeService.afterOpen(liveTrade);
 	   postTradeService.afterClose(closedTrade);
 	   return true;
@@ -92,7 +92,7 @@ public class SignalService {
 	   Instant start = Instant.now();
 	   Trade trade = new Trade(signal);
 	   Trade liveTrade = openingService.openTrade(signalPrice, type, trade);
-	   log.info("[PERF] open | exec={}ms", Duration.between(start, Instant.now()).toMillis());
+	   log.info("[PERFORMANCE] open | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   postTradeService.afterOpen(liveTrade);
 	   return true;
 	}
@@ -116,7 +116,7 @@ public class SignalService {
 	   }
 
 	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
-	   log.info("[PERF] close | exec={}ms", Duration.between(start, Instant.now()).toMillis());
+	   log.info("[PERFORMANCE] close | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
 	   return true;

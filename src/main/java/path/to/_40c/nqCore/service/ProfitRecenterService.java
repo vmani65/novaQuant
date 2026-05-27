@@ -109,7 +109,7 @@ public class ProfitRecenterService {
         long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
         if (!allClosed.get()) {
             log.error("realizeProfits: not all legs closed — aborting recenter. Saving partial state.");
-            log.info("[PERF] recenter | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
+            log.info("[PERFORMANCE] recenter | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
             tradeRepository.save(trade);
             return;
         }
@@ -138,7 +138,7 @@ public class ProfitRecenterService {
         if (ltpOpen.isEmpty()) {
             log.error("realizeProfits: LTP map empty for open leg — close already executed, manual intervention needed");
             long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
-            log.info("[PERF] recenter | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
+            log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
             tradeRepository.save(trade);
             return;
         }
@@ -162,7 +162,7 @@ public class ProfitRecenterService {
             }
         });
         long openMs = Duration.between(openStart, Instant.now()).toMillis();
-        log.info("[PERF] recenter | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
+        log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
 
         List<WeeklyOrderBook> newChildren = new ArrayList<>();
         newLegs.forEach(pojo -> {

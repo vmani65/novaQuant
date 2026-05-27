@@ -95,7 +95,7 @@ public class TradeRollOverService {
             long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
             if (!allClosesSucceeded.get()) {
                 log.error("Rollover aborted - not all positions closed successfully");
-                log.info("[PERF] rollover | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
+                log.info("[PERFORMANCE] rollover | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
                 return;
             }
             tradeUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);
@@ -111,7 +111,7 @@ public class TradeRollOverService {
             if (ltpOfToOpenTrade.isEmpty()) {
                 log.error("LTP map is empty for open leg — aborting rollover open (close already executed, manual intervention needed)");
                 long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
-                log.info("[PERF] rollover | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
+                log.info("[PERFORMANCE] rollover | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
                 return;
             }
             IntStream.range(0, weeklyPojo.size()).parallel().forEach(i -> {
@@ -133,7 +133,7 @@ public class TradeRollOverService {
                 }
             });
             long openMs = Duration.between(openStart, Instant.now()).toMillis();
-            log.info("[PERF] rollover | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
+            log.info("[PERFORMANCE] rollover | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
 
             weeklyPojo.forEach(pojo -> {
                 WeeklyOrderBook b = new WeeklyOrderBook();
