@@ -76,10 +76,6 @@ public class EquityCurveController {
                 tradeCapital.setCeilingToHit(capitalDTO.getCeilingToHit());
             }
 
-            if (capitalDTO.getNrmlCostPerLot() != null) {
-                tradeCapital.setNrmlCostPerLot(capitalDTO.getNrmlCostPerLot());
-            }
-
             if (capitalDTO.getDefinedRiskPerLot() != null) {
                 tradeCapital.setDefinedRiskPerLot(capitalDTO.getDefinedRiskPerLot());
             }

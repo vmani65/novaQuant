@@ -12,8 +12,10 @@ import path.to._40c.nqCore.entity.Trade;
 public interface TradeRepository extends JpaRepository<Trade, Long> {
 	
 	Trade findFirstByTradeStatusOrderByIdDesc(String status);
-    
+
 	Trade findFirstByOrderByIdDesc();
+
+	List<Trade> findByPeakMarginNotNull();
     
 	@Query("SELECT DISTINCT t.statergyName FROM Trade t ORDER BY t.statergyName")
     List<String> findDistinctStrategyNames();

@@ -10,7 +10,6 @@ public class TradeCapitalDTO {
     private Double currentCapital;
     private Double additionalCapital;
     private Double ceilingToHit;
-    private Integer nrmlCostPerLot;
     private Integer definedRiskPerLot;
 
     public TradeCapitalDTO() {}
