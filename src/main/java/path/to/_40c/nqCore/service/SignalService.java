@@ -19,43 +19,43 @@ import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.controller.SignalController.Signal;
-import path.to._40c.nqCore.entity.Trade;
-import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.entity.Position;
+import path.to._40c.nqCore.repo.PositionRepository;
 
 @Service
 public class SignalService {
 
 	private static final Logger log = LoggerFactory.getLogger(SignalService.class);
 
-	private final TradeOpeningService openingService;
-	private final TradeClosingService closingService;
-	private final TradeRollOverService rollOverService;
+	private final PositionOpeningService openingService;
+	private final PositionClosingService closingService;
+	private final PositionRolloverService rollOverService;
 	private final PostTradeService postTradeService;
-	private final TradeRepository tradeRepository;
-	private final SymbolService symbolService;
+	private final PositionRepository positionRepository;
+	private final WeeklySymbolService weeklySymbolService;
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
 	@Value("${nq.ticker.url:http://localhost:9192}")
 	private String nqTickerUrl;
 
-	public SignalService(TradeOpeningService openingService, TradeClosingService closingService,
-			TradeRollOverService rollOverService, PostTradeService postTradeService,
-			TradeRepository tradeRepository, SymbolService symbolService) {
+	public SignalService(PositionOpeningService openingService, PositionClosingService closingService,
+			PositionRolloverService rollOverService, PostTradeService postTradeService,
+			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService) {
 		this.openingService = openingService;
 		this.closingService = closingService;
 		this.rollOverService = rollOverService;
 		this.postTradeService = postTradeService;
-		this.tradeRepository = tradeRepository;
-		this.symbolService = symbolService;
+		this.positionRepository = positionRepository;
+		this.weeklySymbolService = weeklySymbolService;
 	}
 
-	public Trade getLastTrade() {
-	    Trade liveTrade = tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
+	public Position getLastTrade() {
+	    Position liveTrade = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
 	    if (liveTrade != null) {
 	        return liveTrade;
 	    }
-	    return tradeRepository.findFirstByOrderByIdDesc();
+	    return positionRepository.findFirstByOrderByIdDesc();
 	}
 
 	/**
@@ -65,20 +65,20 @@ public class SignalService {
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
-	   Trade trade = new Trade(signal);
+	   Position trade = new Position(signal);
 	   checkAndPromoteRolloverSymbol();
-	   CompletableFuture<TradeOpeningService.OpenPrep> openPrepFuture =
+	   CompletableFuture<PositionOpeningService.OpenPrep> openPrepFuture =
 	       CompletableFuture.supplyAsync(() -> openingService.prepareOpen(signalPrice, type, trade));
-	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, false);
+	   Position closedTrade = closingService.closeTrade(signalPrice, signal, false);
 	   Instant closeEnd = Instant.now();
 	   long closeMs = Duration.between(start, closeEnd).toMillis();
-	   TradeOpeningService.OpenPrep prep = null;
+	   PositionOpeningService.OpenPrep prep = null;
 	   try {
 	       prep = openPrepFuture.join();
 	   } catch (Exception e) {
 	       log.error("Open-leg pre-fetch failed — falling back to inline open: {}", e.getMessage());
 	   }
-	   Trade liveTrade = (prep != null)
+	   Position liveTrade = (prep != null)
 	       ? openingService.openTrade(signalPrice, type, trade, prep)
 	       : openingService.openTrade(signalPrice, type, trade);
 	   long openMs = Duration.between(closeEnd, Instant.now()).toMillis();
@@ -90,8 +90,8 @@ public class SignalService {
 
 	public boolean handleTradeOpen(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
-	   Trade trade = new Trade(signal);
-	   Trade liveTrade = openingService.openTrade(signalPrice, type, trade);
+	   Position trade = new Position(signal);
+	   Position liveTrade = openingService.openTrade(signalPrice, type, trade);
 	   log.info("[PERFORMANCE] open | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   postTradeService.afterOpen(liveTrade);
 	   return true;
@@ -115,7 +115,7 @@ public class SignalService {
 	       log.warn("nQ-ticker arm-buffer call failed — falling back to immediate close");
 	   }
 
-	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
+	   Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("[PERFORMANCE] close | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
@@ -126,7 +126,7 @@ public class SignalService {
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
 	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
-	   Trade closedTrade = closingService.closeTrade(signalPrice, signal, true);
+	   Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
 	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(closedTrade);
@@ -153,7 +153,7 @@ public class SignalService {
 	}
 
 	private void checkAndPromoteRolloverSymbol() {
-	   symbolService.checkAndPromoteRolloverSymbol();
+	   weeklySymbolService.checkAndPromoteRolloverSymbol();
 	}
 
 	public boolean handleRollOver(String signalPrice) {

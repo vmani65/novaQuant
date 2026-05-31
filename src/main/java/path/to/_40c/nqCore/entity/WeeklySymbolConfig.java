@@ -7,11 +7,11 @@ import lombok.Setter;
 import lombok.ToString;
 
 @Entity
-@Table(name = "SYMBOL")
+@Table(name = "WEEKLY_SYMBOL")
 @Getter
 @Setter
 @ToString
-public class SymbolConfig {
+public class WeeklySymbolConfig {
 
     @Id
     private Long id = 1L;
@@ -28,9 +28,9 @@ public class SymbolConfig {
     @Column(name = "rollover_complete")
     private Boolean rolloverComplete = false;
 
-    public SymbolConfig() {}
+    public WeeklySymbolConfig() {}
 
-    public SymbolConfig(String thisWeekSymbol, String rolloverSymbol) {
+    public WeeklySymbolConfig(String thisWeekSymbol, String rolloverSymbol) {
         this.id              = 1L;
         this.thisWeekSymbol  = thisWeekSymbol;
         this.rolloverSymbol  = rolloverSymbol;

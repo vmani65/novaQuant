@@ -1,0 +1,74 @@
+package path.to._40c.nqCore.entity;
+
+import jakarta.persistence.Column;
+import jakarta.persistence.MappedSuperclass;
+import lombok.Getter;
+import lombok.Setter;
+import lombok.ToString;
+
+@MappedSuperclass
+@Getter
+@Setter
+@ToString
+public abstract class BaseLegEntity extends BaseEntity {
+
+    @Column(name = "EXCHANGE_SYMBOL")
+    protected String exchangeSymbol;
+
+    @Column(name = "INSTRUMENT")
+    protected String instrument;
+
+    @Column(name = "SIDE")
+    protected String side;
+
+    @Column(name = "SELL_FILL_PRICE")
+    protected Double sellFillPrice;
+
+    @Column(name = "BUY_FILL_PRICE")
+    protected Double buyFillPrice;
+
+    @Column(name = "LTP")
+    protected Double ltp;
+
+    @Column(name = "EXPECTED_PNL")
+    protected Double expectedPnl;
+
+    @Column(name = "ACTUAL_PNL")
+    protected Double actualPnl;
+
+    @Column(name = "PNL_CAPTURE_PCT")
+    protected String pnlCapturePct;
+
+    @Column(name = "MONEYNESS")
+    protected String moneyness;
+
+    @Column(name = "LOTS")
+    protected Integer lots;
+
+    @Column(name = "QUANTITY")
+    protected Integer quantity;
+
+    @Column(name = "MARGIN_REQUIRED")
+    protected Double marginRequired;
+
+    @Column(name = "STATUS")
+    protected String status;
+
+    @Column(name = "OPEN_CHARGES")
+    protected Double openCharges;
+
+    @Column(name = "CLOSE_CHARGES")
+    protected Double closeCharges;
+
+    @Column(name = "OPEN_ORDER_ID")
+    protected String openOrderId;
+
+    @Column(name = "CLOSE_ORDER_ID")
+    protected String closeOrderId;
+
+    @Column(name = "BUY_INTENDED_PRICE")
+    protected Double buyIntendedPrice;
+
+    @Column(name = "SELL_INTENDED_PRICE")
+    protected Double sellIntendedPrice;
+}

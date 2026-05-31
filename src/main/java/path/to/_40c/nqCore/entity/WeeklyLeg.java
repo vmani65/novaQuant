@@ -14,20 +14,20 @@ import lombok.Getter;
 import lombok.Setter;
 
 @Entity
-@Table(name = "WEEKLY_ORDER_BOOK")
+@Table(name = "WEEKLY_LEG")
 @Getter
 @Setter
-public class WeeklyOrderBook extends BaseChildEntity {
+public class WeeklyLeg extends BaseLegEntity {
 
     @ManyToOne
-    @JoinColumn(name = "trade_id", nullable = false)
-    private Trade trade;
+    @JoinColumn(name = "position_id", nullable = false)
+    private Position position;
 
-    @OneToMany(mappedBy = "weeklyOrderBook", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
-    private List<WeeklyOrderFill> fills = new ArrayList<>();
+    @OneToMany(mappedBy = "weeklyLeg", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
+    private List<LegFill> fills = new ArrayList<>();
 
-    public WeeklyOrderBook() {
-        expectedPnL = 0.0d;
-        actualPnL   = 0.0d;
+    public WeeklyLeg() {
+        expectedPnl = 0.0d;
+        actualPnl   = 0.0d;
     }
 }

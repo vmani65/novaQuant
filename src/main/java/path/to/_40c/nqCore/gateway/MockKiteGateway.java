@@ -137,10 +137,10 @@ public class MockKiteGateway implements KiteGateway {
     }
 
     /** Market-order slippage: BUYs pay 0.1–0.4% above LTP, SELLs receive 0.1–0.4% below. */
-    private double applySlippage(Double basePrice, String transactionType) {
+    private double applySlippage(Double basePrice, String side) {
         if (basePrice == null) return 0.0;
         double slippagePct = 0.001 + random.nextDouble() * 0.003;
-        double multiplier = BUY.equals(transactionType) ? (1 + slippagePct) : (1 - slippagePct);
+        double multiplier = BUY.equals(side) ? (1 + slippagePct) : (1 - slippagePct);
         return Math.round(basePrice * multiplier * 100.0) / 100.0;
     }
 
@@ -224,7 +224,7 @@ public class MockKiteGateway implements KiteGateway {
 
             ContractNote note      = new ContractNote();
             note.tradingSymbol     = p.tradingSymbol;
-            note.transactionType   = p.transactionType;
+            note.transactionType = p.transactionType;
             note.exchange          = p.exchange;
             note.variety           = p.variety;
             note.product           = p.product;

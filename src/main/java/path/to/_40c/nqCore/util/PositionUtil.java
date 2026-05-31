@@ -45,45 +45,45 @@ import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
 
 import jakarta.persistence.EntityManager;
-import path.to._40c.nqCore.entity.Trade;
-import path.to._40c.nqCore.entity.WeeklyOrderBook;
-import path.to._40c.nqCore.entity.WeeklyOrderFill;
+import path.to._40c.nqCore.entity.Position;
+import path.to._40c.nqCore.entity.WeeklyLeg;
+import path.to._40c.nqCore.entity.LegFill;
 import path.to._40c.nqCore.gateway.KiteGateway;
-import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.repo.PositionRepository;
 
 @Service
-public class TradeUtil {
+public class PositionUtil {
 
-	private static final Logger log = LoggerFactory.getLogger(TradeUtil.class);
+	private static final Logger log = LoggerFactory.getLogger(PositionUtil.class);
 
     private final KiteGateway kiteGateway;
-    private final TradeRepository tradeRepository;
+    private final PositionRepository positionRepository;
     private final EntityManager entityManager;
 
-    public TradeUtil(KiteGateway kiteGateway, TradeRepository tradeRepository, EntityManager entityManager) {
+    public PositionUtil(KiteGateway kiteGateway, PositionRepository positionRepository, EntityManager entityManager) {
         this.kiteGateway = kiteGateway;
-        this.tradeRepository = tradeRepository;
+        this.positionRepository = positionRepository;
         this.entityManager = entityManager;
     }
 
     /** Capture fill prices for legs that don't already have them. Idempotent. */
-    public void setTradeExecutedPrices(Trade t) {
+    public void setTradeExecutedPrices(Position t) {
         if (t != null) {
-            t.getWeeklyOrderBook().forEach(w -> {
+            t.getLegs().forEach(w -> {
                 if (isPriceAlreadyCaptured(w)) return;
-                String orderId = LIVE.equals(w.getTradeStatus()) ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+                String orderId = LIVE.equals(w.getStatus()) ? w.getOpenOrderId() : w.getCloseOrderId();
                 log.info("Fetching executed prices for trade: {} OrderID: {}", t, orderId);
                 List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
                 if (trades != null && !trades.isEmpty()) {
                     double avgPrice = weightedAvgFillPrice(trades);
                     log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
-                    if (BUY.equals(w.getTransactionType())) {
-                        if (LIVE.equals(w.getTradeStatus()))   w.setBoughtPrice(avgPrice);
-                        if (CLOSED.equals(w.getTradeStatus())) w.setSoldPrice(avgPrice);
+                    if (BUY.equals(w.getSide())) {
+                        if (LIVE.equals(w.getStatus()))   w.setBuyFillPrice(avgPrice);
+                        if (CLOSED.equals(w.getStatus())) w.setSellFillPrice(avgPrice);
                     }
-                    if (SELL.equals(w.getTransactionType())) {
-                        if (LIVE.equals(w.getTradeStatus()))   w.setSoldPrice(avgPrice);
-                        if (CLOSED.equals(w.getTradeStatus())) w.setBoughtPrice(avgPrice);
+                    if (SELL.equals(w.getSide())) {
+                        if (LIVE.equals(w.getStatus()))   w.setSellFillPrice(avgPrice);
+                        if (CLOSED.equals(w.getStatus())) w.setBuyFillPrice(avgPrice);
                     }
                 }
             });
@@ -111,41 +111,41 @@ public class TradeUtil {
     }
 
     /** True if the price side relevant to this leg's status is already populated. */
-    private boolean isPriceAlreadyCaptured(WeeklyOrderBook w) {
-        boolean isBuy  = BUY.equals(w.getTransactionType());
-        boolean isLive = LIVE.equals(w.getTradeStatus());
+    private boolean isPriceAlreadyCaptured(WeeklyLeg w) {
+        boolean isBuy  = BUY.equals(w.getSide());
+        boolean isLive = LIVE.equals(w.getStatus());
         Double target = isLive
-                ? (isBuy ? w.getBoughtPrice() : w.getSoldPrice())
-                : (isBuy ? w.getSoldPrice()   : w.getBoughtPrice());
+                ? (isBuy ? w.getBuyFillPrice() : w.getSellFillPrice())
+                : (isBuy ? w.getSellFillPrice()   : w.getBuyFillPrice());
         return target != null;
     }
 
-    public void setTradeExecPricesForRollOver(Trade t, boolean rollOverClose, boolean rollOverOpen) {
+    public void setTradeExecPricesForRollOver(Position t, boolean rollOverClose, boolean rollOverOpen) {
         if (t != null) {
-            t.getWeeklyOrderBook().stream()
-                .filter(w -> rollOverClose ? CLOSED.equals(w.getTradeStatus()) : LIVE.equals(w.getTradeStatus()))
+            t.getLegs().stream()
+                .filter(w -> rollOverClose ? CLOSED.equals(w.getStatus()) : LIVE.equals(w.getStatus()))
                 .forEach(w -> {
-                    String orderId = rollOverOpen ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+                    String orderId = rollOverOpen ? w.getOpenOrderId() : w.getCloseOrderId();
                     log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, orderId);
                     List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "rollover executed prices");
-                    log.info("Trade Details for OrderID: {} is {}", orderId, (trades != null && !trades.isEmpty()) ? trades : "");
+                    log.info("Position Details for OrderID: {} is {}", orderId, (trades != null && !trades.isEmpty()) ? trades : "");
                     if (trades != null && !trades.isEmpty()) {
                         double avgPrice = weightedAvgFillPrice(trades);
                         log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
-                        if (BUY.equals(w.getTransactionType())) {
+                        if (BUY.equals(w.getSide())) {
                             if (rollOverOpen) {
-                                w.setBoughtPrice(Math.round(((w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                                w.setBuyFillPrice(Math.round(((w.getBuyFillPrice() != null ? w.getBuyFillPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
                             }
                             if (rollOverClose) {
-                                w.setSoldPrice(Math.round(((w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                                w.setSellFillPrice(Math.round(((w.getSellFillPrice() != null ? w.getSellFillPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
                             }
                         }
-                        if (SELL.equals(w.getTransactionType())) {
+                        if (SELL.equals(w.getSide())) {
                             if (rollOverOpen) {
-                                w.setSoldPrice(Math.round(((w.getSoldPrice() != null ? w.getSoldPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                                w.setSellFillPrice(Math.round(((w.getSellFillPrice() != null ? w.getSellFillPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
                             }
                             if (rollOverClose) {
-                                w.setBoughtPrice(Math.round(((w.getBoughtPrice() != null ? w.getBoughtPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
+                                w.setBuyFillPrice(Math.round(((w.getBuyFillPrice() != null ? w.getBuyFillPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
                             }
                         }
                     }
@@ -158,16 +158,16 @@ public class TradeUtil {
      * (real-txn and opposite-txn baskets). Uniform-direction baskets are avoided — Kite collapses them
      * as straddles and redistributes margin. Runs on ForkJoinPool to avoid postTradeExecutor deadlock.
      */
-    public void calcMarginAndBrokerage(Trade trade) {
+    public void calcMarginAndBrokerage(Position trade) {
         if (trade == null) return;
 
         List<MarginCalculationParams> realParams     = new ArrayList<>();
         List<MarginCalculationParams> oppositeParams = new ArrayList<>();
-        trade.getWeeklyOrderBook().stream()
-                .filter(c -> LIVE.equals(c.getTradeStatus()))
+        trade.getLegs().stream()
+                .filter(c -> LIVE.equals(c.getStatus()))
                 .forEach(c -> {
-                    realParams.add(buildParam(c, c.getTransactionType()));
-                    oppositeParams.add(buildParam(c, opposite(c.getTransactionType())));
+                    realParams.add(buildParam(c, c.getSide()));
+                    oppositeParams.add(buildParam(c, opposite(c.getSide())));
                 });
         if (realParams.isEmpty()) return;
 
@@ -183,23 +183,23 @@ public class TradeUtil {
             return;
         }
 
-        realMargins.forEach(m -> trade.getWeeklyOrderBook().stream()
-                .filter(w -> m.tradingSymbol.equals(w.getMarginCalcSymbol()) && LIVE.equals(w.getTradeStatus()))
+        realMargins.forEach(m -> trade.getLegs().stream()
+                .filter(w -> m.tradingSymbol.equals(w.getInstrument()) && LIVE.equals(w.getStatus()))
                 .findFirst()
                 .ifPresent(w -> {
-                    w.setMarginToTrade(ComputeUtil.rnd(m.total));
-                    w.setTradeOpenBrokerage(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, true))));
+                    w.setMarginRequired(ComputeUtil.rnd(m.total));
+                    w.setOpenCharges(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, true))));
                 }));
-        oppositeMargins.forEach(m -> trade.getWeeklyOrderBook().stream()
-                .filter(w -> m.tradingSymbol.equals(w.getMarginCalcSymbol()) && LIVE.equals(w.getTradeStatus()))
+        oppositeMargins.forEach(m -> trade.getLegs().stream()
+                .filter(w -> m.tradingSymbol.equals(w.getInstrument()) && LIVE.equals(w.getStatus()))
                 .findFirst()
-                .ifPresent(w -> w.setTradeCloseBrokerage(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, false))))));
+                .ifPresent(w -> w.setCloseCharges(ComputeUtil.rnd(totalChargesForSliceCount(m.charges, sliceCount(w, false))))));
     }
 
-    private MarginCalculationParams buildParam(WeeklyOrderBook c, String transactionType) {
+    private MarginCalculationParams buildParam(WeeklyLeg c, String side) {
         var p = initCalcParam(c.getQuantity());
-        p.tradingSymbol   = c.getMarginCalcSymbol();
-        p.transactionType = transactionType;
+        p.tradingSymbol   = c.getInstrument();
+        p.transactionType = side;
         return p;
     }
 
@@ -208,8 +208,8 @@ public class TradeUtil {
     }
 
     /** Slice count from stored comma-separated orderIds, or estimated from qty if not yet placed. */
-    static int sliceCount(WeeklyOrderBook w, boolean openSide) {
-        String orderId = openSide ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+    static int sliceCount(WeeklyLeg w, boolean openSide) {
+        String orderId = openSide ? w.getOpenOrderId() : w.getCloseOrderId();
         if (orderId != null && !orderId.isBlank()) {
             return orderId.split("\\s*,\\s*").length;
         }
@@ -234,23 +234,23 @@ public class TradeUtil {
 
     /**
      * Overwrite brokerage estimates with EOD-exact charges from /charges/orders.
-     * LIVE leg → tradeOpenBrokerage, CLOSED leg → tradeCloseBrokerage. Idempotent.
+     * LIVE leg → openCharges, CLOSED leg → closeCharges. Idempotent.
      */
-    public void applyActualCharges(Trade trade) {
+    public void applyActualCharges(Position trade) {
         if (trade == null) return;
-        List<WeeklyOrderBook>   legs   = new ArrayList<>();
+        List<WeeklyLeg>   legs   = new ArrayList<>();
         List<ContractNoteParams> params = new ArrayList<>();
-        trade.getWeeklyOrderBook().forEach(w -> {
-            boolean isLive = LIVE.equals(w.getTradeStatus());
-            boolean isBuy  = BUY.equals(w.getTransactionType());
-            String  orderId = isLive ? w.getTradeOpenOrderId() : w.getTradeCloseOrderId();
+        trade.getLegs().forEach(w -> {
+            boolean isLive = LIVE.equals(w.getStatus());
+            boolean isBuy  = BUY.equals(w.getSide());
+            String  orderId = isLive ? w.getOpenOrderId() : w.getCloseOrderId();
             Double  avgPrice = isLive
-                    ? (isBuy ? w.getBoughtPrice() : w.getSoldPrice())
-                    : (isBuy ? w.getSoldPrice()   : w.getBoughtPrice());
+                    ? (isBuy ? w.getBuyFillPrice() : w.getSellFillPrice())
+                    : (isBuy ? w.getSellFillPrice()   : w.getBuyFillPrice());
             if (orderId == null || orderId.isBlank() || avgPrice == null || avgPrice <= 0.0) return;
             ContractNoteParams p = new ContractNoteParams();
             p.orderID         = orderId;
-            p.tradingSymbol   = w.getMarginCalcSymbol();
+            p.tradingSymbol   = w.getInstrument();
             p.exchange        = Constants.EXCHANGE_NFO;
             p.transactionType = isLive
                     ? (isBuy ? Constants.TRANSACTION_TYPE_BUY : Constants.TRANSACTION_TYPE_SELL)
@@ -272,22 +272,22 @@ public class TradeUtil {
             return;
         }
         for (int i = 0; i < legs.size(); i++) {
-            WeeklyOrderBook w = legs.get(i);
+            WeeklyLeg w = legs.get(i);
             ContractNote    n = notes.get(i);
             if (n == null || n.charges == null) continue;
-            boolean isLive = LIVE.equals(w.getTradeStatus());
+            boolean isLive = LIVE.equals(w.getStatus());
             Double exact = ComputeUtil.rnd(totalChargesForSliceCount(n.charges, sliceCount(w, isLive)));
-            if (isLive) w.setTradeOpenBrokerage(exact);
-            else        w.setTradeCloseBrokerage(exact);
+            if (isLive) w.setOpenCharges(exact);
+            else        w.setCloseCharges(exact);
         }
     }
 
-    /** Running max of Σ(LIVE legs.marginToTrade) across the trade's lifetime. */
-    public void calcPeakMargin(Trade trade) {
-        if (trade == null || trade.getWeeklyOrderBook() == null) return;
-        double currentSegmentMargin = trade.getWeeklyOrderBook().stream()
-                .filter(w -> LIVE.equals(w.getTradeStatus()) && w.getMarginToTrade() != null)
-                .mapToDouble(WeeklyOrderBook::getMarginToTrade)
+    /** Running max of Σ(LIVE legs.marginRequired) across the trade's lifetime. */
+    public void calcPeakMargin(Position trade) {
+        if (trade == null || trade.getLegs() == null) return;
+        double currentSegmentMargin = trade.getLegs().stream()
+                .filter(w -> LIVE.equals(w.getStatus()) && w.getMarginRequired() != null)
+                .mapToDouble(WeeklyLeg::getMarginRequired)
                 .sum();
         if (currentSegmentMargin <= 0.0) return;
         double currentPeak = trade.getPeakMargin() != null ? trade.getPeakMargin() : 0.0;
@@ -299,7 +299,7 @@ public class TradeUtil {
     /**
      * Persist per-slice fill data into WEEKLY_ORDER_FILL for slippage analytics.
      *
-     * For each leg with a populated tradeOpenOrderId / tradeCloseOrderId, parses the
+     * For each leg with a populated openOrderId / closeOrderId, parses the
      * comma-separated slice orderIDs, fetches per-slice fills from Kite, weighted-averages
      * each slice's fills, and INSERTs (open) or UPDATEs (close) one row per slice.
      *
@@ -307,20 +307,20 @@ public class TradeUtil {
      * Must run inside a transaction (caller marks @Transactional) because it lazy-loads
      * the fills collection per leg.
      */
-    public void captureSliceFills(Trade trade) {
-        if (trade == null || trade.getWeeklyOrderBook() == null) return;
-        trade.getWeeklyOrderBook().forEach(this::captureSliceFillsForLeg);
+    public void captureSliceFills(Position trade) {
+        if (trade == null || trade.getLegs() == null) return;
+        trade.getLegs().forEach(this::captureSliceFillsForLeg);
     }
 
-    private void captureSliceFillsForLeg(WeeklyOrderBook w) {
+    private void captureSliceFillsForLeg(WeeklyLeg w) {
         if (w == null) return;
-        String openOrderIds  = w.getTradeOpenOrderId();
-        String closeOrderIds = w.getTradeCloseOrderId();
+        String openOrderIds  = w.getOpenOrderId();
+        String closeOrderIds = w.getCloseOrderId();
         boolean hasOpen  = openOrderIds  != null && !openOrderIds.isBlank();
         boolean hasClose = closeOrderIds != null && !closeOrderIds.isBlank();
         if (!hasOpen && !hasClose) return;
 
-        boolean legIsBuy = BUY.equals(w.getTransactionType());
+        boolean legIsBuy = BUY.equals(w.getSide());
 
         if (hasOpen) {
             boolean openSideIsBuy = legIsBuy;
@@ -336,7 +336,7 @@ public class TradeUtil {
         }
     }
 
-    private void captureSliceFillsForSide(WeeklyOrderBook w, boolean buySide, String orderIdsStr) {
+    private void captureSliceFillsForSide(WeeklyLeg w, boolean buySide, String orderIdsStr) {
         String[] sliceIds = orderIdsStr.split("\\s*,\\s*");
         if (sliceIds.length == 0) return;
 
@@ -344,7 +344,7 @@ public class TradeUtil {
                 (buySide ? "BUY" : "SELL") + " slice fills");
         if (allFills == null || allFills.isEmpty()) {
             log.warn("captureSliceFills: no fills returned for {} side of leg {} after retry (orderIds={})",
-                    buySide ? "BUY" : "SELL", w.getMarginCalcSymbol(), orderIdsStr);
+                    buySide ? "BUY" : "SELL", w.getInstrument(), orderIdsStr);
             return;
         }
 
@@ -366,15 +366,15 @@ public class TradeUtil {
         slices.sort(Comparator.comparing(SliceFillData::time,
                 Comparator.nullsLast(Comparator.naturalOrder())));
 
-        Map<Integer, WeeklyOrderFill> byIndex = w.getFills().stream()
-                .collect(Collectors.toMap(WeeklyOrderFill::getSliceIndex, x -> x, (a, b) -> a));
+        Map<Integer, LegFill> byIndex = w.getFills().stream()
+                .collect(Collectors.toMap(LegFill::getSliceIndex, x -> x, (a, b) -> a));
 
         for (int i = 0; i < slices.size(); i++) {
             SliceFillData s = slices.get(i);
-            WeeklyOrderFill row = byIndex.get(i);
+            LegFill row = byIndex.get(i);
             if (row == null) {
-                row = new WeeklyOrderFill();
-                row.setWeeklyOrderBook(w);
+                row = new LegFill();
+                row.setWeeklyLeg(w);
                 row.setSliceIndex(i);
                 w.getFills().add(row);
                 byIndex.put(i, row);
@@ -467,15 +467,15 @@ public class TradeUtil {
                   log.debug("Fetched {} trades for orderId: {}", orderTrades.size(), id);
               });
         log.info("Total trades fetched: {}", allTrades.size());
-        allTrades.forEach(trade -> log.info("Trade[tradeId={}, orderId={}, symbol={}, type={}, qty={}, price={}, fillTime={}]",
+        allTrades.forEach(trade -> log.info("Position[tradeId={}, orderId={}, symbol={}, type={}, qty={}, price={}, fillTime={}]",
                 trade.tradeId, trade.orderId, trade.tradingSymbol, trade.transactionType,
                 trade.quantity, trade.averagePrice, trade.fillTimestamp));
         return allTrades;
     }
 
-    public List<BulkOrderResponse> placeAutoSliceOrder(String ins, Double price, String transactionType, int quantity) {
+    public List<BulkOrderResponse> placeAutoSliceOrder(String ins, Double price, String side, int quantity) {
         OrderParams orderParams = buildOrderParams();
-        orderParams.transactionType = transactionType;
+        orderParams.transactionType = side;
         orderParams.tradingsymbol = ins;
         orderParams.quantity = quantity;
         orderParams.price = price;
@@ -637,17 +637,17 @@ public class TradeUtil {
     }
 
     @Transactional
-    public Trade findLiveTradesWithLiveOrderBooks() {
+    public Position findLiveTradesWithLiveOrderBooks() {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Trade trades = tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
+        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
 
     @Transactional
-    public Trade findLiveTradesWithAllOrderBooks() {
-        return tradeRepository.findFirstByTradeStatusOrderByIdDesc(LIVE);
+    public Position findLiveTradesWithAllOrderBooks() {
+        return positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
     }
 
     private List<com.zerodhatech.models.Trade> fetchWithRetry(String orderId, String context) {

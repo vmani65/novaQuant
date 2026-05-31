@@ -4,13 +4,13 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.LegTemplate;
+import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.TradeCapital;
-import path.to._40c.nqCore.entity.WeeklyOrderBook;
-import path.to._40c.nqCore.pojo.TradeLegConfig;
-import path.to._40c.nqCore.pojo.WeeklyPojo;
+import path.to._40c.nqCore.entity.WeeklyLeg;
+import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
-import path.to._40c.nqCore.service.TradeLegCache;
+import path.to._40c.nqCore.service.LegTemplateCache;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
@@ -40,28 +40,28 @@ public class ComputeUtil {
 	private static final Logger log = LoggerFactory.getLogger(ComputeUtil.class);
 
     private final WeeklySymbolCache symbolCache;
-    private final TradeLegCache contractCache;
+    private final LegTemplateCache templateCache;
     private final TradeCapitalRepository tradeCapital;
 
-    public ComputeUtil(WeeklySymbolCache symbolCache, TradeLegCache contractCache,
+    public ComputeUtil(WeeklySymbolCache symbolCache, LegTemplateCache templateCache,
             TradeCapitalRepository tradeCapital) {
         this.symbolCache = symbolCache;
-        this.contractCache = contractCache;
+        this.templateCache = templateCache;
         this.tradeCapital = tradeCapital;
     }
 
-	public List<WeeklyPojo> buildInstrument(String signalPrice, Trade trade, boolean rollOver) {
+	public List<LegOrder> buildInstrument(String signalPrice, Position trade, boolean rollOver) {
         log.info("Starting to build instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
-                 signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getSignalType() : null, rollOver);
-        boolean isLong = LONG.equals(trade.getSignalType());
-        int strikePrice = roundNFToNearestATM(signalPrice);
-        List<TradeLegConfig> priorities = isLong ? contractCache.getLongLegs() : contractCache.getShortLegs();
+                 signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null, rollOver);
+        boolean isLong = LONG.equals(trade.getDirection());
+        int atm = roundNFToNearestATM(signalPrice);
+        List<LegTemplate> templates = isLong ? templateCache.getLongLegs() : templateCache.getShortLegs();
         String symbolPrefix = rollOver ? symbolCache.get().getRolloverSymbol() : symbolCache.get().getThisWeekSymbol();
-        List<WeeklyPojo> weeklyPojoList = priorities.stream()
-                .map(priority -> buildWeeklyPojo(priority, strikePrice, symbolPrefix, trade))
+        List<LegOrder> orders = templates.stream()
+                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
                 .collect(Collectors.toList());
-        log.info("Built weeklyPojoList: size={}, rollOver={}, details={}", weeklyPojoList.size(), rollOver, weeklyPojoList);
-        return weeklyPojoList;
+        log.info("Built leg orders: size={}, rollOver={}, details={}", orders.size(), rollOver, orders);
+        return orders;
     }
 
     public int roundNFToNearestATM(String price) {
@@ -71,94 +71,83 @@ public class ComputeUtil {
         return strikePrice;
     }
 
-    private WeeklyPojo buildWeeklyPojo(TradeLegConfig priority, int strikePrice, String symbolPrefix, Trade trade) {
-        WeeklyPojo w = new WeeklyPojo();
-        String optionSuffix = priority.getOptionType();
-        int calculatedStrike = calcStrike(strikePrice, priority.getStrike());
-        w.setTradedSymbol(NFO_COLON + NIFTY + symbolPrefix + calculatedStrike + optionSuffix);
-        w.setMarginCalcSymbol(NIFTY + symbolPrefix + calculatedStrike + optionSuffix);
-        w.setTransactionType(priority.getActionType());
-        w.setMoneyness(priority.getStrike());
+    private LegOrder buildLegOrder(LegTemplate tpl, int atm, String symbolPrefix, Position position) {
+        LegOrder w = new LegOrder();
+        String optionSuffix = tpl.getOptionType();
+        int strike = atm + tpl.getOffsetPts();
+        w.setExchangeSymbol(NFO_COLON + NIFTY + symbolPrefix + strike + optionSuffix);
+        w.setInstrument(NIFTY + symbolPrefix + strike + optionSuffix);
+        w.setSide(tpl.getSide());
+        w.setMoneyness(formatMoneyness(tpl.getOffsetPts()));
         w.setOptionType(optionSuffix);
-        w.setLots(priority.getLots());
-        w.setParentTrade(trade);
+        w.setLots(tpl.getLots());
+        w.setParentPosition(position);
         return w;
     }
 
-    public static int calcStrike(int price, String strikeCalcParam) {
-        return switch (strikeCalcParam) {
-            case "ATM+250" -> price + 250;
-            case "ATM+200" -> price + 200;
-            case "ATM+150" -> price + 150;
-            case "ATM+100" -> price + 100;
-            case "ATM+50"  -> price + 50;
-            case "ATM"     -> price;
-            case "ATM-50"  -> price - 50;
-            case "ATM-100" -> price - 100;
-            case "ATM-150" -> price - 150;
-            case "ATM-200" -> price - 200;
-            case "ATM-250" -> price - 250;
-            default -> throw new IllegalArgumentException("Invalid Strike: " + strikeCalcParam);
-        };
+    /** Format signed offset_pts as a stable label used for per-strike leg grouping in calcPnL. */
+    private static String formatMoneyness(int offsetPts) {
+        if (offsetPts == 0) return "ATM";
+        return offsetPts > 0 ? "ATM+" + offsetPts : "ATM" + offsetPts;
     }
 
 	/**
-	 * Sets pointsByTrade = realizedPoints (from prior recenter segments) + current segment's
-	 * (exit-entry) for LONG, (entry-exit) for SHORT. Sets tradeOutcome WIN/LOSS by sign.
+	 * Sets pointsPnl = realizedPoints (from prior recenter segments) + current segment's
+	 * (exit-entry) for LONG, (entry-exit) for SHORT. Sets result WIN/LOSS by sign.
 	 */
-	public void calcTradeOutcome(Trade trade) {
+	public void calcTradeOutcome(Position trade) {
 		if(trade != null) {
-			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySignalPrice());
-			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSignalPrice());
+			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySpot());
+			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSpot());
 			Double segmentPoints = 0.0d;
-			if(LONG.equals(trade.getSignalType())){
+			if(LONG.equals(trade.getDirection())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
 					segmentPoints = exitPrice.subtract(entryPrice).doubleValue();
 			}
-			if(SHORT.equals(trade.getSignalType())){
+			if(SHORT.equals(trade.getDirection())){
 				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
 					segmentPoints = entryPrice.subtract(exitPrice).doubleValue();
 			}
 			double realized = trade.getRealizedPoints() != null ? trade.getRealizedPoints() : 0.0;
 			double totalPoints = realized + segmentPoints;
-			trade.setPointsByTrade(totalPoints);
-			trade.setTradeOutcome(totalPoints > 0 ? WIN : LOSS);
+			trade.setPointsPnl(totalPoints);
+			trade.setResult(totalPoints > 0 ? WIN : LOSS);
 		}
 	}
 
 	/**
 	 * Groups legs by moneyness (each group is one CE+PE pair across all segments at that
-	 * strike offset), computes per-leg actualPnL = qty × (sold − bought), aggregates pair-level
-	 * actual/expected PnL and brokerage, then sets trade-level brokerage, expectedPnL,
-	 * actualPnL (= total actual − brokerage), diffPercentage, and lots.
+	 * strike offset), computes per-leg actualPnl = qty × (sold − bought), aggregates pair-level
+	 * actual/expected PnL and brokerage, then sets trade-level brokerage, expectedPnl,
+	 * actualPnl (= total actual − brokerage), pnlCapturePct, and lots.
 	 *
-	 * Pair-level expectedPnL uses the first leg's quantity since CE qty == PE qty by design
+	 * Pair-level expectedPnl uses the first leg's quantity since CE qty == PE qty by design
 	 * and synthetic delta ≈ 1. Skips any pair group with missing prices or brokerage.
 	 */
-	public void calcPnL(Trade trade) {
-		if (trade == null || trade.getPointsByTrade() == null) return;
+	public void calcPnL(Position trade) {
+		if (trade == null || trade.getPointsPnl() == null) return;
 
-		Map<String, List<WeeklyOrderBook>> pairs = trade.getWeeklyOrderBook().stream()
-				.collect(Collectors.groupingBy(WeeklyOrderBook::getMoneyness));
+		Map<String, List<WeeklyLeg>> pairs = trade.getLegs().stream()
+				.collect(Collectors.groupingBy(WeeklyLeg::getMoneyness));
 
 		double totalBrokerage  = 0.0;
 		double totalExpectedPnL = 0.0;
 		double totalActualPnL  = 0.0;
 		int    totalLots       = 0;
 
-		for (List<WeeklyOrderBook> pairLegs : pairs.values()) {
+		for (List<WeeklyLeg> pairLegs : pairs.values()) {
 			boolean allPresent = pairLegs.stream().allMatch(w ->
-					w.getSoldPrice() != null && w.getBoughtPrice() != null &&
+					w.getSellFillPrice() != null && w.getBuyFillPrice() != null &&
 					w.getQuantity()  != null && w.getLots()     != null &&
-					w.getTradeOpenBrokerage()  != null && w.getTradeCloseBrokerage() != null);
+					w.getOpenCharges()  != null && w.getCloseCharges() != null);
 			if (!allPresent) continue;
 
-			pairLegs.forEach(w -> w.setActualPnL(rnd(w.getQuantity() * (w.getSoldPrice() - w.getBoughtPrice()))));
+			pairLegs.forEach(w -> w.setActualPnl(rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()))));
 
-			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyOrderBook::getActualPnL).sum();
+			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
 			double pairBrokerage  = pairLegs.stream()
-					.mapToDouble(w -> w.getTradeOpenBrokerage() + w.getTradeCloseBrokerage()).sum();
-			double pairExpectedPnL = rnd(pairLegs.get(0).getQuantity() * trade.getPointsByTrade());
+					.mapToDouble(w -> w.getOpenCharges() + w.getCloseCharges()).sum();
+			double pairExpectedPnL = rnd(pairLegs.get(0).getQuantity() * trade.getPointsPnl());
 
 			totalActualPnL  += pairActualPnL;
 			totalBrokerage  += pairBrokerage;
@@ -166,10 +155,10 @@ public class ComputeUtil {
 			totalLots       += pairLegs.get(0).getLots();
 		}
 
-		trade.setBrokerage(rnd(totalBrokerage));
-		trade.setExpectedPnL(rnd(totalExpectedPnL));
-		trade.setActualPnL(rnd(totalActualPnL - totalBrokerage));
-		trade.setDiffPercentage(formatPnLPercent(trade.getActualPnL(), trade.getExpectedPnL()));
+		trade.setTotalCharges(rnd(totalBrokerage));
+		trade.setExpectedPnl(rnd(totalExpectedPnL));
+		trade.setActualPnl(rnd(totalActualPnL - totalBrokerage));
+		trade.setPnlCapturePct(formatPnLPercent(trade.getActualPnl(), trade.getExpectedPnl()));
 		trade.setLots(totalLots);
 	}
 
@@ -218,10 +207,10 @@ public class ComputeUtil {
 		});
 	}
 
-	public void recalculateCapital(Trade closedTrade) {
+	public void recalculateCapital(Position closedTrade) {
 		TradeCapital capital = tradeCapital.getTradeCapital();
 		closedTrade.setStartingCapital(capital.getCurrentCapital());
-		closedTrade.setEndingCapital(capital.getCurrentCapital() + closedTrade.getActualPnL());
+		closedTrade.setEndingCapital(capital.getCurrentCapital() + closedTrade.getActualPnl());
 		capital.setCurrentCapital(closedTrade.getEndingCapital());
 		int currentLots = closedTrade.getLots();
 		int possibleLots = (int) (capital.getCurrentCapital() / capital.getDefinedRiskPerLot());

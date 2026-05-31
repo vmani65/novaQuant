@@ -41,8 +41,6 @@
         .badge-pe     { background: #fdf4ff; color: #7e22ce; border: 1px solid #d8b4fe; }
         .badge-buy    { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
         .badge-sell   { background: #fff1f2; color: #9f1239; border: 1px solid #fda4af; }
-        .badge-weekly   { background: #eff6ff; color: #1e40af; border: 1px solid #bfdbfe; }
-        .badge-monthly  { background: #f5f3ff; color: #5b21b6; border: 1px solid #ddd6fe; }
 
         /* Loading spinner */
         @keyframes spin { to { transform: rotate(360deg); } }
@@ -259,33 +257,32 @@
         return v >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold';
     }
 
-    function buildChildRows(legs, type, parentId) {
+    function buildChildRows(legs, parentId) {
         if (!legs || legs.length === 0) return '';
 
-        const isWeekly = type === 'WEEKLY';
-        const accentBorder = isWeekly ? 'border-blue-300' : 'border-purple-300';
-        const headerBg    = isWeekly ? 'bg-blue-50'   : 'bg-purple-50';
-        const headerColor = isWeekly ? 'text-blue-700' : 'text-purple-700';
+        const accentBorder = 'border-blue-300';
+        const headerBg     = 'bg-blue-50';
+        const headerColor  = 'text-blue-700';
 
         const legRows = legs.map(c => {
-            const diffVal = c.diffPercentage != null ? parseFloat(c.diffPercentage) : null;
+            const diffVal = c.pnlCapturePct != null ? parseFloat(c.pnlCapturePct) : null;
             const diffClass = diffVal != null
                 ? (diffVal >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold')
                 : 'text-gray-400';
             return `
                 <tr class="border-b border-gray-100 hover:bg-white transition-colors">
-                    <td class="py-2 pl-3 pr-2 font-mono text-[11px] text-gray-800 truncate" title="${c.tradedSymbol || ''}">${c.tradedSymbol || '—'}</td>
-                    <td class="py-2 px-2 text-center">${statusBadge(c.tradeStatus)}</td>
-                    <td class="py-2 px-2 text-center">${txnBadge(c.transactionType)}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.boughtPrice != null ? '₹' + fmt(c.boughtPrice) : '—'}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.soldPrice != null ? '₹' + fmt(c.soldPrice) : '—'}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-500">${c.expectedPnL != null ? '₹' + fmt(c.expectedPnL) : '—'}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] ${pnlClass(c.actualPnL)}">${c.actualPnL != null ? '₹' + fmt(c.actualPnL) : '—'}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] ${diffClass}">${c.diffPercentage != null ? c.diffPercentage : '—'}</td>
+                    <td class="py-2 pl-3 pr-2 font-mono text-[11px] text-gray-800 truncate" title="${c.exchangeSymbol || ''}">${c.exchangeSymbol || '—'}</td>
+                    <td class="py-2 px-2 text-center">${statusBadge(c.status)}</td>
+                    <td class="py-2 px-2 text-center">${txnBadge(c.side)}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.buyFillPrice != null ? '₹' + fmt(c.buyFillPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.sellFillPrice != null ? '₹' + fmt(c.sellFillPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-500">${c.expectedPnl != null ? '₹' + fmt(c.expectedPnl) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${pnlClass(c.actualPnl)}">${c.actualPnl != null ? '₹' + fmt(c.actualPnl) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${diffClass}">${c.pnlCapturePct != null ? c.pnlCapturePct : '—'}</td>
                     <td class="py-2 px-2 text-[11px] text-gray-500">${c.moneyness || '—'}</td>
                     <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-600">${c.quantity != null ? c.quantity : '—'}</td>
-                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.tradeOpenBrokerage != null ? '₹' + fmt(c.tradeOpenBrokerage) : '—'}</td>
-                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.tradeCloseBrokerage != null ? '₹' + fmt(c.tradeCloseBrokerage) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.openCharges != null ? '₹' + fmt(c.openCharges) : '—'}</td>
+                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.closeCharges != null ? '₹' + fmt(c.closeCharges) : '—'}</td>
                 </tr>`;
         }).join('');
 
@@ -345,30 +342,30 @@
         }
 
         tbody.innerHTML = trades.map(t => {
-            const hasChildren = (t.weekly && t.weekly.length > 0) || (t.monthly && t.monthly.length > 0);
+            const hasChildren = t.legs && t.legs.length > 0;
             const chevron = hasChildren
                 ? `<svg class="chevron w-3.5 h-3.5 text-gray-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`
                 : `<span class="w-3.5 h-3.5 inline-block"></span>`;
 
-            const childRows = buildChildRows(t.weekly || [], 'WEEKLY', t.id) + buildChildRows(t.monthly || [], 'MONTHLY', t.id);
+            const childRows = buildChildRows(t.legs || [], t.id);
 
             return `
                 <tr class="trade-row border-b border-gray-100" data-trade-id="${t.id}" onclick="toggleChildren(${t.id}, this)">
                     <td class="px-4 py-3 text-center">${chevron}</td>
                     <td class="px-4 py-3 font-mono text-gray-500 text-[11px]">#${t.id}</td>
-                    <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${t.tradeOpenDtTime || '—'}</td>
-                    <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${t.tradeCloseDtTime || '—'}</td>
-                    <td class="px-4 py-3">${typeBadge(t.signalType)}</td>
-                    <td class="px-4 py-3">${statusBadge(t.tradeStatus)}</td>
-                    <td class="px-4 py-3">${outcomeBadge(t.tradeOutcome)}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.entrySignalPrice != null ? fmt(t.entrySignalPrice) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.exitSignalPrice != null ? fmt(t.exitSignalPrice) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pointsByTrade != null ? fmt(t.pointsByTrade) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.expectedPnL != null ? '₹' + fmt(t.expectedPnL) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnL)}">${t.actualPnL != null ? '₹' + fmt(t.actualPnL) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.diffPercentage || '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.brokerage != null ? '₹' + fmt(t.brokerage) : '—'}</td>
-                    <td class="px-4 py-3 text-gray-500 text-[11px]">${t.statergyName || '—'}</td>
+                    <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${t.openedAt || '—'}</td>
+                    <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${t.closedAt || '—'}</td>
+                    <td class="px-4 py-3">${typeBadge(t.direction)}</td>
+                    <td class="px-4 py-3">${statusBadge(t.status)}</td>
+                    <td class="px-4 py-3">${outcomeBadge(t.result)}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.entrySpot != null ? fmt(t.entrySpot) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.exitSpot != null ? fmt(t.exitSpot) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pointsPnl != null ? fmt(t.pointsPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.expectedPnl != null ? '₹' + fmt(t.expectedPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
+                    <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
                 </tr>
                 ${childRows}`;
         }).join('');
@@ -392,7 +389,7 @@
         });
         const active = document.getElementById('f' + f.charAt(0) + f.slice(1).toLowerCase());
         if (active) active.className = 'filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700';
-        const filtered = f === 'ALL' ? allTrades : allTrades.filter(t => t.tradeStatus === f);
+        const filtered = f === 'ALL' ? allTrades : allTrades.filter(t => t.status === f);
         renderTrades(filtered);
     }
 

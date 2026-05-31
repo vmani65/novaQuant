@@ -11,7 +11,7 @@ import java.util.List;
 
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
-import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.repo.PositionRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -23,11 +23,11 @@ public class TradeCapitalService {
     private static final Logger log = LoggerFactory.getLogger(TradeCapitalService.class);
 
     private final TradeCapitalRepository tradeCapitalRepository;
-    private final TradeRepository tradeRepository;
+    private final PositionRepository positionRepository;
 
-    public TradeCapitalService(TradeCapitalRepository tradeCapitalRepository, TradeRepository tradeRepository) {
+    public TradeCapitalService(TradeCapitalRepository tradeCapitalRepository, PositionRepository positionRepository) {
         this.tradeCapitalRepository = tradeCapitalRepository;
-        this.tradeRepository = tradeRepository;
+        this.positionRepository = positionRepository;
     }
 
     public TradeCapital getTradeCapital() {
@@ -53,10 +53,10 @@ public class TradeCapitalService {
     private void populateNrmlCostStats(TradeCapital capital) {
         LocalDateTime cutoff = LocalDateTime.now(ZoneId.of(ZONE_ID)).minusDays(30);
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern(DATE_FORMAT);
-        List<Integer> perLotValues = tradeRepository.findByPeakMarginNotNull().stream()
-                .filter(t -> t.getLots() != null && t.getLots() > 0 && t.getTradeCloseDtTime() != null)
+        List<Integer> perLotValues = positionRepository.findByPeakMarginNotNull().stream()
+                .filter(t -> t.getLots() != null && t.getLots() > 0 && t.getClosedAt() != null)
                 .filter(t -> {
-                    try { return LocalDateTime.parse(t.getTradeCloseDtTime(), fmt).isAfter(cutoff); }
+                    try { return LocalDateTime.parse(t.getClosedAt(), fmt).isAfter(cutoff); }
                     catch (DateTimeParseException e) { return false; }
                 })
                 .map(t -> (int)(t.getPeakMargin() / t.getLots()))

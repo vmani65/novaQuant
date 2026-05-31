@@ -9,10 +9,10 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
-import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.service.ProfitRecenterService;
 import path.to._40c.nqCore.service.SignalService;
-import path.to._40c.nqCore.service.SymbolService;
+import path.to._40c.nqCore.service.WeeklySymbolService;
 
 import java.time.LocalDate;
 import java.time.ZoneId;
@@ -24,13 +24,13 @@ public class RollOverTriggerController {
     private static final Logger log = LoggerFactory.getLogger(RollOverTriggerController.class);
 
     private final SignalService          signalService;
-    private final SymbolService          symbolService;
+    private final WeeklySymbolService          weeklySymbolService;
     private final ProfitRecenterService  profitRecenterService;
 
-    public RollOverTriggerController(SignalService signalService, SymbolService symbolService,
+    public RollOverTriggerController(SignalService signalService, WeeklySymbolService weeklySymbolService,
                                      ProfitRecenterService profitRecenterService) {
         this.signalService         = signalService;
-        this.symbolService         = symbolService;
+        this.weeklySymbolService         = weeklySymbolService;
         this.profitRecenterService = profitRecenterService;
     }
 
@@ -46,7 +46,7 @@ public class RollOverTriggerController {
         String sanitisedPrice = currentPrice.replace(",", "").trim();
         log.info("RollOver trigger received from AFL | currentPrice={}", sanitisedPrice);
 
-        SymbolConfig cfg = symbolService.current();
+        WeeklySymbolConfig cfg = weeklySymbolService.current();
 
         if (cfg == null || cfg.getRolloverDay() == null) {
             log.info("RollOver skipped — no rollover day configured");
@@ -67,14 +67,14 @@ public class RollOverTriggerController {
 
         log.info("RollOver day matched — initiating rollover | date={} | currentPrice={}", today, sanitisedPrice);
         signalService.handleRollOver(sanitisedPrice);
-        symbolService.promoteRolloverSymbol();
-        symbolService.markRolloverComplete();
+        weeklySymbolService.promoteRolloverSymbol();
+        weeklySymbolService.markRolloverComplete();
         log.info("RollOver completed — symbol promoted and marked complete");
     }
 
     /**
      * Called by nQ-ticker ProfitRecenterConsumer when NIFTY profit >= 500 points.
-     * Closes the current live legs and re-opens at the new ATM. Trade stays LIVE.
+     * Closes the current live legs and re-opens at the new ATM. Position stays LIVE.
      *
      * Example: GET /api/realize-profits?currentPrice=24500.0
      */
@@ -106,7 +106,7 @@ public class RollOverTriggerController {
 
     @GetMapping("/refreshSymbolCache")
     public void refreshSymbolCache() {
-        symbolService.warmCache();
+        weeklySymbolService.warmCache();
         log.info("Symbol cache refreshed from DB");
     }
 }

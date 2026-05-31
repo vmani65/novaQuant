@@ -12,24 +12,24 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
-import path.to._40c.nqCore.entity.SymbolConfig;
-import path.to._40c.nqCore.repo.SymbolConfigRepository;
+import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.repo.WeeklySymbolConfigRepository;
 
 @Service
-public class SymbolService {
+public class WeeklySymbolService {
 
-    private static final Logger log = LoggerFactory.getLogger(SymbolService.class);
-    private final SymbolConfigRepository repo;
+    private static final Logger log = LoggerFactory.getLogger(WeeklySymbolService.class);
+    private final WeeklySymbolConfigRepository repo;
     private final WeeklySymbolCache cache;
 
-    public SymbolService(SymbolConfigRepository repo, WeeklySymbolCache cache) {
+    public WeeklySymbolService(WeeklySymbolConfigRepository repo, WeeklySymbolCache cache) {
         this.repo = repo; this.cache = cache;
     }
 
     @Transactional
     public void saveSymbols(String thisWeek, String rollover, String rolloverDay) {
         repo.deleteAllInBatch();
-        SymbolConfig cfg = new SymbolConfig(thisWeek, rollover);
+        WeeklySymbolConfig cfg = new WeeklySymbolConfig(thisWeek, rollover);
         if (rolloverDay != null && !rolloverDay.isBlank()) {
             cfg.setRolloverDay(java.time.LocalDate.parse(rolloverDay));
         }
@@ -42,7 +42,7 @@ public class SymbolService {
         repo.findById(1L).ifPresent(cfg -> {
             log.info("Promoting rollover symbol to this week: thisWeek {} -> {}", cfg.getThisWeekSymbol(), cfg.getRolloverSymbol());
             cfg.setThisWeekSymbol(cfg.getRolloverSymbol());
-            SymbolConfig saved = repo.save(cfg);
+            WeeklySymbolConfig saved = repo.save(cfg);
             cache.set(saved);
         });
     }
@@ -51,12 +51,12 @@ public class SymbolService {
     public void markRolloverComplete() {
         repo.findById(1L).ifPresent(cfg -> {
             cfg.setRolloverComplete(true);
-            SymbolConfig saved = repo.save(cfg);
+            WeeklySymbolConfig saved = repo.save(cfg);
             cache.set(saved);
         });
     }
 
-    public Optional<SymbolConfig> get() {
+    public Optional<WeeklySymbolConfig> get() {
         return repo.findById(1L);
     }
     
@@ -65,15 +65,15 @@ public class SymbolService {
     }
     
     @Transactional(readOnly = true)
-    public SymbolConfig current() {
-        SymbolConfig c = cache.get();
+    public WeeklySymbolConfig current() {
+        WeeklySymbolConfig c = cache.get();
         if (c != null) return c;
         return repo.findById(1L).orElse(null);
     }
     
     public void checkAndPromoteRolloverSymbol() {
         LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
-        SymbolConfig cfg = current();
+        WeeklySymbolConfig cfg = current();
         if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
         if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {
             log.info("Rollover day — already complete, skipping symbol promotion");

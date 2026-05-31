@@ -3,7 +3,7 @@ package path.to._40c.nqCore.controller;
 import org.springframework.web.bind.annotation.*;
 
 import jakarta.annotation.PostConstruct;
-import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.service.SignalService;
 import path.to._40c.nqCore.util.ComputeUtil;
 
@@ -278,10 +278,10 @@ public class SignalController {
     public void loadCacheFromDatabase() {
         log.info("Starting cache initialization from database...");        
         try {            
-            Trade lastTrade = signalService.getLastTrade();           
+            Position lastTrade = signalService.getLastTrade();           
             if (lastTrade != null) {
-                previousByStrategy.put(lastTrade.getStatergyName(), new LastProcessed(lastTrade.getLastApiAction(),lastTrade.getLastApiSignalType(),lastTrade.getApiTime(),String.valueOf(lastTrade.getEntrySignalPrice()),Instant.now()));
-                log.info("Loaded last trade for strategy: {}", lastTrade.getStatergyName());
+                previousByStrategy.put(lastTrade.getStrategyName(), new LastProcessed(lastTrade.getLastSignalAction(),lastTrade.getLastSignalLeg(),lastTrade.getSignalAt(),String.valueOf(lastTrade.getEntrySpot()),Instant.now()));
+                log.info("Loaded last trade for strategy: {}", lastTrade.getStrategyName());
             }            
             log.info("Cache initialization complete: {} signals cached, {} strategies tracked",signalCache.size(), previousByStrategy.size());                    
         } catch (Exception e) {

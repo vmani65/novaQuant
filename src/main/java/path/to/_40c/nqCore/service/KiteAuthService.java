@@ -15,7 +15,7 @@ import com.zerodhatech.models.User;
 import path.to._40c.nqCore.entity.KiteAuthDetails;
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
-import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.PositionUtil;
 
 @Service
 public class KiteAuthService {
@@ -24,14 +24,14 @@ public class KiteAuthService {
 	private final String apiSecret;
 	private final KiteAuthDetailsRepository kiteRepository;
 	private final KiteGateway kiteGateway;
-	private final TradeUtil util;
+	private final PositionUtil util;
 
 	public KiteAuthService(
 			@Value("${kite.api-key}") String apiKey,
 			@Value("${kite.api-secret}") String apiSecret,
 			KiteAuthDetailsRepository kiteRepository,
 			KiteGateway kiteGateway,
-			TradeUtil util) {
+			PositionUtil util) {
 		this.apiKey = apiKey;
 		this.apiSecret = apiSecret;
 		this.kiteRepository = kiteRepository;

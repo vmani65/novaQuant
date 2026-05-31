@@ -7,24 +7,24 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import path.to._40c.nqCore.entity.Trade;
-import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.entity.Position;
+import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
-import path.to._40c.nqCore.util.TradeUtil;
+import path.to._40c.nqCore.util.PositionUtil;
 
 @Service
 public class PostTradeService {
 
     private static final Logger log = LoggerFactory.getLogger(PostTradeService.class);
 
-    private final TradeUtil tradeUtil;
+    private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
-    private final TradeRepository tradeRepository;
+    private final PositionRepository positionRepository;
 
-    public PostTradeService(TradeUtil tradeUtil, ComputeUtil computeUtil, TradeRepository tradeRepository) {
-        this.tradeUtil = tradeUtil;
+    public PostTradeService(PositionUtil positionUtil, ComputeUtil computeUtil, PositionRepository positionRepository) {
+        this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
-        this.tradeRepository = tradeRepository;
+        this.positionRepository = positionRepository;
     }
 
     /**
@@ -36,33 +36,33 @@ public class PostTradeService {
      */
     @Async("postTradeExecutor")
     @Transactional
-    public void afterOpen(Trade liveTrade) {
-        if (liveTrade == null || !LIVE.equals(liveTrade.getTradeStatus())) {
+    public void afterOpen(Position liveTrade) {
+        if (liveTrade == null || !LIVE.equals(liveTrade.getStatus())) {
             log.warn("afterOpen skipped - trade is not LIVE (status={})",
-                liveTrade != null ? liveTrade.getTradeStatus() : "null");
+                liveTrade != null ? liveTrade.getStatus() : "null");
             return;
         }
         try {
-            tradeUtil.setTradeExecutedPrices(liveTrade);
-            tradeUtil.calcMarginAndBrokerage(liveTrade);
-            tradeUtil.applyActualCharges(liveTrade);
-            Trade t = tradeRepository.findById(liveTrade.getId()).orElse(null);
-            if (t == null) { tradeRepository.save(liveTrade); return; }
-            liveTrade.getWeeklyOrderBook().forEach(liveW ->
-                t.getWeeklyOrderBook().stream()
+            positionUtil.setTradeExecutedPrices(liveTrade);
+            positionUtil.calcMarginAndBrokerage(liveTrade);
+            positionUtil.applyActualCharges(liveTrade);
+            Position t = positionRepository.findById(liveTrade.getId()).orElse(null);
+            if (t == null) { positionRepository.save(liveTrade); return; }
+            liveTrade.getLegs().forEach(liveW ->
+                t.getLegs().stream()
                     .filter(dbW -> dbW.getId().equals(liveW.getId()))
                     .findFirst()
                     .ifPresent(dbW -> {
-                        if (liveW.getBoughtPrice()        != null) dbW.setBoughtPrice(liveW.getBoughtPrice());
-                        if (liveW.getSoldPrice()           != null) dbW.setSoldPrice(liveW.getSoldPrice());
-                        if (liveW.getMarginToTrade()       != null) dbW.setMarginToTrade(liveW.getMarginToTrade());
-                        if (liveW.getTradeOpenBrokerage()  != null) dbW.setTradeOpenBrokerage(liveW.getTradeOpenBrokerage());
-                        if (liveW.getTradeCloseBrokerage() != null) dbW.setTradeCloseBrokerage(liveW.getTradeCloseBrokerage());
+                        if (liveW.getBuyFillPrice()        != null) dbW.setBuyFillPrice(liveW.getBuyFillPrice());
+                        if (liveW.getSellFillPrice()           != null) dbW.setSellFillPrice(liveW.getSellFillPrice());
+                        if (liveW.getMarginRequired()       != null) dbW.setMarginRequired(liveW.getMarginRequired());
+                        if (liveW.getOpenCharges()  != null) dbW.setOpenCharges(liveW.getOpenCharges());
+                        if (liveW.getCloseCharges() != null) dbW.setCloseCharges(liveW.getCloseCharges());
                     })
             );
-            tradeUtil.calcPeakMargin(t);
-            tradeUtil.captureSliceFills(t);
-            tradeRepository.save(t);
+            positionUtil.calcPeakMargin(t);
+            positionUtil.captureSliceFills(t);
+            positionRepository.save(t);
             log.info("Post-open calc completed for trade id={}", liveTrade.getId());
         } catch (Exception e) {
             log.error("Exception while performing post trade open calculations", e);
@@ -76,32 +76,32 @@ public class PostTradeService {
      */
     @Async("postTradeExecutor")
     @Transactional
-    public void afterClose(Trade closedTrade) {
+    public void afterClose(Position closedTrade) {
         if (closedTrade == null) return;
         try {
-            tradeUtil.setTradeExecutedPrices(closedTrade);
-            tradeUtil.applyActualCharges(closedTrade);
+            positionUtil.setTradeExecutedPrices(closedTrade);
+            positionUtil.applyActualCharges(closedTrade);
 
-            Trade t = tradeRepository.findById(closedTrade.getId()).orElse(null);
-            if (t == null) { tradeRepository.save(closedTrade); return; }
-            log.info("Trade(Parent+All Child) used for computing post close calc: {}", t);
+            Position t = positionRepository.findById(closedTrade.getId()).orElse(null);
+            if (t == null) { positionRepository.save(closedTrade); return; }
+            log.info("Position(Parent+All Child) used for computing post close calc: {}", t);
 
-            closedTrade.getWeeklyOrderBook().forEach(closedW ->
-                t.getWeeklyOrderBook().stream()
+            closedTrade.getLegs().forEach(closedW ->
+                t.getLegs().stream()
                     .filter(dbW -> dbW.getId().equals(closedW.getId()))
                     .findFirst()
                     .ifPresent(dbW -> {
-                        if (closedW.getBoughtPrice()        != null) dbW.setBoughtPrice(closedW.getBoughtPrice());
-                        if (closedW.getSoldPrice()           != null) dbW.setSoldPrice(closedW.getSoldPrice());
-                        if (closedW.getTradeCloseBrokerage() != null) dbW.setTradeCloseBrokerage(closedW.getTradeCloseBrokerage());
+                        if (closedW.getBuyFillPrice()        != null) dbW.setBuyFillPrice(closedW.getBuyFillPrice());
+                        if (closedW.getSellFillPrice()           != null) dbW.setSellFillPrice(closedW.getSellFillPrice());
+                        if (closedW.getCloseCharges() != null) dbW.setCloseCharges(closedW.getCloseCharges());
                     })
             );
 
             computeUtil.calcTradeOutcome(t);
             computeUtil.calcPnL(t);
             computeUtil.recalculateCapital(t);
-            tradeUtil.captureSliceFills(t);
-            tradeRepository.save(t);
+            positionUtil.captureSliceFills(t);
+            positionRepository.save(t);
             log.info("Post-close calc completed for trade id={}", closedTrade.getId());
         } catch (Exception e) {
             log.error("Exception while performing post trade close calculations", e);

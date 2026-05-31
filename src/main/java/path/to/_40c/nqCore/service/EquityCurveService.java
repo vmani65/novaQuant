@@ -7,32 +7,32 @@ import java.util.Comparator;
 import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
-import path.to._40c.nqCore.entity.Trade;
+import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.pojo.EquityCurve;
-import path.to._40c.nqCore.repo.TradeRepository;
+import path.to._40c.nqCore.repo.PositionRepository;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 
 @Service
 public class EquityCurveService {
 
-    private final TradeRepository tradeRepository;
+    private final PositionRepository positionRepository;
 
-    public EquityCurveService(TradeRepository tradeRepository) {
-        this.tradeRepository = tradeRepository;
+    public EquityCurveService(PositionRepository positionRepository) {
+        this.positionRepository = positionRepository;
     }
 
     public List<String> getAllStrategyNames() {
-        return tradeRepository.findDistinctStrategyNames();
+        return positionRepository.findDistinctStrategyNames();
     }
 
     public EquityCurve getEquityCurveData(String strategy) {
-        List<Trade> trades;
+        List<Position> trades;
 
         if ("All".equalsIgnoreCase(strategy)) {
-            trades = tradeRepository.findAllByOrderByTradeOpenDtTimeAsc();
+            trades = positionRepository.findAllByOrderByOpenedAtAsc();
         } else {
-            trades = tradeRepository.findByStatergyNameOrderByTradeOpenDtTimeAsc(strategy);
+            trades = positionRepository.findByStrategyNameOrderByOpenedAtAsc(strategy);
         }
 
         return buildEquityCurve(trades);
@@ -40,33 +40,33 @@ public class EquityCurveService {
 
     private static final DateTimeFormatter PARSE_FMT = DateTimeFormatter.ofPattern(DATE_FORMAT);
 
-    private EquityCurve buildEquityCurve(List<Trade> trades) {
+    private EquityCurve buildEquityCurve(List<Position> trades) {
         List<String> dates        = new ArrayList<>();
         List<Double> equityValues = new ArrayList<>();
         List<Integer> lotSizes    = new ArrayList<>();
         List<String> outcomes     = new ArrayList<>();
         List<Double> points       = new ArrayList<>();
 
-        List<Trade> sorted = trades.stream()
-            .filter(t -> t.getEndingCapital() != null && t.getTradeOpenDtTime() != null)
+        List<Position> sorted = trades.stream()
+            .filter(t -> t.getEndingCapital() != null && t.getOpenedAt() != null)
             .sorted(Comparator.comparing(t -> {
-                try { return LocalDateTime.parse(t.getTradeOpenDtTime(), PARSE_FMT); }
+                try { return LocalDateTime.parse(t.getOpenedAt(), PARSE_FMT); }
                 catch (Exception e) { return LocalDateTime.MIN; }
             }))
             .collect(Collectors.toList());
 
         double startingEquity = 0.0;
         if (!sorted.isEmpty()) {
-            Trade first = sorted.get(0);
+            Position first = sorted.get(0);
             startingEquity = first.getStartingCapital() != null ? first.getStartingCapital() : 0.0;
         }
 
-        for (Trade trade : sorted) {
-            dates.add(formatDate(trade.getTradeOpenDtTime()));
+        for (Position trade : sorted) {
+            dates.add(formatDate(trade.getOpenedAt()));
             equityValues.add(trade.getEndingCapital());
             lotSizes.add(trade.getLots() != null ? trade.getLots() : 0);
-            outcomes.add(trade.getTradeOutcome() != null ? trade.getTradeOutcome() : "");
-            points.add(trade.getPointsByTrade() != null ? trade.getPointsByTrade() : 0.0);
+            outcomes.add(trade.getResult() != null ? trade.getResult() : "");
+            points.add(trade.getPointsPnl() != null ? trade.getPointsPnl() : 0.0);
         }
 
         double currentEquity = equityValues.isEmpty() ? startingEquity

@@ -291,12 +291,122 @@
                 () => setSymbolsEditable(false));
         }
 
-        // ==================== MATRIX SAVE ====================
-        function saveMatrix(event) {
-            event.preventDefault();
-            const f = document.getElementById('matrixForm');
-            const data = new FormData(f);
-            postForm('/position-matrix/save', Object.fromEntries(data.entries()), 'matrixMsg', null);
+        // ==================== LEG TEMPLATES ====================
+        function loadLegTemplates() {
+            fetch('/api/leg-templates')
+                .then(r => r.json())
+                .then(legs => {
+                    renderLegRows('longLegsBody',  legs.filter(l => l.direction === 'LONG'),  'LONG');
+                    renderLegRows('shortLegsBody', legs.filter(l => l.direction === 'SHORT'), 'SHORT');
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Load error: ' + e, true));
+        }
+
+        function renderLegRows(tbodyId, legs, direction) {
+            const tbody = document.getElementById(tbodyId);
+            if (legs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = legs.map(l => `
+                <tr class="border-t border-gray-100" data-leg-id="${l.id}">
+                    <td class="px-2 py-1.5 font-medium text-gray-900 text-center">${l.optionType}</td>
+                    <td class="px-2 py-1.5 text-gray-700 text-center">${l.side}</td>
+                    <td class="px-2 py-1.5 font-mono text-gray-700 text-center">${l.offsetPts > 0 ? '+' + l.offsetPts : l.offsetPts}</td>
+                    <td class="px-2 py-1.5 font-mono font-semibold text-gray-900 text-center">${l.lots}</td>
+                    <td class="px-2 py-1.5 text-center">
+                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots})"
+                                class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
+                        <button onclick="deleteLeg(${l.id})"
+                                class="px-2 py-0.5 text-rose-600 hover:bg-rose-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Delete</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function showAddLegRow(direction) {
+            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
+            const tbody = document.getElementById(tbodyId);
+            // Remove any existing add/edit-form rows first
+            tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
+            // Remove "no legs" placeholder if present
+            const placeholder = tbody.querySelector('td[colspan="5"]');
+            if (placeholder) placeholder.parentElement.remove();
+            const row = document.createElement('tr');
+            row.className = 'leg-form-row bg-blue-50 border-t border-blue-100';
+            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1);
+            tbody.appendChild(row);
+        }
+
+        function editLegRow(id, direction, optionType, side, offsetPts, lots) {
+            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
+            const tbody = document.getElementById(tbodyId);
+            tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
+            const existing = tbody.querySelector(`tr[data-leg-id="${id}"]`);
+            if (!existing) return;
+            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
+        }
+
+        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots) {
+            const optSel = ['CE', 'PE'].map(o => `<option value="${o}" ${o === optionType ? 'selected' : ''}>${o}</option>`).join('');
+            const sideSel = ['BUY', 'SELL'].map(s => `<option value="${s}" ${s === side ? 'selected' : ''}>${s}</option>`).join('');
+            return `
+                <td class="px-2 py-1.5 text-center">
+                    <select class="leg-opt px-2 py-1 border border-gray-200 rounded text-xs text-center">${optSel}</select>
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <select class="leg-side px-2 py-1 border border-gray-200 rounded text-xs text-center">${sideSel}</select>
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <input type="number" class="leg-offset w-20 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${offsetPts}" step="50" />
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <input type="number" class="leg-lots w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${lots}" min="1" />
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}')"
+                            class="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] border-0 cursor-pointer">Save</button>
+                    <button onclick="loadLegTemplates()"
+                            class="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded text-[11px] border-0 cursor-pointer bg-transparent">Cancel</button>
+                </td>`;
+        }
+
+        function saveLeg(btn, id, direction) {
+            const row = btn.closest('tr');
+            const body = {
+                direction,
+                optionType: row.querySelector('.leg-opt').value,
+                side:       row.querySelector('.leg-side').value,
+                offsetPts:  parseInt(row.querySelector('.leg-offset').value) || 0,
+                lots:       parseInt(row.querySelector('.leg-lots').value) || 0
+            };
+            const url = id ? `/api/leg-templates/${id}` : '/api/leg-templates';
+            const method = id ? 'PUT' : 'POST';
+            fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        Utils.showMessage('legTemplatesMsg', id ? 'Leg updated.' : 'Leg added.', false);
+                        loadLegTemplates();
+                    } else {
+                        Utils.showMessage('legTemplatesMsg', res.message || 'Save failed', true);
+                    }
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Error: ' + e, true));
+        }
+
+        function deleteLeg(id) {
+            if (!confirm('Delete this leg?')) return;
+            fetch(`/api/leg-templates/${id}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        Utils.showMessage('legTemplatesMsg', 'Leg deleted.', false);
+                        loadLegTemplates();
+                    } else {
+                        Utils.showMessage('legTemplatesMsg', res.message || 'Delete failed', true);
+                    }
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Error: ' + e, true));
         }
 
         // ==================== ROLLOVER ====================
@@ -315,9 +425,9 @@
         }
 
         // ==================== POSITION SIZE MATRIX ====================
-        function togglePsm() {
-            const body = document.getElementById('psmBody');
-            const btn = document.getElementById('psmToggleBtn');
+        function toggleLegTemplates() {
+            const body = document.getElementById('legTemplatesBody');
+            const btn = document.getElementById('legTemplatesToggleBtn');
             if (body.style.display === 'none' || body.style.display === '') {
                 body.style.display = 'block'; btn.textContent = '▲';
             } else {
@@ -488,6 +598,7 @@
             const noSymbols = card && card.getAttribute('data-no-symbols') === 'true';
             if (noSymbols) setSymbolsEditable(true);
             loadCapitalData();
+            loadLegTemplates();
             EquityCurve.loadEquityCurve();
             // Set date in topbar
             document.getElementById('topbarDate').textContent =
@@ -1037,64 +1148,65 @@
 
         <!-- ===== POSITION SIZE ===== -->
         <section id="position-size" class="scroll-mt-20">
-            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Position Size</div>
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Leg Templates</div>
             <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
                 <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                     <div>
-                        <div class="text-sm font-semibold text-gray-900">Trade Sizing</div>
-                        <div class="text-xs text-gray-400 mt-0.5">Both legs auto-configured</div>
+                        <div class="text-sm font-semibold text-gray-900">Position Manifestation</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Legs that fire on each LONG / SHORT signal. Strike = ATM + offset (pts).</div>
                     </div>
-                    <button id="psmToggleBtn" onclick="togglePsm()"
+                    <button id="legTemplatesToggleBtn" onclick="toggleLegTemplates()"
                             class="text-blue-600 text-lg leading-none px-3 py-1 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded-lg">▼</button>
                 </div>
-                <div id="psmBody" style="display:none;">
+                <div id="legTemplatesBody" style="display:none;">
                     <div class="p-5">
-                        <div class="mb-5 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg text-xs text-gray-500">
-                            <div class="grid grid-cols-2 gap-x-8 gap-y-1">
-                                <div class="text-emerald-600 font-medium">▲ LONG → BUY CE + SELL PE &nbsp;(ITM spreads lower)</div>
-                                <div class="text-rose-400 font-medium">▼ SHORT → BUY PE + SELL CE &nbsp;(ITM spreads higher)</div>
+                        <div class="max-w-3xl mx-auto space-y-6">
+                            <!-- LONG legs -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
+                                    <button onclick="showAddLegRow('LONG')"
+                                            class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                </div>
+                                <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                            <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="longLegsBody" class="text-xs"></tbody>
+                                    </table>
+                                </div>
                             </div>
+                            <!-- SHORT legs -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
+                                    <button onclick="showAddLegRow('SHORT')"
+                                            class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                </div>
+                                <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                            <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="shortLegsBody" class="text-xs"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div id="legTemplatesMsg" style="display:none;"></div>
                         </div>
-                        <form id="matrixForm" onsubmit="saveMatrix(event)">
-                            <!-- Column headers -->
-                            <div class="grid grid-cols-5 gap-3 mb-2">
-                                <div></div>
-                                <div class="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">ATM</div>
-                                <div class="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">ATM ± 50</div>
-                                <div class="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">ATM ± 100</div>
-                                <div class="text-center text-[11px] font-semibold text-gray-500 uppercase tracking-wide">ATM ± 150</div>
-                            </div>
-                            <!-- LONG row -->
-                            <div class="grid grid-cols-5 gap-3 mb-3 items-center">
-                                <div class="text-[12px] font-semibold text-emerald-600">▲ LONG</div>
-                                <input type="number" name="longAtm"     min="0" th:value="${longAtm}"
-                                       class="no-spin w-full px-2 py-2 border-2 border-emerald-200 rounded-lg text-base font-bold font-mono text-emerald-600 text-center outline-none focus:ring-2 focus:ring-emerald-50" />
-                                <input type="number" name="longOffset1" min="0" th:value="${longOffset1}"
-                                       class="no-spin w-full px-2 py-2 border border-emerald-200 rounded-lg text-base font-bold font-mono text-emerald-500 text-center outline-none focus:ring-2 focus:ring-emerald-50" />
-                                <input type="number" name="longOffset2" min="0" th:value="${longOffset2}"
-                                       class="no-spin w-full px-2 py-2 border border-emerald-200 rounded-lg text-base font-bold font-mono text-emerald-500 text-center outline-none focus:ring-2 focus:ring-emerald-50" />
-                                <input type="number" name="longOffset3" min="0" th:value="${longOffset3}"
-                                       class="no-spin w-full px-2 py-2 border border-emerald-200 rounded-lg text-base font-bold font-mono text-emerald-500 text-center outline-none focus:ring-2 focus:ring-emerald-50" />
-                            </div>
-                            <!-- SHORT row -->
-                            <div class="grid grid-cols-5 gap-3 mb-5 items-center">
-                                <div class="text-[12px] font-semibold text-rose-400">▼ SHORT</div>
-                                <input type="number" name="shortAtm"     min="0" th:value="${shortAtm}"
-                                       class="no-spin w-full px-2 py-2 border-2 border-rose-200 rounded-lg text-base font-bold font-mono text-rose-500 text-center outline-none focus:ring-2 focus:ring-rose-50" />
-                                <input type="number" name="shortOffset1" min="0" th:value="${shortOffset1}"
-                                       class="no-spin w-full px-2 py-2 border border-rose-200 rounded-lg text-base font-bold font-mono text-rose-400 text-center outline-none focus:ring-2 focus:ring-rose-50" />
-                                <input type="number" name="shortOffset2" min="0" th:value="${shortOffset2}"
-                                       class="no-spin w-full px-2 py-2 border border-rose-200 rounded-lg text-base font-bold font-mono text-rose-400 text-center outline-none focus:ring-2 focus:ring-rose-50" />
-                                <input type="number" name="shortOffset3" min="0" th:value="${shortOffset3}"
-                                       class="no-spin w-full px-2 py-2 border border-rose-200 rounded-lg text-base font-bold font-mono text-rose-400 text-center outline-none focus:ring-2 focus:ring-rose-50" />
-                            </div>
-                            <div class="flex items-center gap-3">
-                                <button type="submit"
-                                        class="px-5 py-2.5 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded-lg border-0 cursor-pointer">Save</button>
-                                <span class="text-xs text-gray-400">Set 0 to skip a tranche</span>
-                            </div>
-                        </form>
-                        <div id="matrixMsg" style="display:none;"></div>
                     </div>
                 </div>
             </div>

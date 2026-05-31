@@ -21,8 +21,8 @@ import static path.to._40c.nqCore.util.Constants.SHORT;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
-import path.to._40c.nqCore.entity.PositionSizeMatrix;
-import path.to._40c.nqCore.repo.TradeLegConfigRepository;
+import path.to._40c.nqCore.entity.LegTemplate;
+import path.to._40c.nqCore.repo.LegTemplateRepository;
 import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 
 import org.springframework.http.HttpStatus;
@@ -35,8 +35,8 @@ import org.springframework.web.bind.annotation.*;
 
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.service.KiteAuthService;
-import path.to._40c.nqCore.service.SymbolService;
-import path.to._40c.nqCore.service.TradeLegCache;
+import path.to._40c.nqCore.service.WeeklySymbolService;
+import path.to._40c.nqCore.service.LegTemplateCache;
 
 @Controller
 @RequestMapping
@@ -46,19 +46,19 @@ public class KiteAuthController {
 
     private final KiteAuthDetailsRepository repository;
     private final KiteAuthService kiteAuthService;
-    private final SymbolService symbolService;
-    private final TradeLegConfigRepository matrixRepository;
-    private final TradeLegCache contractCache;
+    private final WeeklySymbolService weeklySymbolService;
+    private final LegTemplateRepository legTemplateRepository;
+    private final LegTemplateCache legTemplateCache;
     private final KiteGateway kiteGateway;
 
     public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
-            SymbolService symbolService, TradeLegConfigRepository matrixRepository,
-            TradeLegCache contractCache, KiteGateway kiteGateway) {
+            WeeklySymbolService weeklySymbolService, LegTemplateRepository legTemplateRepository,
+            LegTemplateCache legTemplateCache, KiteGateway kiteGateway) {
         this.repository = repository;
         this.kiteAuthService = kiteAuthService;
-        this.symbolService = symbolService;
-        this.matrixRepository = matrixRepository;
-        this.contractCache = contractCache;
+        this.weeklySymbolService = weeklySymbolService;
+        this.legTemplateRepository = legTemplateRepository;
+        this.legTemplateCache = legTemplateCache;
         this.kiteGateway = kiteGateway;
     }
 
@@ -96,7 +96,7 @@ public class KiteAuthController {
             @RequestParam String thisWeekSymbol,
             @RequestParam String rolloverSymbol,
             @RequestParam(required = false) String rolloverDay) {
-        symbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
+        weeklySymbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
         return ResponseEntity.ok(Map.of("success", true, "message", "Symbols saved."));
     }
 
@@ -144,41 +144,80 @@ public class KiteAuthController {
 
     @GetMapping("/signalHome")
     public String showForm(Model model) {
-    	model.addAttribute("symbols", symbolService.get().orElse(null));
-        model.addAttribute("noSymbols", symbolService.isMissing());
-        PositionSizeMatrix longBuy = matrixRepository.findByPositionSide(LONG).stream()
-                .filter(r -> BUY.equals(r.getActionType())).findFirst().orElse(null);
-        PositionSizeMatrix shortBuy = matrixRepository.findByPositionSide(SHORT).stream()
-                .filter(r -> BUY.equals(r.getActionType())).findFirst().orElse(null);
-        model.addAttribute("longAtm",     longBuy  != null && longBuy.getAtm()     != null ? longBuy.getAtm()     : 0);
-        model.addAttribute("longOffset1", longBuy  != null && longBuy.getOffset1() != null ? longBuy.getOffset1() : 0);
-        model.addAttribute("longOffset2", longBuy  != null && longBuy.getOffset2() != null ? longBuy.getOffset2() : 0);
-        model.addAttribute("longOffset3", longBuy  != null && longBuy.getOffset3() != null ? longBuy.getOffset3() : 0);
-        model.addAttribute("shortAtm",    shortBuy != null && shortBuy.getAtm()     != null ? shortBuy.getAtm()     : 0);
-        model.addAttribute("shortOffset1",shortBuy != null && shortBuy.getOffset1() != null ? shortBuy.getOffset1() : 0);
-        model.addAttribute("shortOffset2",shortBuy != null && shortBuy.getOffset2() != null ? shortBuy.getOffset2() : 0);
-        model.addAttribute("shortOffset3",shortBuy != null && shortBuy.getOffset3() != null ? shortBuy.getOffset3() : 0);
+    	model.addAttribute("symbols", weeklySymbolService.get().orElse(null));
+        model.addAttribute("noSymbols", weeklySymbolService.isMissing());
         return "signalHome";
     }
 
-    @PostMapping("/position-matrix/save")
+    // ---------------------------------------------------------------
+    // Leg-template CRUD — backs the "manifestation" UI for editing the
+    // legs that fire on each LONG / SHORT signal. Cache refreshed after
+    // every mutation so the next signal sees the new template.
+    // ---------------------------------------------------------------
+
+    @GetMapping("/api/leg-templates")
     @ResponseBody
-    public ResponseEntity<Map<String, Object>> saveMatrix(
-            @RequestParam Integer longAtm,     @RequestParam Integer longOffset1,
-            @RequestParam Integer longOffset2, @RequestParam Integer longOffset3,
-            @RequestParam Integer shortAtm,    @RequestParam Integer shortOffset1,
-            @RequestParam Integer shortOffset2,@RequestParam Integer shortOffset3) {
-        log.info("Saving position matrix: LONG atm={} o1={} o2={} o3={} | SHORT atm={} o1={} o2={} o3={}",
-                 longAtm, longOffset1, longOffset2, longOffset3, shortAtm, shortOffset1, shortOffset2, shortOffset3);
-        matrixRepository.deleteAll();
-        matrixRepository.saveAll(List.of(
-            new PositionSizeMatrix(LONG,  CE, BUY,  longAtm,  longOffset1,  longOffset2,  longOffset3),
-            new PositionSizeMatrix(LONG,  PE, SELL, longAtm,  longOffset1,  longOffset2,  longOffset3),
-            new PositionSizeMatrix(SHORT, PE, BUY,  shortAtm, shortOffset1, shortOffset2, shortOffset3),
-            new PositionSizeMatrix(SHORT, CE, SELL, shortAtm, shortOffset1, shortOffset2, shortOffset3)
-        ));
-        contractCache.refreshCache();
-        log.info("Matrix saved and cache refreshed.");
-        return ResponseEntity.ok(Map.of("success", true, "message", "Position size saved."));
+    public List<LegTemplate> listLegTemplates() {
+        return legTemplateRepository.findAllByOrderByDirectionAscOptionTypeAscOffsetPtsAsc();
+    }
+
+    @PostMapping("/api/leg-templates")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> createLegTemplate(@RequestBody LegTemplate body) {
+        Map<String, Object> err = validate(body);
+        if (err != null) return ResponseEntity.badRequest().body(err);
+        body.setId(null);
+        LegTemplate saved = legTemplateRepository.save(body);
+        legTemplateCache.refreshCache();
+        log.info("Leg template created: {}", saved);
+        return ResponseEntity.ok(Map.of("success", true, "data", saved));
+    }
+
+    @PutMapping("/api/leg-templates/{id}")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> updateLegTemplate(@PathVariable Long id, @RequestBody LegTemplate body) {
+        return legTemplateRepository.findById(id)
+            .<ResponseEntity<Map<String, Object>>>map(existing -> {
+                Map<String, Object> err = validate(body);
+                if (err != null) return ResponseEntity.badRequest().body(err);
+                existing.setDirection(body.getDirection());
+                existing.setOptionType(body.getOptionType());
+                existing.setSide(body.getSide());
+                existing.setOffsetPts(body.getOffsetPts());
+                existing.setLots(body.getLots());
+                LegTemplate saved = legTemplateRepository.save(existing);
+                legTemplateCache.refreshCache();
+                log.info("Leg template updated: {}", saved);
+                return ResponseEntity.ok(Map.of("success", true, "data", saved));
+            })
+            .orElseGet(() -> ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("success", false, "message", "Leg template id=" + id + " not found")));
+    }
+
+    @DeleteMapping("/api/leg-templates/{id}")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> deleteLegTemplate(@PathVariable Long id) {
+        if (!legTemplateRepository.existsById(id)) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND)
+                .body(Map.of("success", false, "message", "Leg template id=" + id + " not found"));
+        }
+        legTemplateRepository.deleteById(id);
+        legTemplateCache.refreshCache();
+        log.info("Leg template deleted: id={}", id);
+        return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    private Map<String, Object> validate(LegTemplate t) {
+        if (t == null) return Map.of("success", false, "message", "Empty body");
+        if (!LONG.equals(t.getDirection()) && !SHORT.equals(t.getDirection()))
+            return Map.of("success", false, "message", "direction must be LONG or SHORT");
+        if (!CE.equals(t.getOptionType()) && !PE.equals(t.getOptionType()))
+            return Map.of("success", false, "message", "optionType must be CE or PE");
+        if (!BUY.equals(t.getSide()) && !SELL.equals(t.getSide()))
+            return Map.of("success", false, "message", "side must be BUY or SELL");
+        if (t.getLots() == null || t.getLots() <= 0)
+            return Map.of("success", false, "message", "lots must be > 0");
+        if (t.getOffsetPts() == null) t.setOffsetPts(0);
+        return null;
     }
 }
