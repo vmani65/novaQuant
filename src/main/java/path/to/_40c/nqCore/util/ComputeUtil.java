@@ -142,7 +142,15 @@ public class ComputeUtil {
 					w.getOpenCharges()  != null && w.getCloseCharges() != null);
 			if (!allPresent) continue;
 
-			pairLegs.forEach(w -> w.setActualPnl(rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()))));
+			pairLegs.forEach(w -> {
+				double actualLegPnL = rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()));
+				w.setActualPnl(actualLegPnL);
+				if (w.getBuyIntendedPrice() != null && w.getSellIntendedPrice() != null) {
+					double expectedLegPnL = rnd(w.getQuantity() * (w.getSellIntendedPrice() - w.getBuyIntendedPrice()));
+					w.setExpectedPnl(expectedLegPnL);
+					w.setPnlCapturePct(formatPnLPercent(actualLegPnL, expectedLegPnL));
+				}
+			});
 
 			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
 			double pairBrokerage  = pairLegs.stream()

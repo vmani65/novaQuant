@@ -24,13 +24,16 @@ import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.CombinedMarginData;
 import com.zerodhatech.models.ContractNote;
 import com.zerodhatech.models.ContractNoteParams;
+import com.zerodhatech.models.Depth;
 import com.zerodhatech.models.Instrument;
 import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
+import com.zerodhatech.models.MarketDepth;
 import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_COMPLETE;
@@ -121,6 +124,46 @@ public class MockKiteGateway implements KiteGateway {
         OrderResponse response = new OrderResponse();
         response.orderId = orderId;
         return response;
+    }
+
+    @Override
+    public Map<String, Quote> getQuote(String[] instruments) {
+        niftySpot = Math.max(23000, Math.min(26000, niftySpot + (random.nextDouble() * 100 - 50)));
+        double spot = Math.round(niftySpot * 100.0) / 100.0;
+        Map<String, Quote> result = new HashMap<>();
+        for (String ins : instruments) {
+            double mid = calcOptionLTP(ins, spot);
+            double halfSpread = Math.max(0.5, mid * 0.005);
+            Quote q = new Quote();
+            q.lastPrice = mid;
+            q.depth = new MarketDepth();
+            q.depth.buy = new ArrayList<>();
+            q.depth.sell = new ArrayList<>();
+            Depth bid = new Depth();
+            bid.setPrice(Math.round((mid - halfSpread) * 20.0) / 20.0);
+            bid.setQuantity(1000);
+            Depth ask = new Depth();
+            ask.setPrice(Math.round((mid + halfSpread) * 20.0) / 20.0);
+            ask.setQuantity(1000);
+            q.depth.buy.add(bid);
+            q.depth.sell.add(ask);
+            result.put(ins, q);
+            log.info("[MOCK] getQuote: {} | mid={} bid={} ask={}", ins, mid, bid.getPrice(), ask.getPrice());
+        }
+        return result;
+    }
+
+    @Override
+    public boolean modifyOrder(String orderId, double newPrice, int newQty, String variety) {
+        executionPrices.put(orderId, newPrice);
+        log.info("[MOCK] modifyOrder: orderId={} newPrice={} newQty={}", orderId, newPrice, newQty);
+        return true;
+    }
+
+    @Override
+    public boolean cancelOrder(String orderId, String variety) {
+        log.info("[MOCK] cancelOrder: orderId={}", orderId);
+        return true;
     }
 
     @Override

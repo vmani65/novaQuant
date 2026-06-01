@@ -38,6 +38,7 @@ public class Constants {
 	
 	public static final int LOT_SIZE = 65;
 	public static final int MAX_SIZE_PER_ORDER = 1755;
+	public static final double NIFTY_OPT_TICK = 0.05;
 
 	public static final String NA = "N/A";
 	

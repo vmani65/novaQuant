@@ -3,6 +3,7 @@ package path.to._40c.nqCore.entity;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -16,6 +17,7 @@ import org.hibernate.annotations.Filter;
 import path.to._40c.nqCore.controller.SignalController;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.INPUT_FORMATS;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import org.hibernate.annotations.FilterDef;
@@ -120,8 +122,26 @@ public class Position extends BaseEntity {
         this.lastSignalAction = signal.action;
         this.lastSignalLeg    = signal.signalType;
         this.strategyName     = signal.strategyName;
-        this.signalAt         = signal.time;
+        this.signalAt         = normalizeSignalTime(signal.time);
         this.legs             = new ArrayList<>();
+    }
+
+    /**
+     * Converts AmiBroker-style signal timestamps (e.g. "01-Jun-2026 11.15.00 AM") into
+     * the same DATE_FORMAT used for opened_at / closed_at ("01-06-2026 11:15:00.000"),
+     * so all three time fields on a position read in the same convention. Falls back
+     * to the raw input if no known format matches.
+     */
+    private static String normalizeSignalTime(String t) {
+        if (t == null || t.isBlank()) return t;
+        String trimmed = t.trim();
+        DateTimeFormatter out = DateTimeFormatter.ofPattern(DATE_FORMAT);
+        for (DateTimeFormatter in : INPUT_FORMATS) {
+            try {
+                return LocalDateTime.parse(trimmed, in).format(out);
+            } catch (DateTimeParseException ignored) {}
+        }
+        return t;
     }
 
     /** addAll semantics (not replace) — Lombok setter suppressed above so prior CLOSED legs survive across rollover/recenter. */

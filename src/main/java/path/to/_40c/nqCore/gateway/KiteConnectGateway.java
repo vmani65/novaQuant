@@ -29,6 +29,7 @@ import com.zerodhatech.models.MarginCalculationParams;
 import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
@@ -104,6 +105,55 @@ public class KiteConnectGateway implements KiteGateway {
             log.error("Exception while placing order", e);
         }
         return null;
+    }
+
+    @Override
+    public Map<String, Quote> getQuote(String[] instruments) {
+        var kite = getKiteConnectObject();
+        if (kite == null) { log.error("KiteConnect null — cannot fetch quote"); return Collections.emptyMap(); }
+        try {
+            return kite.getQuote(instruments);
+        } catch (JSONException | IOException | KiteException e) {
+            log.error("Exception while fetching quote", e);
+        }
+        return Collections.emptyMap();
+    }
+
+    @Override
+    public boolean modifyOrder(String orderId, double newPrice, int newQty, String variety) {
+        var kite = getKiteConnectObject();
+        if (kite == null) { log.error("KiteConnect null — cannot modify order"); return false; }
+        try {
+            OrderParams params = new OrderParams();
+            params.orderType = com.zerodhatech.kiteconnect.utils.Constants.ORDER_TYPE_LIMIT;
+            params.price     = newPrice;
+            params.quantity  = newQty;
+            kite.modifyOrder(orderId, params, variety);
+            return true;
+        } catch (KiteException e) {
+            log.warn("modifyOrder failed for {} — code={} message={}", orderId, e.code, e.getMessage());
+        } catch (JSONException | IOException e) {
+            log.error("modifyOrder exception for {}", orderId, e);
+        }
+        return false;
+    }
+
+    @Override
+    public boolean cancelOrder(String orderId, String variety) {
+        var kite = getKiteConnectObject();
+        if (kite == null) { log.error("KiteConnect null — cannot cancel order"); return false; }
+        try {
+            kite.cancelOrder(orderId, variety);
+            return true;
+        } catch (KiteException e) {
+            // Kite returns an error if the order is already in a terminal state. Log + treat as success
+            // so the caller doesn't loop forever; the subsequent status read will confirm actual state.
+            log.warn("cancelOrder for {} — code={} message={} (likely already terminal)", orderId, e.code, e.getMessage());
+            return true;
+        } catch (JSONException | IOException e) {
+            log.error("cancelOrder exception for {}", orderId, e);
+        }
+        return false;
     }
 
     @Override

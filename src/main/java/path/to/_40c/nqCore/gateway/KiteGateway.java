@@ -14,6 +14,7 @@ import com.zerodhatech.models.MarginCalculationParams;
 import com.zerodhatech.models.Order;
 import com.zerodhatech.models.OrderParams;
 import com.zerodhatech.models.OrderResponse;
+import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
 /**
@@ -34,6 +35,15 @@ public interface KiteGateway {
 
     /** Place a single market order. Returns null on failure. */
     OrderResponse placeOrder(OrderParams params, String variety);
+
+    /** Fetch full quote (depth, LTP, OHLC) for one or more instruments. Returns empty map on failure. */
+    Map<String, Quote> getQuote(String[] instruments);
+
+    /** Modify a working LIMIT order's price (and qty). Returns true on success, false on any failure. */
+    boolean modifyOrder(String orderId, double newPrice, int newQty, String variety);
+
+    /** Cancel a working order. Returns true on success or if the order was already terminal. */
+    boolean cancelOrder(String orderId, String variety);
 
     /** Fetch status-transition history for an order. Last entry = current state. Returns empty list on failure. */
     List<Order> getOrderHistory(String orderId);
