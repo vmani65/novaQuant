@@ -20,7 +20,24 @@
     <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
-        <java.version>17</java.version>
+        <!--
+            ┌──────────────────────────────────────────────────────────────────────┐
+            │ Planned upgrades — see UPGRADE_PLAN.md at repo root for full plan.   │
+            │                                                                      │
+            │ Phase A (LOW risk):  java.version 17 → 21  +  ZGC generational      │
+            │                      +  spring.threads.virtual.enabled=true         │
+            │ Phase B (MED risk):  PositionUtil.LEG_EXEC virtual-thread executor  │
+            │                      replaces IntStream.parallel() at 6 service     │
+            │                      sites + 2 CompletableFuture margin calls       │
+            │ Phase C (LOW risk):  spring-boot-starter-parent 3.5.13 → 4.0.6      │
+            │                      (mock-validated 34/34 PASS on 2026-06-01)      │
+            │                                                                      │
+            │ Each phase ships independently. Read UPGRADE_PLAN.md before doing   │
+            │ ANY of them — it includes pre-flight checks, rollback procedures,   │
+            │ and a do-NOT-do list.                                                │
+            └──────────────────────────────────────────────────────────────────────┘
+        -->
+        <java.version>21</java.version>
     </properties>
 
     <dependencies>
