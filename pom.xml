@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>3.5.13</version>
+        <version>4.0.6</version>
         <relativePath/>
     </parent>
 
@@ -17,26 +17,10 @@
     <packaging>jar</packaging>
 
     <name>nqCore</name>
-    <description>Spring Boot 3.5.13 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
+    <description>Spring Boot 4.0.6 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
-        <!--
-            ┌──────────────────────────────────────────────────────────────────────┐
-            │ Planned upgrades — see UPGRADE_PLAN.md at repo root for full plan.   │
-            │                                                                      │
-            │ Phase A (LOW risk):  java.version 17 → 21  +  ZGC generational      │
-            │                      +  spring.threads.virtual.enabled=true         │
-            │ Phase B (MED risk):  PositionUtil.LEG_EXEC virtual-thread executor  │
-            │                      replaces IntStream.parallel() at 6 service     │
-            │                      sites + 2 CompletableFuture margin calls       │
-            │ Phase C (LOW risk):  spring-boot-starter-parent 3.5.13 → 4.0.6      │
-            │                      (mock-validated 34/34 PASS on 2026-06-01)      │
-            │                                                                      │
-            │ Each phase ships independently. Read UPGRADE_PLAN.md before doing   │
-            │ ANY of them — it includes pre-flight checks, rollback procedures,   │
-            │ and a do-NOT-do list.                                                │
-            └──────────────────────────────────────────────────────────────────────┘
-        -->
+        <!-- Java 21 LTS + Spring Boot 4 + virtual-thread executor; history in UPGRADE_PLAN.md -->
         <java.version>21</java.version>
     </properties>
 
@@ -111,13 +95,14 @@
             <id>production</id>
             <build>
                 <plugins>
-                    <!-- Exclude MockKiteGateway from compilation -->
+                    <!-- Exclude mock-only gateway components from compilation -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
                         <configuration>
                             <excludes>
                                 <exclude>path/to/_40c/nqCore/gateway/MockKiteGateway.java</exclude>
+                                <exclude>path/to/_40c/nqCore/gateway/MockKiteOrderStream.java</exclude>
                             </excludes>
                         </configuration>
                     </plugin>

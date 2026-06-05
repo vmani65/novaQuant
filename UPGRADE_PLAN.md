@@ -1,8 +1,17 @@
 # nqCore — Deferred Upgrade Plan
 
-> **Purpose.** This is a self-contained execution plan for upgrading nqCore's runtime (Java 17 → 21) and its Spring Boot framework (3.5.13 → 4.0.6). It is written so a fresh AI agent or developer can execute each phase end-to-end without breaking core trading logic. Each phase is independent and can be deployed in isolation.
+> **Purpose.** This is a self-contained execution plan for upgrading nqCore's runtime (Java 17 → 21), Spring Boot framework (3.5.13 → 4.0.6), and progressively replacing the order critical path's polling primitives with virtual-thread + event-driven equivalents. It is written so a fresh AI agent or developer can execute each phase end-to-end without breaking core trading logic. Each phase is independent and can be deployed in isolation.
 >
-> **Last updated.** 2026-06-01. The Spring Boot 4.0.6 jar was already built + mock-validated (34/34 tests PASS) on this date; the pom.xml change was reverted to keep current prod stable while the freshly deployed graduated-LIMIT walk validates over a few trading days.
+> **Phase map (high-level):**
+> - **A** — Java 17 → 21 runtime upgrade + `spring.threads.virtual.enabled` (DEPLOYED 2026-06-02).
+> - **B** — Virtual-thread executor (`LEG_EXEC`) for parallel leg ops, replacing FJP common pool.
+> - **C** — Spring Boot 3.5.13 → 4.0.6 framework upgrade.
+> - **D₁** — One-shot quote fetch: collapse 3 Kite quote API calls into 1 per signal (~80ms saved).
+> - **D₂** — WebSocket order-update stream replaces LIMIT-walk sleep-then-poll (~400ms saved per leg).
+>
+> A, B, C are the "infrastructure" phases (runtime, parallelism, framework). D₁/D₂ are the "critical-path latency" phases enabled by A+B. Do them in order, one at a time.
+>
+> **Last updated.** 2026-06-03. Phase D₁ + D₂ plans appended after critical-path analysis of trade #31. The Spring Boot 4.0.6 jar was already built + mock-validated (34/34 tests PASS) on 2026-06-01; the pom.xml change was reverted to keep current prod stable while the freshly deployed graduated-LIMIT walk validates over a few trading days.
 
 ---
 
@@ -518,6 +527,405 @@ Standard `.prev` jar swap. Revert pom.xml parent version to `3.5.13` in source.
 
 ---
 
+# Phase D₁ — One-shot quote fetch (consolidate getLTP + per-leg getQuote)
+
+**Risk: LOW.** Pure refactor — same Kite data, fewer HTTP round-trips. No new protocols, no new dependencies, no new failure modes. The `Quote` payload is a strict superset of `LTPQuote`; the per-leg `getQuote` inside `placeGraduatedLimit` already exists and is deleted by this phase.
+
+**Pre-requisites:**
+- Phase B + Phase C must be in stable prod for at least 3-5 trading days before Phase D₁. Phase B introduces virtual-thread fan-out across legs; D₁ assumes that fan-out is healthy.
+- No LIVE positions.
+- Market closed.
+
+**Time: ~2 hours** (edit, compile, mock, deploy).
+
+## What problem this solves
+
+Each ENTRY or EXIT today makes **3 separate HTTP round-trips to Kite's quote API** when **1 would suffice**:
+
+| Call | Where | Symbols | What we use from the response |
+|---|---|---|---|
+| `getLTP(both legs)` | upfront in `PositionOpeningService` / `PositionClosingService` | 2 | `lastPrice` (for intent-price logging in `buyIntendedPrice` / `sellIntendedPrice`) |
+| `getQuote(leg-1)` | inside `placeGraduatedLimit` on virtual thread #1 | 1 | bid/ask of leg-1 |
+| `getQuote(leg-2)` | inside `placeGraduatedLimit` on virtual thread #2 | 1 | bid/ask of leg-2 |
+
+The Kite quote API returns the same payload shape for 1 or 50 instruments (basket call). `Quote` contains `lastTradedPrice` (same field as `LTPQuote.lastPrice`), plus `depth.buy[].price` and `depth.sell[].price`. We can fetch everything in one call.
+
+**Observed wall-clock cost today** (trade #31 baseline): ~80ms on the slowest-leg critical path is the second quote round-trip. ENTRY total 825ms → projected ~745ms (~10% shaved).
+
+**Bonus benefits:**
+- 67% fewer Kite quote-API calls per signal — meaningful when AmiBroker fires fast flips back-to-back
+- bid/ask used for LIMIT pricing is freshly fetched once, not twice — eliminates the unlikely-but-real case where leg-1 and leg-2 disagree about market state because they fetched 80ms apart
+
+## Changes in Phase D₁
+
+### D₁.1 — Promote `getLTP` call sites to `getQuote`
+
+**What:** Replace `Map<String, LTPQuote>` with `Map<String, Quote>` at all 7 call sites in the entry/exit/recenter/rollover flows. Read `lastTradedPrice` instead of `lastPrice` (same data, different field name on the DTO).
+
+**Why:** `Quote` is a strict superset of `LTPQuote`. Switching the upfront call from `getLTP` to `getQuote` makes the bid/ask data available to the parallel leg dispatch without a second round-trip.
+
+**Sites to update** (read each carefully — adjacent code uses `q.lastPrice` which becomes `q.lastTradedPrice`):
+
+| File | Approx line | Method |
+|---|---|---|
+| `service/PositionOpeningService.java` | 55 | `prepareOpen` (flip path) |
+| `service/PositionOpeningService.java` | 68 | `openTrade` (standard path) |
+| `service/PositionClosingService.java` | 48 | `closeTrade` |
+| `service/PositionRolloverService.java` | 58 | `rollOver` close-side LTP |
+| `service/PositionRolloverService.java` | 112 | `rollOver` open-side LTP |
+| `service/ProfitRecenterService.java` | 70 | `realizeProfits` close-side LTP |
+| `service/ProfitRecenterService.java` | 139 | `realizeProfits` open-side LTP |
+
+The `OpenPrep` record in `PositionOpeningService` ([line 43](src/main/java/path/to/_40c/nqCore/service/PositionOpeningService.java#L43)) also changes type:
+```java
+// before
+public record OpenPrep(List<LegOrder> pojos, Map<String, LTPQuote> ltp) {}
+
+// after
+public record OpenPrep(List<LegOrder> pojos, Map<String, Quote> quotes) {}
+```
+
+### D₁.2 — `PositionUtil.placeAggressiveOrder` / `placeGraduatedLimit` accept the pre-fetched `Quote`
+
+**What:** Thread the leg's `Quote` down through `placeAggressiveOrder` into `placeGraduatedLimit`. Delete the internal `kiteGateway.getQuote(new String[]{key})` call at [PositionUtil.java:548](src/main/java/path/to/_40c/nqCore/util/PositionUtil.java#L548).
+
+**Why:** Eliminates the per-leg quote fetch on the parallel virtual thread. The caller (service layer) already has the data.
+
+**Method signature change:**
+```java
+// before
+public ExecResult placeAggressiveOrder(String ins, String txn, int qty, String contextLabel)
+private ExecResult placeGraduatedLimit(String ins, String txn, int qty, String contextLabel)
+
+// after
+public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel)
+private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel)
+```
+
+Inside `placeGraduatedLimit`, the existing depth-validation block stays (null check, bid≤0/ask<bid/excessive-spread → MARKET fallback) — those guards now apply to the caller-supplied `Quote` instead of a freshly fetched one. Same semantics.
+
+### D₁.3 — `PositionUtil.getLTP(String[])` deprecated
+
+**What:** The `getLTP` wrapper at [PositionUtil.java:461](src/main/java/path/to/_40c/nqCore/util/PositionUtil.java#L461) becomes dead code after D₁.1 removes all callers (except [KiteConnectGateway.java:267](src/main/java/path/to/_40c/nqCore/gateway/KiteConnectGateway.java#L267) which uses it for the NIFTY 50 auth probe — that one stays).
+
+**Action:** Remove `PositionUtil.getLTP` entirely. The auth probe in `KiteConnectGateway` calls `kite.getLTP(...)` directly on the Kite SDK, not through our wrapper, so it's unaffected. The `KiteGateway` interface keeps `getLTP` for that one auth-probe purpose.
+
+### D₁.4 — DO NOT change these in Phase D₁
+
+- **`KiteGateway` interface** — keep `getLTP` for the auth probe. Don't churn the interface.
+- **`MockKiteGateway`** — both `getLTP` and `getQuote` implementations stay. Tests may still call either.
+- **The `Quote` depth validation logic** inside `placeGraduatedLimit` — bid/ask sanity checks, MARKET fallback on bad spread — keep exactly as-is. Same semantics, just operating on caller-supplied data.
+- **`buyIntendedPrice` / `sellIntendedPrice` write logic** — keep using LTP (now `quote.lastTradedPrice`). Don't switch this to mid-price; it's an intent log, not an execution price.
+
+## Phase D₁ execution steps (in order)
+
+1. **Pre-flight check** (same as earlier phases: no LIVE positions, market closed, Phase B+C live in prod).
+
+2. **Edit `PositionUtil.java`**:
+   - Change signatures of `placeAggressiveOrder` and `placeGraduatedLimit` to accept `Quote q`.
+   - Delete the internal `kiteGateway.getQuote(...)` call inside `placeGraduatedLimit`.
+   - Use the passed-in `q` for bid/ask extraction (existing depth-validation block runs against `q` instead of fresh fetch).
+   - Remove the `getLTP(String[])` wrapper method.
+
+3. **Compile sanity:**
+   ```bash
+   mvn -DskipTests clean compile 2>&1 | tail -5
+   # Expected: BUILD SUCCESS
+   # All 7 service-level callers will fail compile until D₁.1 is done
+   ```
+
+4. **Edit the 7 service-level call sites** (D₁.1 list above). After each file:
+   - Compile (`mvn -DskipTests clean compile`)
+   - Eyeball-diff to confirm no logic shifts — just type change `LTPQuote` → `Quote`, field rename `lastPrice` → `lastTradedPrice`
+
+5. **Update `OpenPrep` record** in `PositionOpeningService` to hold `Map<String, Quote>`.
+
+6. **Final compile:** `mvn -DskipTests clean compile` must show BUILD SUCCESS.
+
+7. **Run mock test suite** (per "Mock test pattern"). Expected: **all tests PASS**.
+   - If the suite has new tests for fill counts or quote consumption added since Phase B/C, those still pass.
+
+8. **Build production jar + deploy** via standard pattern.
+
+9. **Post-deploy verification:**
+   - All API endpoints return 200.
+   - Watch the next live trade's logs. Look for **single** `getQuote` HTTP call per signal — there should be no per-leg quote fetch line in the LIMIT-walk log.
+   - Verify `buyIntendedPrice` / `sellIntendedPrice` populated as before (these now come from the new Quote-source, but values should match historical pattern).
+
+10. **Soak** for 1 trading day minimum. Compare entry latency to pre-D₁ baseline — expect ~80ms reduction in the place-orders phase.
+
+## Phase D₁ rollback
+
+`git checkout HEAD path/to/_40c/nqCore/util/PositionUtil.java path/to/_40c/nqCore/service/*.java`
+
+Then deploy via the `.prev` jar swap. The earlier phases (Java 21, virtual threads, Spring Boot 4) stay intact.
+
+---
+
+# Phase D₂ — WebSocket order-update stream (replace LIMIT-walk sleep-then-poll)
+
+**Risk: MEDIUM-HIGH.** New feature touching the order critical path. Adds a persistent WebSocket connection to Kite alongside the existing nqTicker market-data WebSocket. Requires auth lifecycle handling, reconnect logic, and a REST fallback for missed-event cases. Failure modes are operationally observable but the critical path is more complex than today.
+
+**Pre-requisites:**
+- **Phase D₁ must be in stable prod for at least 1 week** before Phase D₂. D₂ builds on D₁'s `Quote`-threading.
+- The graduated-LIMIT walk has been live for at least 4 weeks of clean data so the baseline "fill latency in 500ms walk steps" can be compared to post-D₂ "fill latency in WS-event ms".
+- No LIVE positions.
+- Market closed.
+
+**Time: ~3-5 days** (component + integration + mock fixture + 2 mock soak cycles).
+
+## What problem this solves
+
+Today, [PositionUtil.java:582-600](src/main/java/path/to/_40c/nqCore/util/PositionUtil.java#L582-L600) detects fills with **sleep-then-poll**:
+
+```java
+for (int step = 0; step < WALK_DELAYS_MS.length; step++) {        // {500, 1500, 2500}
+    sleepMillis(deadline - System.currentTimeMillis());            // BLIND SLEEP
+    AttemptResult ar = peekOrderState(resp.orderId);               // REST poll Kite
+    if (filled) return;
+    kiteGateway.modifyOrder(...);                                   // walk price
+}
+```
+
+**Every order minimum-pays the 500ms first-step sleep** before we know if it filled. Observed at trade #31: PE placed `13:15:02.915`, filled `13:15:03.455` — we waited the full 540ms even though the actual exchange-side fill latency was tens of milliseconds.
+
+Kite's order-update WebSocket (`KiteTicker.setOnOrderUpdate(...)`) pushes the fill event the instant the order's state changes on the exchange side — typically 20-80ms after `placeOrder` returns. Replacing the blind sleep with an event-driven await cuts the per-leg fill-detection time from a fixed 500ms minimum to **real fill latency**.
+
+**Expected wall-clock impact** (assuming WS healthy):
+
+| Path | Today | After D₂ |
+|---|---|---|
+| Trade #31 entry (2 legs parallel) | 825ms | ~400ms |
+| Typical entry/exit per leg | 500ms minimum | 30-80ms typical |
+| 4-leg multi-strike entry (future) | ~825ms (FJP-bound) | ~400ms (linear in WS event latency) |
+
+## What WebSocket gives us — the Kite SDK surface
+
+`KiteTicker` is the Kite Connect WebSocket SDK (same dependency we already pull in via `com.zerodhatech.kiteconnect:kiteconnect:4.0.0`; the SDK ships both the REST `KiteConnect` and the WS `KiteTicker` classes).
+
+```java
+KiteTicker ticker = new KiteTicker(accessToken, apiKey);
+
+ticker.setOnOrderUpdate(order -> {
+    // Fires the instant an order's state changes — OPEN → COMPLETE, partial fills, etc.
+    // 'order.orderId' identifies which order this event is for.
+    // 'order.status', 'order.filledQuantity', 'order.averagePrice' carry the new state.
+});
+
+ticker.setOnConnectedListener(() -> { /* mark healthy */ });
+ticker.setOnDisconnectedListener(() -> { /* mark unhealthy → REST fallback */ });
+ticker.setOnErrorListener((err) -> { /* log + mark unhealthy */ });
+
+ticker.connect();
+```
+
+**Connection model:**
+- Single WebSocket per access token (we run one nqCore JVM → one connection).
+- Auth: same `accessToken` used by REST. Renews via existing `KiteAuthService` flow; on token refresh we must reconnect.
+- Order events flow over the same socket as tick events. We don't subscribe to ticks here (nqTicker already does that in a separate process — separate connection, separate access flow).
+- Kite limits ~3 concurrent WS connections per user. nqTicker holds one; nqCore D₂ takes one. Comfortable margin.
+
+## Architecture
+
+### D₂.1 — New `KiteOrderStream` Spring component
+
+**What:** New `@Component` in `path.to._40c.nqCore.gateway.KiteOrderStream` (alongside `KiteConnectGateway`, `MockKiteGateway`). Singleton, owns the `KiteTicker` lifecycle, exposes a `CompletableFuture`-based API for fill-await.
+
+**Skeleton:**
+```java
+@Component
+@Profile("!mock")                                  // real impl only outside mock profile
+public class KiteOrderStream {
+    private static final Logger log = LoggerFactory.getLogger(KiteOrderStream.class);
+
+    private final KiteAuthService authService;     // existing service that holds access token
+    private volatile KiteTicker ticker;
+    private volatile boolean healthy = false;
+    private final ConcurrentHashMap<String, CompletableFuture<Order>> awaiters = new ConcurrentHashMap<>();
+
+    public KiteOrderStream(KiteAuthService authService) { this.authService = authService; }
+
+    @PostConstruct
+    public void connect() { /* build ticker, wire callbacks, connect */ }
+
+    @PreDestroy
+    public void disconnect() { /* graceful close */ }
+
+    /** Register interest in an order's terminal state. Returns a future. */
+    public CompletableFuture<Order> awaitTerminal(String orderId) { /* compute-if-absent */ }
+
+    /** Caller drops interest (e.g. after timeout fallback to REST). */
+    public void cancel(String orderId) { awaiters.remove(orderId); }
+
+    public boolean isHealthy() { return healthy; }
+
+    /** Internal: KiteTicker callback. */
+    private void onOrderUpdate(Order o) {
+        if (o == null || o.orderId == null) return;
+        if (!isTerminal(o.status) && o.filledQuantity == null) return;  // ignore non-meaningful updates
+        var fut = awaiters.remove(o.orderId);
+        if (fut != null) fut.complete(o);
+    }
+
+    /** Internal: on auth-token refresh, tear down + rebuild. */
+    @EventListener
+    public void onTokenRefreshed(TokenRefreshedEvent ev) { reconnect(); }
+}
+```
+
+**Where it lives in the package tree:** `src/main/java/path/to/_40c/nqCore/gateway/KiteOrderStream.java`. Same package as the existing `KiteGateway` / `KiteConnectGateway` / `MockKiteGateway` for consistency.
+
+### D₂.2 — `MockKiteOrderStream` for the mock profile
+
+**What:** Parallel `@Component @Profile("mock")` implementation. Simulates fill events on a timer (instant fill by default, configurable lag for negative tests).
+
+**Why:** Mock tests need to validate the fill-await path without a real WebSocket. The mock fires `onOrderUpdate` synthetically when `MockKiteGateway.placeOrder` returns — same call-graph as production.
+
+### D₂.3 — Wire `placeGraduatedLimit` to use the stream
+
+**What:** Replace the sleep-then-poll loop in [PositionUtil.java:582-600](src/main/java/path/to/_40c/nqCore/util/PositionUtil.java#L582-L600) with event-driven await. Keep the walk-step modifyOrder logic on timeout. Keep the MARKET fallback at the end.
+
+**Critical sequencing — register awaiter BEFORE placeOrder:**
+
+```java
+// before: register placeholder awaiter so we don't miss the event during the placeOrder round-trip
+String pendingKey = "PENDING-" + UUID.randomUUID();
+CompletableFuture<Order> awaitFut = orderStream.awaitTerminal(pendingKey);
+
+OrderResponse resp = kiteGateway.placeOrder(params, ...);
+if (resp == null || resp.orderId == null) {
+    orderStream.cancel(pendingKey);
+    return placeMarketCore(...);
+}
+
+// re-key the awaiter under the real orderId
+orderStream.rekey(pendingKey, resp.orderId);
+
+long t0 = System.currentTimeMillis();
+for (int step = 0; step < WALK_DELAYS_MS.length; step++) {
+    long deadline = t0 + WALK_DELAYS_MS[step];
+    long timeoutMs = Math.max(1, deadline - System.currentTimeMillis());
+
+    try {
+        Order filled = awaitFut.get(timeoutMs, TimeUnit.MILLISECONDS);
+        if (filled.filledQuantity >= qty && isTerminal(filled.status)) {
+            log.info("[{}] {} LIMIT WS-fill at step {} (+{}ms) | avg={} | ids={}",
+                contextLabel, ins, step, System.currentTimeMillis() - t0,
+                filled.averagePrice, filled.orderId);
+            return new ExecResult(filled.orderId, filled.filledQuantity, qty, filled.averagePrice, true, ORDER_COMPLETE);
+        }
+        // partial-fill or non-terminal: fall through to walk-modify
+    } catch (TimeoutException te) {
+        // didn't fill within this step's wall-clock budget
+    } catch (ExecutionException | InterruptedException e) {
+        log.warn("[{}] {} WS await failed: {} — falling back to REST poll", contextLabel, ins, e.getMessage());
+        break;  // exit loop, MARKET fallback handles
+    }
+
+    // Belt-and-suspenders: one REST poll before walking — covers the rare missed-event case
+    AttemptResult ar = peekOrderState(resp.orderId);
+    if (ar.filledQty() >= qty && isTerminal(ar.status())) {
+        orderStream.cancel(resp.orderId);
+        return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
+    }
+
+    // walk price
+    double newPx = roundToTick(isBuy ? mid + halfSp * WALK_AGGRESSION[step] : mid - halfSp * WALK_AGGRESSION[step], NIFTY_OPT_TICK);
+    kiteGateway.modifyOrder(resp.orderId, newPx, qty, Constants.VARIETY_REGULAR);
+
+    // Re-arm the awaiter for the next step's await window
+    awaitFut = orderStream.awaitTerminal(resp.orderId);
+}
+
+// After 2.5s, cancel + MARKET fallback (same as today)
+orderStream.cancel(resp.orderId);
+...
+```
+
+**Critical rules:**
+- **Register before place.** The awaiter must exist *before* `placeOrder` returns, otherwise the fill event can fire between place-return and registration (race window).
+- **REST poll on timeout, then walk.** Catches the rare case where the WS missed an event. Adds zero latency on the happy path (future completes first), one REST call on the unhappy path (no worse than today).
+- **Re-arm awaiter after modifyOrder.** Each walk step is its own await window.
+- **Stream health check.** If `orderStream.isHealthy() == false`, skip the WS path entirely and use today's sleep-then-poll logic. Single config flag turns the whole feature off.
+
+### D₂.4 — Health-aware fallback
+
+**What:** Add an `if (orderStream.isHealthy()) { ...WS path... } else { ...legacy sleep-poll path... }` switch at the top of `placeGraduatedLimit`'s fill-wait section.
+
+**Why:** WebSocket disconnects happen (network blips, broker maintenance, auth refresh window). The system must degrade gracefully to today's behavior, not fail. The legacy code path stays in the source as the fallback — do **not** delete it.
+
+### D₂.5 — Auth refresh integration
+
+**What:** Listen for the existing `TokenRefreshedEvent` (or equivalent — verify the actual event class in `KiteAuthService`) and trigger `KiteOrderStream.reconnect()`.
+
+**Why:** When access token rotates (every ~24 hours), the WS connection's old token becomes invalid. The connection must be torn down and rebuilt with the fresh token.
+
+**Open question for execution time:** does `KiteAuthService` publish a Spring event today? If not, this phase adds one. Verify before coding.
+
+### D₂.6 — DO NOT change these in Phase D₂
+
+- **The legacy sleep-then-poll loop** — keep it in source as the fallback path. It's the safety net for WS-down cases.
+- **The MARKET fallback at the end of `placeGraduatedLimit`** — leaves the position never-un-hedged. Keep exactly as-is.
+- **`kiteGateway.modifyOrder` / `cancelOrder`** — these are still REST. WS is for *observing* fill events, not for placing or modifying.
+- **WALK_DELAYS_MS values** — keep `{500, 1500, 2500}`. The first-step timeout is the wall-clock budget within which a fill is "fast enough" — under WS, fills come back well within 500ms, so the value is harmless. Tightening it later is a separate decision (Tier 2 #4 from the latency analysis).
+- **`placeAutoSliceOrder` path** (large qty > MAX_SIZE_PER_ORDER) — already bypasses the LIMIT walk. No change needed.
+
+## Phase D₂ execution steps (in order)
+
+1. **Pre-flight check** (same as earlier phases).
+
+2. **Verify SDK surface:**
+   ```bash
+   # Confirm KiteTicker is in the SDK jar
+   jar -tf ~/.m2/repository/com/zerodhatech/kiteconnect/kiteconnect/4.0.0/kiteconnect-4.0.0.jar | grep -i KiteTicker
+   ```
+
+3. **Implement `KiteOrderStream`** (D₂.1) — start with skeleton, get it to connect in a standalone test against a non-trading time window (post 15:30 IST).
+
+4. **Implement `MockKiteOrderStream`** (D₂.2) — wire into mock profile, ensure `MockKiteGateway.placeOrder` triggers a synthetic fill event after ~50ms.
+
+5. **Add a mock test** in `test_runner.py` for the WS-await path:
+   - Place an order, assert `placeAggressiveOrder` returns within 100ms (instead of 500ms).
+   - Force `orderStream.healthy = false`, assert fallback to sleep-poll path still works.
+
+6. **Wire `placeGraduatedLimit`** to the stream (D₂.3 + D₂.4). Keep both code paths under the health flag.
+
+7. **Compile + full mock suite** — all tests must PASS, including the new ones.
+
+8. **Mock soak — 2 cycles minimum:**
+   - Cycle 1: WS healthy throughout. Verify all fills detected via WS.
+   - Cycle 2: Mid-cycle, force `MockKiteOrderStream` unhealthy. Verify legacy fallback engages and tests still pass.
+
+9. **Build production jar + stage** in `staged-deploys/`.
+
+10. **Live-validation plan (operator-mediated, not unattended):**
+    - Deploy at weekend or after-hours.
+    - First trading day: monitor every entry/exit's logs. Look for `WS-fill at step 0 (+Xms)` log lines with X << 500. Expect ~30-80ms per leg.
+    - First trading day: also verify the fallback path by checking WS-disconnect log lines (rare in normal operation).
+    - One week post-deploy: pull latency stats from `position.opened_at - signal_received_at` deltas and compare to pre-D₂ baseline.
+
+## Phase D₂ rollback
+
+Two levels of rollback:
+
+**Soft rollback (no jar swap):** flip the WS health flag to permanently-false via a property or a forced `setHealthy(false)` admin endpoint. Code stays deployed, behavior reverts to today's sleep-poll. Useful for "we're seeing weird WS events, kill it for now."
+
+**Hard rollback (jar swap):** standard `.prev` jar swap as in earlier phases. Source revert: remove `KiteOrderStream` component, restore original `placeGraduatedLimit` body.
+
+## Why this is worth the operational complexity
+
+This is a real feature, not a refactor. The operational complexity (WS lifecycle, reconnects, missed events) is non-trivial and the failure modes are subtle. The reasons to do it anyway:
+
+1. **400ms shaved off every entry/exit**, half the current 825ms entry budget. This is the largest single latency win available without changing the LIMIT walk's behavior.
+2. **Less time un-hedged.** During a 2-leg entry, the naked-short PE side currently sits on the books for ~500ms before we know the hedge CE is filled. D₂ cuts that to ~50ms.
+3. **Faster flips.** A long→short flip is close + open back-to-back. Today ~1.6s, after D₂ ~1.0s. Less spot drift between exit and re-entry.
+4. **Scales linearly to multi-strike futures.** Sleep-poll has a hard 500ms floor regardless of leg count. WS-await has only fill latency floor. 4-leg and 6-leg synthetics get the same per-leg detection time as 2-leg.
+5. **Tail-risk reduction.** Sleep-poll's 500ms floor is **worst on the days you'd most want it to be fast** — when Kite REST p99 spikes to 800ms. WS event latency is more uniform across normal and stressed conditions.
+
+This phase is a deliberate cost: ~3-5 days of work + careful first-week monitoring. The payoff is structural, not cosmetic.
+
+---
+
 # Important do-NOT-do list for any agent executing this plan
 
 1. **DO NOT deploy during market hours** (09:15-15:30 IST Mon-Fri). Check current time before touching anything.
@@ -532,6 +940,9 @@ Standard `.prev` jar swap. Revert pom.xml parent version to `3.5.13` in source.
 10. **DO NOT bundle multiple phases into one deploy.** Each phase deploys independently. If A+B+C ever break together, you can't tell which one caused the issue.
 11. **DO NOT swallow a mock test failure.** If even 1 of 34 tests fails, STOP and report. Do not deploy.
 12. **DO NOT push to main / master without an explicit OK from the operator** — these are infrastructure changes, not feature work.
+13. **DO NOT bundle D₁ with D₂.** D₁ is a refactor; D₂ is a feature. Each gets its own deploy + soak window. (Same rule as A/B/C — but worth restating because D₁ unblocks D₂ and the temptation to combine is real.)
+14. **DO NOT delete the legacy sleep-then-poll loop** inside `placeGraduatedLimit` during D₂. It is the fallback path when the WS connection is unhealthy. Removing it leaves the order critical path with no degradation route.
+15. **DO NOT enable D₂'s WebSocket on a JDK older than 21.** The per-order awaiter pattern depends on virtual threads (Phase B) to not pin platform threads while waiting on fill events. Running D₂ without virtual threads will silently saturate the carrier pool under any leg count > 2.
 
 ---
 
@@ -548,8 +959,11 @@ Standard `.prev` jar swap. Revert pom.xml parent version to `3.5.13` in source.
 | `src/main/java/path/to/_40c/nqCore/service/PositionRolloverService.java` | Phase B.3 sites #3, #4 — lines 65, 117 |
 | `src/main/java/path/to/_40c/nqCore/service/ProfitRecenterService.java` | Phase B.3 sites #5, #6 — lines 79, 146 |
 | `src/main/java/path/to/_40c/nqCore/AsyncConfig.java` | Spring async config — DO NOT touch |
-| `src/main/java/path/to/_40c/nqCore/gateway/KiteConnectGateway.java` | Real Kite wrapper — DO NOT touch |
-| `src/main/java/path/to/_40c/nqCore/gateway/MockKiteGateway.java` | Mock used by `mock,test` profile — DO NOT touch |
+| `src/main/java/path/to/_40c/nqCore/gateway/KiteGateway.java` | Gateway interface — D₁ keeps `getLTP` for KiteConnectGateway auth probe |
+| `src/main/java/path/to/_40c/nqCore/gateway/KiteConnectGateway.java` | Real Kite wrapper — `getLTP` retained for NIFTY 50 auth probe (line 267); `getQuote` is used for D₁ |
+| `src/main/java/path/to/_40c/nqCore/gateway/MockKiteGateway.java` | Mock used by `mock,test` profile — D₁ uses existing `getQuote`; D₂ needs sibling `MockKiteOrderStream` |
+| `src/main/java/path/to/_40c/nqCore/gateway/KiteOrderStream.java` | **New in D₂.** Real-WS implementation. Listens to KiteTicker `onOrderUpdate` |
+| `src/main/java/path/to/_40c/nqCore/gateway/MockKiteOrderStream.java` | **New in D₂.** Mock counterpart used by `mock,test` profile |
 | `c:/Users/autotrading/Documents/nqTicker/test_runner.py` | 34-test mock suite |
 | `c:/novaquant/data/sqlite/signals.db` | Production DB |
 | `c:/novaquant/data/sqlite/signals_test.db` | Test DB (used by mock,test profile) |
@@ -564,8 +978,7 @@ Standard `.prev` jar swap. Revert pom.xml parent version to `3.5.13` in source.
 | Phase | Date executed | PR / commit | Status |
 |---|---|---|---|
 | A | 2026-06-02 ~21:56 IST | (unstaged) | **DEPLOYED.** JDK 21.0.11 (Microsoft Build) + spring.threads.virtual.enabled=true. Mock suite 34/34 PASS pre-deploy. LIVE position 29 open at deploy time (operator-authorized override). Final config: **G1GC (NOT ZGC)** — ZGC was tried but rolled back after silent JVM deaths under memory pressure on the 8GB box. See incident note at bottom of this file. |
-| B | — | — | Not started |
-| C | — | — | Not started (mock-validated 2026-06-01, pom revert intentional) |
+| B + C + D₁ + D₂ (bundle) | 2026-06-05 13:02-13:03 IST | (unstaged) | **DEPLOYED as bundle.** Operator override on (a) the "one phase per deploy" rule (#10/#13) and (b) the "no market-hours deploy" rule (#1) — market was open until 15:30 IST and bundle had been mock-validated 43/43 + manually verified 52/52 WS fills the prior session. Pre-deploy snapshot: 0 LIVE positions, PID 3204 (old jar) stopped cleanly, backup at `nqCore-2026.05.jar.prev` (73,359,769 bytes). Post-deploy snapshot: PID 6900, 28.6s startup, 0 ERROR lines, `KiteOrderStream: WS connected` at 13:03:09 on [ReadingThread] confirming D₂ live. Fingerprints verified: `Tomcat 11.0.21` (Phase C), `Hibernate 7.2.12.Final` (Phase C), `o.s.boot.tomcat.TomcatWebServer` (Spring Boot 4 package, Phase C), Java 21.0.11 (Phase A — already in prior deploy). Staged jar SHA256 `ddb99cf51211fc71845a7077f06d31a243e7ce7afc5b8d253ccf0646ba8db29a`. Also shipped: `?busy_timeout=5000` on SQLite JDBC URLs (mitigates D₂-exposed race between `markRolloverComplete()` and post-trade async fill-retrieval). End-to-end live signal validation pending — strategy idle since position #31 closed at 10:40 today; next signal will be the real production verification of D₁ one-shot quote + D₂ WS-await on the live Kite stream. |
 | nqTicker→21 | 2026-06-02 ~22:30 IST | (unstaged in nqTicker repo) | **DEPLOYED.** Separate task authorized by operator: nqTicker `maven.compiler.source/target` bumped 17→21, rebuilt as shaded fat jar, deployed to `C:/novaquant/nqTicker/nqTicker-2026.05.jar` (old jar preserved at `.bak.prePhaseA`). All 6 processes (parent + 5 children: gateway, sqlite, rollover, recenter, log-aggregator) verified on JDK 21 + G1GC. Position 29 detected via signals.db cross-process. Ports 9191/9195 listening; 9192 open-buffer exits off-hours by design. |
 
 ---

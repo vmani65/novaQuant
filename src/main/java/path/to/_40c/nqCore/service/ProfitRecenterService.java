@@ -7,14 +7,14 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
-import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.LTPQuote;
+import com.zerodhatech.models.Quote;
 
 import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.entity.Position;
@@ -67,44 +67,46 @@ public class ProfitRecenterService {
         String[] liveSymbols = trade.getLegs().stream()
                 .map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
 
-        Map<String, LTPQuote> ltpClose = positionUtil.getLTP(liveSymbols);
-        if (ltpClose.isEmpty()) {
-            log.error("realizeProfits: LTP map empty for close leg — aborting (no orders placed)");
+        Map<String, Quote> quotesClose = positionUtil.getQuote(liveSymbols);
+        if (quotesClose.isEmpty()) {
+            log.error("realizeProfits: quote map empty for close leg — aborting (no orders placed)");
             return;
         }
 
         AtomicBoolean allClosed = new AtomicBoolean(true);
         List<WeeklyLeg> legsBeingClosed = new ArrayList<>(trade.getLegs());
 
-        IntStream.range(0, legsBeingClosed.size()).parallel().forEach(i -> {
-            WeeklyLeg leg      = legsBeingClosed.get(i);
-            String          opposite = BUY.equals(leg.getSide()) ? SELL : BUY;
-            LTPQuote q = ltpClose.get(leg.getExchangeSymbol());
-            if (q != null) {
-                if (BUY.equals(opposite))
-                    leg.setBuyIntendedPrice(q.lastPrice);
-                else
-                    leg.setSellIntendedPrice(q.lastPrice);
-            }
-            try {
-                ExecResult er = positionUtil.placeAggressiveOrder(leg.getInstrument(), opposite, leg.getQuantity(), "EXIT");
-                if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-                    leg.setCloseOrderId(er.aggregateOrderIds());
+        List<CompletableFuture<Void>> closeFuts = legsBeingClosed.stream()
+            .map(leg -> CompletableFuture.runAsync(() -> {
+                String opposite = BUY.equals(leg.getSide()) ? SELL : BUY;
+                Quote q = quotesClose.get(leg.getExchangeSymbol());
+                if (q != null) {
+                    if (BUY.equals(opposite))
+                        leg.setBuyIntendedPrice(q.lastPrice);
+                    else
+                        leg.setSellIntendedPrice(q.lastPrice);
                 }
-                if (er.fullyFilled()) {
-                    leg.setStatus(CLOSED);
-                } else {
-                    log.error("[EXIT] {} recenter close NOT fully filled: filled={}/{} term={}",
-                        leg.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
-                    leg.setStatus(FAILED);
+                try {
+                    ExecResult er = positionUtil.placeAggressiveOrder(q, leg.getInstrument(), opposite, leg.getQuantity(), "EXIT");
+                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                        leg.setCloseOrderId(er.aggregateOrderIds());
+                    }
+                    if (er.fullyFilled()) {
+                        leg.setStatus(CLOSED);
+                    } else {
+                        log.error("[EXIT] {} recenter close NOT fully filled: filled={}/{} term={}",
+                            leg.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
+                        leg.setStatus(FAILED);
+                        allClosed.set(false);
+                    }
+                } catch (Exception e) {
+                    log.error("Exception closing {} during realizeProfits: {}",
+                            leg.getInstrument(), e.getMessage(), e);
                     allClosed.set(false);
                 }
-            } catch (Exception e) {
-                log.error("Exception closing {} during realizeProfits: {}",
-                        leg.getInstrument(), e.getMessage(), e);
-                allClosed.set(false);
-            }
-        });
+            }, PositionUtil.LEG_EXEC))
+            .toList();
+        CompletableFuture.allOf(closeFuts.toArray(new CompletableFuture[0])).join();
 
         long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
         if (!allClosed.get()) {
@@ -134,33 +136,35 @@ public class ProfitRecenterService {
         log.info("realizeProfits: opening {} new legs (useRollover={})", newLegs.size(), useRollover);
 
         String[] openSymbols = newLegs.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
-        Map<String, LTPQuote> ltpOpen = positionUtil.getLTP(openSymbols);
-        if (ltpOpen.isEmpty()) {
-            log.error("realizeProfits: LTP map empty for open leg — close already executed, manual intervention needed");
+        Map<String, Quote> quotesOpen = positionUtil.getQuote(openSymbols);
+        if (quotesOpen.isEmpty()) {
+            log.error("realizeProfits: quote map empty for open leg — close already executed, manual intervention needed");
             long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
-            log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (aborted at open LTP)", closeMs, abortOpenMs, closeMs + abortOpenMs);
+            log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (aborted at open quote)", closeMs, abortOpenMs, closeMs + abortOpenMs);
             positionRepository.save(trade);
             return;
         }
 
-        IntStream.range(0, newLegs.size()).parallel().forEach(i -> {
-            LegOrder pojo     = newLegs.get(i);
-            int        totalQty = pojo.getLots() * LOT_SIZE;
-            try {
-                ExecResult er = positionUtil.placeAggressiveOrder(pojo.getInstrument(), pojo.getSide(), totalQty, "ENTRY");
-                if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-                    pojo.setOpenOrderId(er.aggregateOrderIds());
+        List<CompletableFuture<Void>> openFuts = newLegs.stream()
+            .map(pojo -> CompletableFuture.runAsync(() -> {
+                int totalQty = pojo.getLots() * LOT_SIZE;
+                try {
+                    ExecResult er = positionUtil.placeAggressiveOrder(quotesOpen.get(pojo.getExchangeSymbol()), pojo.getInstrument(), pojo.getSide(), totalQty, "ENTRY");
+                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+                        pojo.setOpenOrderId(er.aggregateOrderIds());
+                    }
+                    pojo.setOpenFullyFilled(er.fullyFilled());
+                    if (!er.fullyFilled()) {
+                        log.error("[ENTRY] {} recenter open NOT fully filled: filled={}/{} term={}",
+                            pojo.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
+                    }
+                } catch (Exception e) {
+                    log.error("Exception opening {} during realizeProfits: {}",
+                            pojo.getInstrument(), e.getMessage(), e);
                 }
-                pojo.setOpenFullyFilled(er.fullyFilled());
-                if (!er.fullyFilled()) {
-                    log.error("[ENTRY] {} recenter open NOT fully filled: filled={}/{} term={}",
-                        pojo.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
-                }
-            } catch (Exception e) {
-                log.error("Exception opening {} during realizeProfits: {}",
-                        pojo.getInstrument(), e.getMessage(), e);
-            }
-        });
+            }, PositionUtil.LEG_EXEC))
+            .toList();
+        CompletableFuture.allOf(openFuts.toArray(new CompletableFuture[0])).join();
         long openMs = Duration.between(openStart, Instant.now()).toMillis();
         log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (excl. fill retrieval)", closeMs, openMs, closeMs + openMs);
 
@@ -176,7 +180,7 @@ public class ProfitRecenterService {
             b.setLots(pojo.getLots());
             b.setQuantity(pojo.getLots() * LOT_SIZE);
             b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
-            LTPQuote q = ltpOpen.get(pojo.getExchangeSymbol());
+            Quote q = quotesOpen.get(pojo.getExchangeSymbol());
             if (q != null) {
                 if (BUY.equals(pojo.getSide()))
                     b.setBuyIntendedPrice(q.lastPrice);

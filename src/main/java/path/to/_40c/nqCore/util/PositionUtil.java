@@ -10,7 +10,6 @@ import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
-import static path.to._40c.nqCore.util.Constants.NFO_COLON;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.NIFTY_OPT_TICK;
 import static path.to._40c.nqCore.util.Constants.SELL;
@@ -39,7 +38,6 @@ import com.zerodhatech.kiteconnect.utils.Constants;
 import com.zerodhatech.models.BulkOrderResponse;
 import com.zerodhatech.models.ContractNote;
 import com.zerodhatech.models.ContractNoteParams;
-import com.zerodhatech.models.LTPQuote;
 import com.zerodhatech.models.MarginCalculationData;
 import com.zerodhatech.models.MarginCalculationParams;
 import com.zerodhatech.models.Order;
@@ -52,6 +50,7 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.entity.LegFill;
 import path.to._40c.nqCore.gateway.KiteGateway;
+import path.to._40c.nqCore.gateway.KiteOrderStream;
 import path.to._40c.nqCore.repo.PositionRepository;
 
 @Service
@@ -59,20 +58,31 @@ public class PositionUtil {
 
 	private static final Logger log = LoggerFactory.getLogger(PositionUtil.class);
 
+    /**
+     * Shared virtual-thread executor for parallel leg operations across services.
+     * Used by PositionOpeningService, PositionClosingService, PositionRolloverService,
+     * ProfitRecenterService — replaces FJP common pool for blocking I/O fan-out.
+     * Static lifetime; virtual-thread executors hold negligible resources.
+     */
+    public static final java.util.concurrent.ExecutorService LEG_EXEC =
+        java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+
     private final KiteGateway kiteGateway;
+    private final KiteOrderStream orderStream;
     private final PositionRepository positionRepository;
     private final EntityManager entityManager;
 
     /**
      * When true, placeAggressiveOrder uses graduated LIMIT walk (mid → walk → MARKET fallback)
-     * instead of pure MARKET. Default false for safe rollout — flip in application.properties
-     * once mock + first-day live validation is done.
+     * instead of pure MARKET. Default false; production sets true via application.properties.
      */
     @org.springframework.beans.factory.annotation.Value("${order.execution.use-limit-walk:false}")
     private boolean useLimitWalk;
 
-    public PositionUtil(KiteGateway kiteGateway, PositionRepository positionRepository, EntityManager entityManager) {
+    public PositionUtil(KiteGateway kiteGateway, KiteOrderStream orderStream,
+                        PositionRepository positionRepository, EntityManager entityManager) {
         this.kiteGateway = kiteGateway;
+        this.orderStream = orderStream;
         this.positionRepository = positionRepository;
         this.entityManager = entityManager;
     }
@@ -182,8 +192,8 @@ public class PositionUtil {
                 });
         if (realParams.isEmpty()) return;
 
-        var realFuture     = CompletableFuture.supplyAsync(() -> getMarginCalculation(realParams));
-        var oppositeFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(oppositeParams));
+        var realFuture     = CompletableFuture.supplyAsync(() -> getMarginCalculation(realParams), LEG_EXEC);
+        var oppositeFuture = CompletableFuture.supplyAsync(() -> getMarginCalculation(oppositeParams), LEG_EXEC);
         List<MarginCalculationData> realMargins;
         List<MarginCalculationData> oppositeMargins;
         try {
@@ -450,8 +460,8 @@ public class PositionUtil {
     	return params;
     }
 
-    public Map<String, LTPQuote> getLTP(String[] ins) {
-        return kiteGateway.getLTP(ins);
+    public Map<String, Quote> getQuote(String[] ins) {
+        return kiteGateway.getQuote(ins);
     }
 
     public List<MarginCalculationData> getMarginCalculation(List<MarginCalculationParams> params) {
@@ -508,13 +518,13 @@ public class PositionUtil {
      *
      * Either way, the final fallback is MARKET, so this method never leaves a leg un-hedged.
      */
-    public ExecResult placeAggressiveOrder(String ins, String txn, int qty, String contextLabel) {
+    public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel) {
         if (qty >= MAX_SIZE_PER_ORDER) {
             log.warn("[{}] {} qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", contextLabel, ins, qty);
             return autoSliceFallback(ins, txn, qty, contextLabel);
         }
         return useLimitWalk
-                ? placeGraduatedLimit(ins, txn, qty, contextLabel)
+                ? placeGraduatedLimit(q, ins, txn, qty, contextLabel)
                 : placeMarketCore(ins, txn, qty, contextLabel);
     }
 
@@ -535,10 +545,7 @@ public class PositionUtil {
      * slippage vs pure MARKET on typical ATM NIFTY weekly options (mid is reachable on ~half
      * the orders; the rest walk a tick or two before crossing).
      */
-    private ExecResult placeGraduatedLimit(String ins, String txn, int qty, String contextLabel) {
-        String key = NFO_COLON + ins;
-        Map<String, Quote> quotes = kiteGateway.getQuote(new String[]{key});
-        Quote q = quotes == null ? null : quotes.get(key);
+    private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel) {
         if (q == null || q.depth == null
             || q.depth.buy == null || q.depth.buy.isEmpty()
             || q.depth.sell == null || q.depth.sell.isEmpty()) {
@@ -571,16 +578,41 @@ public class PositionUtil {
         log.info("[{}] {} LIMIT @ {} placed (mid={} spread={}) orderId={}",
                 contextLabel, ins, params.price, mid, ask - bid, resp.orderId);
 
+        // D₂: WS-await if stream healthy, else legacy sleep-then-poll.
+        // The REST peekOrderState after the wait is still the source of truth — the WS
+        // event just lets us short-circuit the wait. On WS error mid-flight, we degrade
+        // to sleep-poll for the remaining steps of THIS attempt (awaitFut=null sentinel).
+        final boolean wsHealthy = orderStream != null && orderStream.isHealthy();
+        java.util.concurrent.CompletableFuture<com.zerodhatech.models.Order> awaitFut =
+                wsHealthy ? orderStream.awaitTerminal(resp.orderId) : null;
+
         long t0 = System.currentTimeMillis();
         for (int step = 0; step < WALK_DELAYS_MS.length; step++) {
             long deadline = t0 + WALK_DELAYS_MS[step];
-            long sleepFor = deadline - System.currentTimeMillis();
-            if (sleepFor > 0) sleepMillis(sleepFor);
+            long waitMs = deadline - System.currentTimeMillis();
+
+            if (awaitFut != null && waitMs > 0) {
+                try {
+                    awaitFut.get(waitMs, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    // event arrived (or already cached) — fall through to REST confirm
+                } catch (java.util.concurrent.TimeoutException te) {
+                    // step deadline reached without event
+                } catch (Exception e) {
+                    log.warn("[{}] {} WS await error: {} — falling back to sleep-poll for remaining steps",
+                            contextLabel, ins, e.getMessage());
+                    awaitFut = null;
+                }
+            } else if (waitMs > 0) {
+                sleepMillis(waitMs);
+            }
 
             AttemptResult ar = peekOrderState(resp.orderId);
             if (ar.filledQty() >= qty && isTerminal(ar.status())) {
-                log.info("[{}] {} LIMIT filled at step {} (+{}ms) | avg={} | ids={}",
-                        contextLabel, ins, step, WALK_DELAYS_MS[step], ar.avgFillPrice(), resp.orderId);
+                long elapsed = System.currentTimeMillis() - t0;
+                log.info("[{}] {} LIMIT filled at step {} (+{}ms wall) | avg={} | ids={} | mode={}",
+                        contextLabel, ins, step, elapsed, ar.avgFillPrice(), resp.orderId,
+                        awaitFut != null ? "WS" : "REST");
+                if (orderStream != null) orderStream.cancel(resp.orderId);
                 return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
             }
             double newPx = roundToTick(isBuy
@@ -589,12 +621,17 @@ public class PositionUtil {
             boolean mod = kiteGateway.modifyOrder(resp.orderId, newPx, qty, Constants.VARIETY_REGULAR);
             log.info("[{}] {} walk step={} newPx={} filledSoFar={}/{} modified={}",
                     contextLabel, ins, step, newPx, ar.filledQty(), qty, mod);
+
+            // Re-arm awaiter for next step — modify resets the order's terminal state.
+            if (awaitFut != null) awaitFut = orderStream.awaitTerminal(resp.orderId);
         }
 
         AttemptResult finalAr = peekOrderState(resp.orderId);
         if (finalAr.filledQty() >= qty && isTerminal(finalAr.status())) {
+            if (orderStream != null) orderStream.cancel(resp.orderId);
             return new ExecResult(resp.orderId, finalAr.filledQty(), qty, finalAr.avgFillPrice(), true, ORDER_COMPLETE);
         }
+        if (orderStream != null) orderStream.cancel(resp.orderId);
         kiteGateway.cancelOrder(resp.orderId, Constants.VARIETY_REGULAR);
         int filledByLimit  = finalAr.filledQty();
         double limitAvg    = filledByLimit > 0 ? finalAr.avgFillPrice() : 0.0;

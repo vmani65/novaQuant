@@ -3,14 +3,14 @@ package path.to._40c.nqCore.service;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
-import java.util.stream.IntStream;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
-import com.zerodhatech.models.LTPQuote;
+import com.zerodhatech.models.Quote;
 
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
@@ -38,13 +38,15 @@ public class PositionOpeningService {
     }
 
     /**
-     * Instruments + LTP pre-fetched by the flip path's async task while close orders execute.
+     * Instruments + quotes (incl. depth + LTP) pre-fetched by the flip path's async task
+     * while close orders execute. One getQuote round-trip covers both LTP-for-intent and
+     * bid/ask for the LIMIT walk in placeGraduatedLimit (D₁).
      */
-    public record OpenPrep(List<LegOrder> pojos, Map<String, LTPQuote> ltp) {}
+    public record OpenPrep(List<LegOrder> pojos, Map<String, Quote> quotes) {}
 
     /**
      * Called by handleFlip's CompletableFuture concurrently with closeTrade.
-     * Builds instruments and fetches LTP for the open leg so both are ready
+     * Builds instruments and fetches quotes for the open leg so both are ready
      * the moment the close completes (~100ms work vs ~500ms close execution).
      */
     public OpenPrep prepareOpen(String signalPrice, String type, Position trade) {
@@ -52,12 +54,12 @@ public class PositionOpeningService {
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
         List<LegOrder> pojos = computeUtil.buildInstrument(signalPrice, trade, false);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
-        Map<String, LTPQuote> ltp = positionUtil.getLTP(symbols);
-        return new OpenPrep(pojos, ltp);
+        Map<String, Quote> quotes = positionUtil.getQuote(symbols);
+        return new OpenPrep(pojos, quotes);
     }
 
     /**
-     * Standard open path used by handleTradeOpen — builds instruments and fetches LTP inline.
+     * Standard open path used by handleTradeOpen — builds instruments and fetches quotes inline.
      */
     public Position openTrade(String signalPrice, String type, Position trade) {
     	trade.setEntrySpot(Double.valueOf(signalPrice));
@@ -65,24 +67,24 @@ public class PositionOpeningService {
     	List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, trade, false);
     	String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
 	    log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
-    	Map<String, LTPQuote> ltp = positionUtil.getLTP(ltpIns);
-    	return placeAndSave(trade, legOrder, ltp);
+    	Map<String, Quote> quotes = positionUtil.getQuote(ltpIns);
+    	return placeAndSave(trade, legOrder, quotes);
     }
 
     /**
-     * Optimised flip path — skips buildInstrument and getLTP since both were
+     * Optimised flip path — skips buildInstrument and getQuote since both were
      * pre-computed by prepareOpen while the close orders were executing on Zerodha.
      */
     public Position openTrade(String signalPrice, String type, Position trade, OpenPrep prep) {
         trade.setEntrySpot(Double.valueOf(signalPrice));
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
-        return placeAndSave(trade, prep.pojos(), prep.ltp());
+        return placeAndSave(trade, prep.pojos(), prep.quotes());
     }
 
-    private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, LTPQuote> ltp) {
+    private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
     	List<WeeklyLeg> childOrderBook = new ArrayList<>();
-    	if (ltp.isEmpty()) {
-    	    log.error("LTP map is empty — aborting trade open for all instruments");
+    	if (quotes.isEmpty()) {
+    	    log.error("Quote map is empty — aborting trade open for all instruments");
     	    trade.setLegs(legOrder.stream().map(pojo -> {
     	        WeeklyLeg b = new WeeklyLeg();
     	        b.setInstrument(pojo.getInstrument()); b.setExchangeSymbol(pojo.getExchangeSymbol());
@@ -94,32 +96,28 @@ public class PositionOpeningService {
     	    trade.setStatus(FAILED);
     	    return positionRepository.save(trade);
     	}
-    	IntStream.range(0, legOrder.size()).parallel().forEach(i -> {
-    	    LegOrder w = legOrder.get(i);
-    	    log.debug("LegOrder to place order is: {}", w);
-    	    int totalQty = w.getLots() * LOT_SIZE;
-    	    try {
-    	        ExecResult er = positionUtil.placeAggressiveOrder(w.getInstrument(), w.getSide(), totalQty, "ENTRY");
-    	        if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-    	            synchronized (w) {
+    	List<CompletableFuture<Void>> futs = legOrder.stream()
+    	    .map(w -> CompletableFuture.runAsync(() -> {
+    	        log.debug("LegOrder to place order is: {}", w);
+    	        int totalQty = w.getLots() * LOT_SIZE;
+    	        try {
+    	            ExecResult er = positionUtil.placeAggressiveOrder(quotes.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, "ENTRY");
+    	            if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
     	                w.setOpenOrderId(er.aggregateOrderIds());
     	            }
-    	        }
-    	        if (!er.fullyFilled()) {
-    	            log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
-    	                w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
-    	            synchronized (w) {
+    	            if (!er.fullyFilled()) {
+    	                log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
+    	                    w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
     	                w.setOpenFullyFilled(false);
-    	            }
-    	        } else {
-    	            synchronized (w) {
+    	            } else {
     	                w.setOpenFullyFilled(true);
     	            }
+    	        } catch (Exception e) {
+    	            log.error("Exception placing order for {} ({} qty): {}", w.getInstrument(), totalQty, e.getMessage(), e);
     	        }
-    	    } catch (Exception e) {
-    	        log.error("Exception placing order for {} ({} qty): {}", w.getInstrument(), totalQty, e.getMessage(), e);
-    	    }
-    	});
+    	    }, PositionUtil.LEG_EXEC))
+    	    .toList();
+    	CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).join();
     	legOrder.forEach(pojo -> {
     		WeeklyLeg b = new WeeklyLeg();
     		b.setInstrument(pojo.getInstrument());
@@ -131,7 +129,7 @@ public class PositionOpeningService {
     		b.setLots(pojo.getLots());
     		b.setQuantity(pojo.getLots() * LOT_SIZE);
     		b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
-    		LTPQuote q = ltp.get(pojo.getExchangeSymbol());
+    		Quote q = quotes.get(pojo.getExchangeSymbol());
     		if (q != null) {
     			if (BUY.equals(pojo.getSide()))
 					b.setBuyIntendedPrice(q.lastPrice);

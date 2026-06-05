@@ -58,6 +58,14 @@ public class MockKiteGateway implements KiteGateway {
     /** Execution price recorded per mock order ID; replayed by getOrderTrades for consistency. */
     private final ConcurrentHashMap<String, Double> executionPrices = new ConcurrentHashMap<>();
 
+    /** Mock WS counterpart — used by placeOrder to inject synthetic fill events that
+     *  drive PositionUtil.placeGraduatedLimit's D₂ WS-await path. */
+    private final MockKiteOrderStream orderStream;
+
+    public MockKiteGateway(MockKiteOrderStream orderStream) {
+        this.orderStream = orderStream;
+    }
+
     /** Simulated NIFTY spot — drifts ±50 per getLTP call, clamped to [23000, 26000]. */
     private volatile double niftySpot = 24500.0;
 
@@ -123,6 +131,10 @@ public class MockKiteGateway implements KiteGateway {
                 params.price, execPrice, orderId);
         OrderResponse response = new OrderResponse();
         response.orderId = orderId;
+        // D₂: inject a synthetic terminal-fill event so the WS-await path completes
+        // within ~50ms, mirroring real Kite WS behavior.
+        orderStream.scheduleSyntheticFill(orderId, params.tradingsymbol,
+                params.transactionType, params.quantity, execPrice);
         return response;
     }
 
