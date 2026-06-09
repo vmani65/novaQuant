@@ -5,6 +5,10 @@ import java.time.ZoneId;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executors;
+import java.util.concurrent.ScheduledExecutorService;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicInteger;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -56,11 +60,22 @@ public class KiteTickerOrderStream implements KiteOrderStream {
 
     private volatile KiteTicker ticker;
     private volatile boolean healthy = false;
+    private volatile boolean shutdownRequested = false;
 
     /** Per-orderId pending awaiter (single shared future for all concurrent callers). */
     private final ConcurrentHashMap<String, CompletableFuture<Order>> awaiters = new ConcurrentHashMap<>();
     /** Per-orderId most-recent unmatched event — handles the place→register race. */
     private final ConcurrentHashMap<String, Order> cachedEvents = new ConcurrentHashMap<>();
+
+    /** Drives the disconnect → reconnect loop. Daemon, single-thread, sized for occasional retries. */
+    private final ScheduledExecutorService reconnectScheduler =
+            Executors.newSingleThreadScheduledExecutor(r -> {
+                Thread t = new Thread(r, "ws-reconnect");
+                t.setDaemon(true);
+                return t;
+            });
+    /** Reconnect attempts since last successful connect — drives the backoff curve, reset on connect. */
+    private final AtomicInteger consecutiveFailures = new AtomicInteger(0);
 
     public KiteTickerOrderStream(
             @Value("${kite.api-key}") String apiKey,
@@ -76,12 +91,15 @@ public class KiteTickerOrderStream implements KiteOrderStream {
 
     @PreDestroy
     public void shutdown() {
+        shutdownRequested = true;
+        reconnectScheduler.shutdownNow();
         disconnectQuietly();
     }
 
     @EventListener(KiteAuthChangedEvent.class)
     public void onAuthChanged(KiteAuthChangedEvent e) {
         log.info("KiteOrderStream: auth changed — reconnecting WS with fresh token");
+        consecutiveFailures.set(0);
         disconnectQuietly();
         tryConnect();
     }
@@ -121,11 +139,13 @@ public class KiteTickerOrderStream implements KiteOrderStream {
             t.setOnOrderUpdateListener(this::onOrderUpdate);
             t.setOnConnectedListener(() -> {
                 healthy = true;
+                consecutiveFailures.set(0);
                 log.info("KiteOrderStream: WS connected");
             });
             t.setOnDisconnectedListener(() -> {
                 healthy = false;
                 log.warn("KiteOrderStream: WS disconnected — legacy REST path will engage");
+                scheduleReconnect();
             });
             t.setOnErrorListener(new OnError() {
                 @Override public void onError(Exception e)       { healthy = false; log.warn("KiteOrderStream: WS error (Exception)", e); }
@@ -152,6 +172,51 @@ public class KiteTickerOrderStream implements KiteOrderStream {
         awaiters.values().forEach(f -> f.cancel(false));
         awaiters.clear();
         cachedEvents.clear();
+    }
+
+    /**
+     * Schedule an active reconnect attempt with exponential backoff.
+     * Called from the OnDisconnect listener — we don't rely solely on KiteTicker's
+     * internal setTryReconnection(true) because its retry budget is exhaustible and
+     * once exceeded the ticker stays dead until our process intervenes.
+     *
+     * Backoff: 5s, 10s, 20s, 40s, then capped at 60s. Reset to 0 on successful connect.
+     */
+    private void scheduleReconnect() {
+        if (shutdownRequested) return;
+        int n = consecutiveFailures.incrementAndGet();
+        long delayMs = Math.min(60_000L, 5_000L * (1L << Math.min(n - 1, 4)));
+        log.info("KiteOrderStream: scheduling reconnect attempt {} in {}ms", n, delayMs);
+        try {
+            reconnectScheduler.schedule(this::attemptReconnect, delayMs, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException ree) {
+            // scheduler shut down between the check above and here — process is dying, ignore
+        }
+    }
+
+    /** Runs on the reconnect-scheduler thread. Tears down any half-dead ticker and rebuilds. */
+    private void attemptReconnect() {
+        if (shutdownRequested || healthy) return;
+        log.info("KiteOrderStream: reconnect attempt firing now (failure #{})", consecutiveFailures.get());
+        try {
+            disconnectQuietly();
+            tryConnect();
+        } catch (Exception e) {
+            log.warn("KiteOrderStream: reconnect attempt threw — will retry: {}", e.getMessage());
+        }
+        // ticker.connect() is asynchronous — followup check confirms whether OnConnect fired
+        try {
+            reconnectScheduler.schedule(() -> {
+                if (shutdownRequested) return;
+                if (healthy) {
+                    log.info("KiteOrderStream: reconnect succeeded; backoff counter reset");
+                    consecutiveFailures.set(0);
+                } else {
+                    log.warn("KiteOrderStream: reconnect attempt did not become healthy — scheduling another");
+                    scheduleReconnect();
+                }
+            }, 5_000L, TimeUnit.MILLISECONDS);
+        } catch (java.util.concurrent.RejectedExecutionException ignored) {}
     }
 
     /** Internal: KiteTicker OnOrderUpdate callback — runs on the SDK's WS thread. */
