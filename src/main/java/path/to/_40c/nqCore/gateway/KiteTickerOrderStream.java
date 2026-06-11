@@ -55,6 +55,15 @@ public class KiteTickerOrderStream implements KiteOrderStream {
     private static final String STATUS_REJECTED  = "REJECTED";
     private static final String STATUS_CANCELLED = "CANCELLED";
 
+    /**
+     * After this many consecutive failed reconnect attempts we go DORMANT — stop the active
+     * retry loop and wait for the next KiteAuthChangedEvent (morning re-auth) to wake us.
+     * A transient network blip recovers within these attempts (~3 min of backoff); a dead
+     * access token (the daily ~07:00 IST expiry) never will, so hammering it is pointless
+     * noise. The KiteAuthChangedEvent path reconnects in ~75ms once fresh auth lands.
+     */
+    private static final int MAX_RECONNECT_ATTEMPTS = 6;
+
     private final String apiKey;
     private final KiteAuthDetailsRepository authRepo;
 
@@ -148,13 +157,16 @@ public class KiteTickerOrderStream implements KiteOrderStream {
                 scheduleReconnect();
             });
             t.setOnErrorListener(new OnError() {
-                @Override public void onError(Exception e)       { healthy = false; log.warn("KiteOrderStream: WS error (Exception)", e); }
+                @Override public void onError(Exception e)       { healthy = false; log.warn("KiteOrderStream: WS error (Exception): {}", e.getMessage()); }
                 @Override public void onError(KiteException ke)  { healthy = false; log.warn("KiteOrderStream: WS error (KiteException) code={} message={}", ke.code, ke.getMessage()); }
                 @Override public void onError(String s)          { healthy = false; log.warn("KiteOrderStream: WS error (String): {}", s); }
             });
-            t.setTryReconnection(true);
-            try { t.setMaximumRetries(10); } catch (KiteException ignored) {}
-            try { t.setMaximumRetryInterval(30); } catch (KiteException ignored) {}
+            // We own reconnection via reconnectScheduler. KiteTicker's own setTryReconnection(true)
+            // spins an internal java.util.Timer that disconnect() does NOT stop — building a fresh
+            // ticker per attempt then leaks that timer, and it keeps hammering a dead token forever
+            // (root cause of the 2026-06-11 morning log-storm: 94 orphaned timers, 1123 errors).
+            // Keep it OFF so there is exactly one reconnection mechanism and no timer to leak.
+            t.setTryReconnection(false);
             t.connect();
             this.ticker = t;
         } catch (Exception e) {
@@ -175,18 +187,22 @@ public class KiteTickerOrderStream implements KiteOrderStream {
     }
 
     /**
-     * Schedule an active reconnect attempt with exponential backoff.
-     * Called from the OnDisconnect listener — we don't rely solely on KiteTicker's
-     * internal setTryReconnection(true) because its retry budget is exhaustible and
-     * once exceeded the ticker stays dead until our process intervenes.
-     *
-     * Backoff: 5s, 10s, 20s, 40s, then capped at 60s. Reset to 0 on successful connect.
+     * Schedule an active reconnect attempt with exponential backoff, bounded by
+     * MAX_RECONNECT_ATTEMPTS. Backoff: 5s, 10s, 20s, 40s, 60s, 60s. After the cap we go
+     * DORMANT — no more scheduling — and rely on the next KiteAuthChangedEvent to wake us.
+     * Reset to 0 on successful connect or on a fresh disconnect-after-connect.
      */
     private void scheduleReconnect() {
         if (shutdownRequested) return;
         int n = consecutiveFailures.incrementAndGet();
+        if (n > MAX_RECONNECT_ATTEMPTS) {
+            log.warn("KiteOrderStream: {} consecutive reconnect failures — going DORMANT. "
+                   + "Legacy REST path stays engaged; will auto-reconnect on next /saveKiteAuth (KiteAuthChangedEvent).",
+                    MAX_RECONNECT_ATTEMPTS);
+            return;
+        }
         long delayMs = Math.min(60_000L, 5_000L * (1L << Math.min(n - 1, 4)));
-        log.info("KiteOrderStream: scheduling reconnect attempt {} in {}ms", n, delayMs);
+        log.info("KiteOrderStream: scheduling reconnect attempt {}/{} in {}ms", n, MAX_RECONNECT_ATTEMPTS, delayMs);
         try {
             reconnectScheduler.schedule(this::attemptReconnect, delayMs, TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.RejectedExecutionException ree) {
@@ -212,7 +228,7 @@ public class KiteTickerOrderStream implements KiteOrderStream {
                     log.info("KiteOrderStream: reconnect succeeded; backoff counter reset");
                     consecutiveFailures.set(0);
                 } else {
-                    log.warn("KiteOrderStream: reconnect attempt did not become healthy — scheduling another");
+                    // not yet healthy — scheduleReconnect() decides whether to retry or go dormant
                     scheduleReconnect();
                 }
             }, 5_000L, TimeUnit.MILLISECONDS);
