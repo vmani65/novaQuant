@@ -31,6 +31,7 @@ import java.util.stream.Collectors;
 import org.hibernate.Session;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -92,20 +93,26 @@ public class PositionUtil {
         if (t != null) {
             t.getLegs().forEach(w -> {
                 if (isPriceAlreadyCaptured(w)) return;
-                String orderId = LIVE.equals(w.getStatus()) ? w.getOpenOrderId() : w.getCloseOrderId();
-                log.info("Fetching executed prices for trade: {} OrderID: {}", t, orderId);
-                List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
-                if (trades != null && !trades.isEmpty()) {
-                    double avgPrice = weightedAvgFillPrice(trades);
-                    log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
-                    if (BUY.equals(w.getSide())) {
-                        if (LIVE.equals(w.getStatus()))   w.setBuyFillPrice(avgPrice);
-                        if (CLOSED.equals(w.getStatus())) w.setSellFillPrice(avgPrice);
+                boolean isLive = LIVE.equals(w.getStatus());
+                String orderId = isLive ? w.getOpenOrderId() : w.getCloseOrderId();
+                MDC.put(MDC_LEG_KEY, (isLive ? "ENTRY" : "EXIT") + ":" + w.getInstrument() + " | ");
+                try {
+                    log.debug("Fetching executed prices for trade id={} orderId={}", t.getId(), orderId);
+                    List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
+                    if (trades != null && !trades.isEmpty()) {
+                        double avgPrice = weightedAvgFillPrice(trades);
+                        log.debug("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
+                        if (BUY.equals(w.getSide())) {
+                            if (LIVE.equals(w.getStatus()))   w.setBuyFillPrice(avgPrice);
+                            if (CLOSED.equals(w.getStatus())) w.setSellFillPrice(avgPrice);
+                        }
+                        if (SELL.equals(w.getSide())) {
+                            if (LIVE.equals(w.getStatus()))   w.setSellFillPrice(avgPrice);
+                            if (CLOSED.equals(w.getStatus())) w.setBuyFillPrice(avgPrice);
+                        }
                     }
-                    if (SELL.equals(w.getSide())) {
-                        if (LIVE.equals(w.getStatus()))   w.setSellFillPrice(avgPrice);
-                        if (CLOSED.equals(w.getStatus())) w.setBuyFillPrice(avgPrice);
-                    }
+                } finally {
+                    MDC.remove(MDC_LEG_KEY);
                 }
             });
         }
@@ -147,12 +154,11 @@ public class PositionUtil {
                 .filter(w -> rollOverClose ? CLOSED.equals(w.getStatus()) : LIVE.equals(w.getStatus()))
                 .forEach(w -> {
                     String orderId = rollOverOpen ? w.getOpenOrderId() : w.getCloseOrderId();
-                    log.info("Fetching executed prices for rollover trade: {} OrderID: {}", t, orderId);
+                    log.debug("Fetching executed prices for rollover trade id={} orderId={}", t.getId(), orderId);
                     List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "rollover executed prices");
-                    log.info("Position Details for OrderID: {} is {}", orderId, (trades != null && !trades.isEmpty()) ? trades : "");
                     if (trades != null && !trades.isEmpty()) {
                         double avgPrice = weightedAvgFillPrice(trades);
-                        log.info("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
+                        log.debug("Average Price (weighted across {} fills): {}", trades.size(), avgPrice);
                         if (BUY.equals(w.getSide())) {
                             if (rollOverOpen) {
                                 w.setBuyFillPrice(Math.round(((w.getBuyFillPrice() != null ? w.getBuyFillPrice() : 0.0) + avgPrice) * 100.0) / 100.0);
@@ -478,7 +484,7 @@ public class PositionUtil {
             log.warn("getOrderTrades called with null/blank orderId — skipping");
             return new ArrayList<>();
         }
-        log.info("Fetching trades for orderId: {}", orderId);
+        log.debug("Fetching trades for orderId: {}", orderId);
         List<com.zerodhatech.models.Trade> allTrades = new ArrayList<>();
         Arrays.stream(orderId.split("\\s*,\\s*"))
               .filter(id -> id != null && !id.trim().isEmpty())
@@ -487,8 +493,9 @@ public class PositionUtil {
                   allTrades.addAll(orderTrades);
                   log.debug("Fetched {} trades for orderId: {}", orderTrades.size(), id);
               });
-        log.info("Total trades fetched: {}", allTrades.size());
-        allTrades.forEach(trade -> log.info("Position[tradeId={}, orderId={}, symbol={}, type={}, qty={}, price={}, fillTime={}]",
+        int totalQty = allTrades.stream().filter(t -> t != null).mapToInt(t -> parseIntSafe(t.quantity)).sum();
+        log.info("fills orderId={}: {} fills, qty={}, wAvg={}", orderId, allTrades.size(), totalQty, weightedAvgFillPrice(allTrades));
+        allTrades.forEach(trade -> log.debug("Fill[tradeId={}, orderId={}, symbol={}, type={}, qty={}, price={}, fillTime={}]",
                 trade.tradeId, trade.orderId, trade.tradingSymbol, trade.transactionType,
                 trade.quantity, trade.averagePrice, trade.fillTimestamp));
         return allTrades;
@@ -517,15 +524,38 @@ public class PositionUtil {
      *   default                  → pure MARKET protection=1 (legacy behavior)
      *
      * Either way, the final fallback is MARKET, so this method never leaves a leg un-hedged.
+     *
+     * Logging: every line emitted while a leg executes carries an MDC tag
+     * "&lt;context&gt;:&lt;instrument&gt; | " for attribution, and the leg's step-by-step story is
+     * flushed as one contiguous multi-line INFO block when the leg finishes (ERROR block
+     * if it dies mid-flight), so parallel legs never interleave their summaries.
      */
     public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel) {
-        if (qty >= MAX_SIZE_PER_ORDER) {
-            log.warn("[{}] {} qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", contextLabel, ins, qty);
-            return autoSliceFallback(ins, txn, qty, contextLabel);
+        MDC.put(MDC_LEG_KEY, contextLabel + ":" + ins + " | ");
+        ExecTrace trace = new ExecTrace();
+        ExecResult result = null;
+        try {
+            if (qty >= MAX_SIZE_PER_ORDER) {
+                log.warn("qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", qty);
+                trace.record("qty %d >= MAX_SIZE_PER_ORDER -> auto-slice MARKET", qty);
+                result = autoSliceFallback(ins, txn, qty, contextLabel, trace);
+            } else if (useLimitWalk) {
+                result = placeGraduatedLimit(q, ins, txn, qty, contextLabel, trace);
+            } else {
+                result = placeMarketCore(ins, txn, qty, contextLabel, trace);
+            }
+            return result;
+        } finally {
+            if (result != null) {
+                log.info("done in {}ms | filled {}/{} avg={} term={}{}",
+                        trace.elapsedMs(), result.totalFilled(), qty,
+                        result.weightedAvgFillPrice(), result.terminalStatus(), trace.render());
+            } else {
+                log.error("ABORTED by exception after {}ms — steps completed before failure:{}",
+                        trace.elapsedMs(), trace.render());
+            }
+            MDC.remove(MDC_LEG_KEY);
         }
-        return useLimitWalk
-                ? placeGraduatedLimit(q, ins, txn, qty, contextLabel)
-                : placeMarketCore(ins, txn, qty, contextLabel);
     }
 
     // ─── Tick walk schedule (used only when useLimitWalk=true) ─────────────────────
@@ -545,22 +575,27 @@ public class PositionUtil {
      * slippage vs pure MARKET on typical ATM NIFTY weekly options (mid is reachable on ~half
      * the orders; the rest walk a tick or two before crossing).
      */
-    private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel) {
+    private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
         if (q == null || q.depth == null
             || q.depth.buy == null || q.depth.buy.isEmpty()
             || q.depth.sell == null || q.depth.sell.isEmpty()) {
-            log.warn("[{}] {} no quote/depth — MARKET fallback", contextLabel, ins);
-            return placeMarketCore(ins, txn, qty, contextLabel);
+            log.warn("no quote/depth — MARKET fallback");
+            trace.record("no quote/depth -> MARKET fallback");
+            return placeMarketCore(ins, txn, qty, contextLabel, trace);
         }
         double bid = q.depth.buy.get(0).getPrice();
         double ask = q.depth.sell.get(0).getPrice();
         if (bid <= 0 || ask <= 0 || ask < bid || (ask - bid) > (ask + bid) * 0.05) {
-            log.warn("[{}] {} unusable spread bid={} ask={} — MARKET fallback", contextLabel, ins, bid, ask);
-            return placeMarketCore(ins, txn, qty, contextLabel);
+            log.warn("unusable spread bid={} ask={} — MARKET fallback", bid, ask);
+            trace.record("unusable spread bid=%s ask=%s -> MARKET fallback", bid, ask);
+            return placeMarketCore(ins, txn, qty, contextLabel, trace);
         }
         double mid    = (bid + ask) / 2.0;
         double halfSp = (ask - bid) / 2.0;
+        double spreadDisp = Math.round((ask - bid) * 100.0) / 100.0;
+        double midDisp    = Math.round(mid * 1000.0) / 1000.0;
         boolean isBuy = BUY.equals(txn);
+        trace.quote("bid=%s ask=%s ltp=%s mid=%s spread=%s", bid, ask, q.lastPrice, midDisp, spreadDisp);
 
         OrderParams params = buildAggressiveOrderParams();
         params.orderType       = Constants.ORDER_TYPE_LIMIT;
@@ -572,11 +607,12 @@ public class PositionUtil {
 
         OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
         if (resp == null || resp.orderId == null) {
-            log.error("[{}] {} LIMIT placeOrder null — MARKET fallback", contextLabel, ins);
-            return placeMarketCore(ins, txn, qty, contextLabel);
+            log.error("LIMIT placeOrder null — MARKET fallback");
+            trace.record("LIMIT placeOrder returned null -> MARKET fallback");
+            return placeMarketCore(ins, txn, qty, contextLabel, trace);
         }
-        log.info("[{}] {} LIMIT @ {} placed (mid={} spread={}) orderId={}",
-                contextLabel, ins, params.price, mid, ask - bid, resp.orderId);
+        log.info("LIMIT @ {} placed orderId={}", params.price, resp.orderId);
+        trace.record("LIMIT @ %s placed orderId=%s", params.price, resp.orderId);
 
         // D₂: WS-await if stream healthy, else legacy sleep-then-poll.
         // The REST peekOrderState after the wait is still the source of truth — the WS
@@ -598,8 +634,8 @@ public class PositionUtil {
                 } catch (java.util.concurrent.TimeoutException te) {
                     // step deadline reached without event
                 } catch (Exception e) {
-                    log.warn("[{}] {} WS await error: {} — falling back to sleep-poll for remaining steps",
-                            contextLabel, ins, e.getMessage());
+                    log.warn("WS await error: {} — falling back to sleep-poll for remaining steps", e.getMessage());
+                    trace.record("WS await error: %s -> sleep-poll for remaining steps", e.getMessage());
                     awaitFut = null;
                 }
             } else if (waitMs > 0) {
@@ -608,10 +644,8 @@ public class PositionUtil {
 
             AttemptResult ar = peekOrderState(resp.orderId);
             if (ar.filledQty() >= qty && isTerminal(ar.status())) {
-                long elapsed = System.currentTimeMillis() - t0;
-                log.info("[{}] {} LIMIT filled at step {} (+{}ms wall) | avg={} | ids={} | mode={}",
-                        contextLabel, ins, step, elapsed, ar.avgFillPrice(), resp.orderId,
-                        awaitFut != null ? "WS" : "REST");
+                trace.record("FILLED %d/%d avg=%s (step %d, mode=%s)",
+                        ar.filledQty(), qty, ar.avgFillPrice(), step, awaitFut != null ? "WS" : "REST");
                 if (orderStream != null) orderStream.cancel(resp.orderId);
                 return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
             }
@@ -619,8 +653,8 @@ public class PositionUtil {
                     ? mid + halfSp * WALK_AGGRESSION[step]
                     : mid - halfSp * WALK_AGGRESSION[step], NIFTY_OPT_TICK);
             boolean mod = kiteGateway.modifyOrder(resp.orderId, newPx, qty, Constants.VARIETY_REGULAR);
-            log.info("[{}] {} walk step={} newPx={} filledSoFar={}/{} modified={}",
-                    contextLabel, ins, step, newPx, ar.filledQty(), qty, mod);
+            log.debug("walk step={} newPx={} filledSoFar={}/{} modified={}", step, newPx, ar.filledQty(), qty, mod);
+            trace.record("step%d -> %s filled %d/%d%s", step, newPx, ar.filledQty(), qty, mod ? "" : " (modify FAILED)");
 
             // Re-arm awaiter for next step — modify resets the order's terminal state.
             if (awaitFut != null) awaitFut = orderStream.awaitTerminal(resp.orderId);
@@ -628,6 +662,7 @@ public class PositionUtil {
 
         AttemptResult finalAr = peekOrderState(resp.orderId);
         if (finalAr.filledQty() >= qty && isTerminal(finalAr.status())) {
+            trace.record("FILLED %d/%d avg=%s (post-walk check)", finalAr.filledQty(), qty, finalAr.avgFillPrice());
             if (orderStream != null) orderStream.cancel(resp.orderId);
             return new ExecResult(resp.orderId, finalAr.filledQty(), qty, finalAr.avgFillPrice(), true, ORDER_COMPLETE);
         }
@@ -636,11 +671,13 @@ public class PositionUtil {
         int filledByLimit  = finalAr.filledQty();
         double limitAvg    = filledByLimit > 0 ? finalAr.avgFillPrice() : 0.0;
         int remaining      = qty - filledByLimit;
-        log.warn("[{}] {} LIMIT walk exhausted, MARKET for remaining qty={}", contextLabel, ins, remaining);
+        log.warn("LIMIT walk exhausted, MARKET for remaining qty={}", remaining);
         if (remaining <= 0) {
+            trace.record("FILLED %d/%d avg=%s via partial LIMIT fills (walk exhausted)", filledByLimit, qty, limitAvg);
             return new ExecResult(resp.orderId, filledByLimit, qty, limitAvg, true, ORDER_COMPLETE);
         }
-        ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel);
+        trace.record("walk exhausted -> cancel LIMIT, MARKET for remaining %d", remaining);
+        ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel, trace);
 
         int combined  = filledByLimit + mkt.totalFilled();
         double avg    = combined > 0
@@ -653,7 +690,7 @@ public class PositionUtil {
     }
 
     /** Pure MARKET path (extracted from old placeAggressiveOrder). Reused as the safety fallback. */
-    private ExecResult placeMarketCore(String ins, String txn, int qty, String contextLabel) {
+    private ExecResult placeMarketCore(String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
         OrderParams params = buildAggressiveOrderParams();
         params.orderType        = Constants.ORDER_TYPE_MARKET;
         params.validity         = Constants.VALIDITY_DAY;
@@ -663,17 +700,18 @@ public class PositionUtil {
         params.marketProtection = 1;
         OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
         if (resp == null || resp.orderId == null) {
-            log.error("[{}] {} placeOrder returned null", contextLabel, ins);
+            log.error("MARKET placeOrder returned null");
+            trace.record("MARKET placeOrder returned null -> PLACE_FAILED");
             return new ExecResult("", 0, qty, 0.0, false, "PLACE_FAILED");
         }
-        log.info("[{}] {} MARKET protection=1 placed: orderId={}", contextLabel, ins, resp.orderId);
+        log.info("MARKET protection=1 placed: orderId={}", resp.orderId);
+        trace.record("MARKET placed orderId=%s", resp.orderId);
 
         AttemptResult ar = verifyAttempt(resp.orderId, ins, contextLabel);
         boolean full = ar.filledQty() == qty;
         String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
         String ids   = ar.filledQty() > 0 ? resp.orderId : "";
-        log.info("[{}] {} done | filled={}/{} | avgFill={} | term={} | ids={}",
-                contextLabel, ins, ar.filledQty(), qty, ar.avgFillPrice(), term, ids);
+        trace.record("MARKET %s %d/%d avg=%s", term, ar.filledQty(), qty, ar.avgFillPrice());
         return new ExecResult(ids, ar.filledQty(), qty, ar.avgFillPrice(), full, term);
     }
 
@@ -685,14 +723,20 @@ public class PositionUtil {
         return new AttemptResult(orderId, parseIntSafe(last.filledQuantity), parseDoubleSafe(last.averagePrice), last.status);
     }
 
+    /**
+     * Rounds price to the nearest tick, then re-rounds to 2 decimals: tick multiples have
+     * ≤2 decimals, but the binary-float product carries artifacts
+     * (1842 * 0.05 = 92.10000000000001) into the price sent to Kite.
+     */
     private static double roundToTick(double price, double tick) {
-        return Math.round(price / tick) * tick;
+        return Math.round(Math.round(price / tick) * tick * 100.0) / 100.0;
     }
 
     /** Fallback for qty >= MAX_SIZE_PER_ORDER — Kite broker-side auto-slice using MARKET orders. */
-    private ExecResult autoSliceFallback(String ins, String txn, int qty, String contextLabel) {
+    private ExecResult autoSliceFallback(String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
         List<BulkOrderResponse> bulk = placeAutoSliceOrder(ins, 0.0, txn, qty);
         if (bulk == null || bulk.isEmpty()) {
+            trace.record("auto-slice returned no orders -> FAILED");
             return new ExecResult("", 0, qty, 0.0, false, "FAILED");
         }
         StringBuilder ids = new StringBuilder();
@@ -706,12 +750,12 @@ public class PositionUtil {
                 totalFilled += ar.filledQty();
                 weightedSum += ar.filledQty() * ar.avgFillPrice();
             }
+            trace.record("slice orderId=%s %s filled %d avg=%s", b.orderId, ar.status(), ar.filledQty(), ar.avgFillPrice());
         }
         double avg = totalFilled > 0 ? Math.round((weightedSum / totalFilled) * 100.0) / 100.0 : 0.0;
         boolean full = totalFilled == qty;
         String term = full ? ORDER_COMPLETE : (totalFilled > 0 ? "PARTIAL" : "FAILED");
-        log.info("[{}] {} autoslice done | filled={}/{} | avgFill={} | term={} | ids={}",
-                contextLabel, ins, totalFilled, qty, avg, term, ids);
+        trace.record("autoslice %s %d/%d avg=%s", term, totalFilled, qty, avg);
         return new ExecResult(ids.toString(), totalFilled, qty, avg, full, term);
     }
 
@@ -730,13 +774,13 @@ public class PositionUtil {
             sleepMillis(200);
         }
         if (last == null) {
-            log.error("[{}] {} orderId={} getOrderHistory empty after retries", contextLabel, ins, orderId);
+            log.error("orderId={} getOrderHistory empty after retries", orderId);
             return new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
         }
         int filledQty = parseIntSafe(last.filledQuantity);
         double avgPrice = parseDoubleSafe(last.averagePrice);
-        log.info("[{}] {} orderId={} status={} filled={}/{} avgPx={} statusMsg={}",
-                contextLabel, ins, orderId, last.status, last.filledQuantity, last.quantity, avgPrice, last.statusMessage);
+        log.debug("orderId={} status={} filled={}/{} avgPx={} statusMsg={}",
+                orderId, last.status, last.filledQuantity, last.quantity, avgPrice, last.statusMessage);
         return new AttemptResult(orderId, filledQty, avgPrice, last.status);
     }
 
@@ -777,6 +821,44 @@ public class PositionUtil {
                              double weightedAvgFillPrice, boolean fullyFilled, String terminalStatus) {}
 
     private record AttemptResult(String orderId, int filledQty, double avgFillPrice, String status) {}
+
+    /** MDC key carrying the per-leg log tag ("&lt;context&gt;:&lt;instrument&gt; | "), rendered via %X{leg} in logback. */
+    private static final String MDC_LEG_KEY = "leg";
+
+    /**
+     * Per-leg execution trace: accumulates step lines with +ms offsets during one
+     * placeAggressiveOrder call and renders them as a single multi-line block, so the
+     * complete story of each leg appears contiguously in the log even when several legs
+     * execute in parallel. Confined to the leg's own thread — not thread-safe by design.
+     */
+    private static final class ExecTrace {
+        private final long t0 = System.currentTimeMillis();
+        private final StringBuilder block = new StringBuilder();
+
+        /** Records the pre-placement quote snapshot (no time offset — it anchors the walk). */
+        void quote(String fmt, Object... args) {
+            add("quote", fmt, args);
+        }
+
+        /** Records one execution step, stamped with milliseconds elapsed since leg start. */
+        void record(String fmt, Object... args) {
+            add("+" + (System.currentTimeMillis() - t0) + "ms", fmt, args);
+        }
+
+        long elapsedMs() {
+            return System.currentTimeMillis() - t0;
+        }
+
+        String render() {
+            return block.toString();
+        }
+
+        private void add(String label, String fmt, Object... args) {
+            block.append(System.lineSeparator())
+                 .append("    ").append(String.format("%-9s ", label))
+                 .append(String.format(fmt, args));
+        }
+    }
 
     public List<String> getNiftyInstruments() {
         return kiteGateway.getInstruments(NFO).stream()

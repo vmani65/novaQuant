@@ -1,6 +1,7 @@
 package path.to._40c.nqCore.gateway;
 
 import java.time.LocalDate;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
@@ -63,6 +64,17 @@ public class KiteTickerOrderStream implements KiteOrderStream {
      * noise. The KiteAuthChangedEvent path reconnects in ~75ms once fresh auth lands.
      */
     private static final int MAX_RECONNECT_ATTEMPTS = 6;
+
+    /**
+     * Active reconnect only runs inside this daily window (IST). NSE trades 09:15–15:30;
+     * we buffer to 09:00–16:00. Outside it, a WS drop is almost always the daily ~07:00
+     * access-token expiry (which no reconnect can fix until the morning /saveKiteAuth) or
+     * the after-close idle period (no trading, nothing to detect) — so we stay dormant
+     * instead of burning attempts. The KiteAuthChangedEvent path reconnects directly and
+     * is NOT gated by this window (morning re-auth at ~08:49 still connects immediately).
+     */
+    private static final LocalTime RECONNECT_WINDOW_START = LocalTime.of(9, 0);
+    private static final LocalTime RECONNECT_WINDOW_END    = LocalTime.of(16, 0);
 
     private final String apiKey;
     private final KiteAuthDetailsRepository authRepo;
@@ -194,6 +206,12 @@ public class KiteTickerOrderStream implements KiteOrderStream {
      */
     private void scheduleReconnect() {
         if (shutdownRequested) return;
+        if (!withinReconnectWindow()) {
+            log.info("KiteOrderStream: WS down outside reconnect window ({}–{} IST) — staying dormant, "
+                   + "REST fallback engaged; will reconnect on next /saveKiteAuth (KiteAuthChangedEvent).",
+                    RECONNECT_WINDOW_START, RECONNECT_WINDOW_END);
+            return;
+        }
         int n = consecutiveFailures.incrementAndGet();
         if (n > MAX_RECONNECT_ATTEMPTS) {
             log.warn("KiteOrderStream: {} consecutive reconnect failures — going DORMANT. "
@@ -233,6 +251,12 @@ public class KiteTickerOrderStream implements KiteOrderStream {
                 }
             }, 5_000L, TimeUnit.MILLISECONDS);
         } catch (java.util.concurrent.RejectedExecutionException ignored) {}
+    }
+
+    /** True if now (IST) is within the active-reconnect window [09:00, 16:00]. */
+    private boolean withinReconnectWindow() {
+        LocalTime now = LocalTime.now(ZoneId.of(ZONE_ID));
+        return !now.isBefore(RECONNECT_WINDOW_START) && !now.isAfter(RECONNECT_WINDOW_END);
     }
 
     /** Internal: KiteTicker OnOrderUpdate callback — runs on the SDK's WS thread. */
