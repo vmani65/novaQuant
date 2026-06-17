@@ -142,7 +142,7 @@
                 <!-- Filter -->
                 <div id="filterBar" style="display:none;" class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
                     <button onclick="setFilter('ALL')" id="fAll" class="filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700">All</button>
-                    <button onclick="setFilter('OPEN')" id="fOpen" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Open</button>
+                    <button onclick="setFilter('LIVE')" id="fLive" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Live</button>
                     <button onclick="setFilter('CLOSED')" id="fClosed" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Closed</button>
                 </div>
                 <!-- Trade count -->
@@ -239,7 +239,8 @@
 
     function statusBadge(status) {
         if (!status) return '—';
-        return badge(status, status === 'OPEN' ? 'badge-open' : 'badge-closed');
+        const cls = status === 'LIVE' ? 'badge-open' : status === 'FAILED' ? 'badge-loss' : 'badge-closed';
+        return badge(status, cls);
     }
 
     function typeBadge(type) {

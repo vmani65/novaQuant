@@ -691,7 +691,8 @@
                     equity:   filteredIndices.map(i => data.equity[i]),
                     lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
                     outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
-                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : []
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
+                    charges:  data.charges  ? filteredIndices.map(i => data.charges[i])  : []
                 };
             },
 
@@ -712,7 +713,8 @@
                     equity:   filteredIndices.map(i => data.equity[i]),
                     lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
                     outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
-                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : []
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
+                    charges:  data.charges  ? filteredIndices.map(i => data.charges[i])  : []
                 };
             },
 
@@ -740,14 +742,30 @@
                 }
                 const totalTrades = winCount + lossCount;
                 const winRate     = totalTrades > 0 ? ((winCount / totalTrades) * 100).toFixed(1) + '%' : '-';
-                const avgWin      = winCount  > 0 ? (winPtsSum  / winCount).toFixed(1)  + ' pts' : '-';
-                const avgLoss     = lossCount > 0 ? (lossPtsSum / lossCount).toFixed(1) + ' pts' : '-';
+                const avgWin      = winCount  > 0 ? (winPtsSum  / winCount).toFixed(1)  : '-';
+                const avgLoss     = lossCount > 0 ? (lossPtsSum / lossCount).toFixed(1) : '-';
                 document.getElementById('winRate').textContent    = winRate;
                 document.getElementById('winRate').style.color    = '#059669';
                 document.getElementById('avgWinSize').textContent = avgWin;
                 document.getElementById('avgWinSize').style.color = '#059669';
                 document.getElementById('avgLossSize').textContent = avgLoss;
                 document.getElementById('avgLossSize').style.color = '#dc2626';
+                const pointsCaptured = winPtsSum - lossPtsSum;
+                document.getElementById('winPoints').textContent      = totalTrades > 0 ? winPtsSum.toFixed(1) : '-';
+                document.getElementById('winPoints').style.color      = '#059669';
+                document.getElementById('lossPoints').textContent     = totalTrades > 0 ? lossPtsSum.toFixed(1) : '-';
+                document.getElementById('lossPoints').style.color     = '#dc2626';
+                document.getElementById('pointsCaptured').textContent = totalTrades > 0 ? pointsCaptured.toFixed(1) : '-';
+                document.getElementById('pointsCaptured').style.color = pointsCaptured >= 0 ? '#059669' : '#dc2626';
+                const avgPointsPerTrade = totalTrades > 0 ? pointsCaptured / totalTrades : 0;
+                document.getElementById('avgPointsPerTrade').textContent = totalTrades > 0 ? avgPointsPerTrade.toFixed(1) : '-';
+                document.getElementById('avgPointsPerTrade').style.color = avgPointsPerTrade >= 0 ? '#059669' : '#dc2626';
+                const tradeCount = outcomes.length;
+                document.getElementById('tradeCount').textContent = tradeCount > 0 ? String(tradeCount) : '-';
+                const charges = data.charges || [];
+                const totalBrokerage = charges.reduce((sum, c) => sum + (c || 0), 0);
+                document.getElementById('totalBrokerage').textContent = tradeCount > 0 ? '₹' + totalBrokerage.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '-';
+                document.getElementById('totalBrokerage').style.color = '#dc2626';
                 const equityValues = data.equity || [];
                 const lotSizes     = data.lotSize || [];
                 const drawdowns    = [];
@@ -1362,7 +1380,7 @@
                     <div id="equityCurveContainer" style="display:none;" class="relative">
                         <div class="loading-overlay"><div class="spinner"></div></div>
                         <canvas id="equityCurveChart" style="max-height:380px;"></canvas>
-                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-7 gap-4 text-center text-xs">
+                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 text-center text-xs">
                             <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Starting Equity</div>
                                 <div id="startingEquity" class="font-semibold text-gray-900 font-mono">₹0</div>
@@ -1384,12 +1402,36 @@
                                 <div id="winRate" class="font-semibold font-mono">-</div>
                             </div>
                             <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">No of Trades</div>
+                                <div id="tradeCount" class="font-semibold text-gray-900 font-mono">-</div>
+                            </div>
+                            <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Win</div>
                                 <div id="avgWinSize" class="font-semibold font-mono">-</div>
                             </div>
                             <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Loss</div>
                                 <div id="avgLossSize" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Win Points</div>
+                                <div id="winPoints" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Loss Points</div>
+                                <div id="lossPoints" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Net Points</div>
+                                <div id="pointsCaptured" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Pts/Trade</div>
+                                <div id="avgPointsPerTrade" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Charges</div>
+                                <div id="totalBrokerage" class="font-semibold font-mono">-</div>
                             </div>
                         </div>
                     </div>

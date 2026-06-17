@@ -46,6 +46,7 @@ public class EquityCurveService {
         List<Integer> lotSizes    = new ArrayList<>();
         List<String> outcomes     = new ArrayList<>();
         List<Double> points       = new ArrayList<>();
+        List<Double> charges      = new ArrayList<>();
 
         List<Position> sorted = trades.stream()
             .filter(t -> t.getEndingCapital() != null && t.getOpenedAt() != null)
@@ -67,11 +68,12 @@ public class EquityCurveService {
             lotSizes.add(trade.getLots() != null ? trade.getLots() : 0);
             outcomes.add(trade.getResult() != null ? trade.getResult() : "");
             points.add(trade.getPointsPnl() != null ? trade.getPointsPnl() : 0.0);
+            charges.add(trade.getTotalCharges() != null ? trade.getTotalCharges() : 0.0);
         }
 
         double currentEquity = equityValues.isEmpty() ? startingEquity
                 : equityValues.get(equityValues.size() - 1);
-        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, lotSizes, outcomes, points);
+        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, lotSizes, outcomes, points, charges);
     }
 
     private String formatDate(String dateStr) {

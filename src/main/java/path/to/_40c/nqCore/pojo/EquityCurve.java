@@ -15,6 +15,7 @@ public class EquityCurve {
     private List<Integer> lotSize;
     private List<String> outcomes;
     private List<Double> points;
+    private List<Double> charges;
 
     public EquityCurve() {}
 }
