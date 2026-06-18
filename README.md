@@ -6,7 +6,7 @@ Automated options trading service for NIFTY weekly synthetic positions. The deci
 
 | Layer | Technology |
 |---|---|
-| Runtime | Java 21 (Microsoft Build OpenJDK 21 LTS, G1GC) + virtual threads |
+| Runtime | Java 25 (Eclipse Temurin 25 LTS, G1GC) + virtual threads |
 | Framework | Spring Boot 4.0.6 (JAR packaging, embedded Tomcat 11) |
 | Persistence | SQLite via Hibernate ORM 7.2 (community dialect) |
 | UI | Thymeleaf (`signalHome.html` + `tradeLog.html`) |
@@ -65,7 +65,7 @@ mvn clean package -Pproduction
 java -jar target/nqCore-2026.05.jar  # defaults to 'live' profile per spring.profiles.default
 ```
 
-Open [http://localhost:8080/signalHome](http://localhost:8080/signalHome). On startup, JDK 21 logs Tomcat's request handlers as `tomcat-handler-N` (virtual threads) instead of `http-nio-N` (platform threads).
+Open [http://localhost:8080/signalHome](http://localhost:8080/signalHome). On startup, JDK 25 logs Tomcat's request handlers as `tomcat-handler-N` (virtual threads) instead of `http-nio-N` (platform threads).
 
 ### Profiles
 
@@ -225,7 +225,7 @@ Key flags:
 
 ```properties
 order.execution.use-limit-walk=true    # graduated LIMIT walk vs pure MARKET
-spring.threads.virtual.enabled=true    # Tomcat + @Async on virtual threads (Java 21)
+spring.threads.virtual.enabled=true    # Tomcat + @Async on virtual threads (Java 25)
 nq.ticker.url=http://localhost:9192    # OpenBufferConsumer endpoint
 ```
 

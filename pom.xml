@@ -13,15 +13,14 @@
 
     <groupId>path.to</groupId>
     <artifactId>nqCore</artifactId>
-    <version>2026.05</version>
+    <version>2026.06</version>
     <packaging>jar</packaging>
 
     <name>nqCore</name>
     <description>Spring Boot 4.0.6 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
-        <!-- Java 21 LTS + Spring Boot 4 + virtual-thread executor; history in UPGRADE_PLAN.md -->
-        <java.version>21</java.version>
+        <java.version>25</java.version>
     </properties>
 
     <dependencies>
@@ -63,6 +62,20 @@
     </dependencies>
     <build>
         <plugins>
+            <!-- JDK 23+ needs Lombok declared as an explicit annotation-processor path -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-compiler-plugin</artifactId>
+                <configuration>
+                    <annotationProcessorPaths>
+                        <path>
+                            <groupId>org.projectlombok</groupId>
+                            <artifactId>lombok</artifactId>
+                            <version>${lombok.version}</version>
+                        </path>
+                    </annotationProcessorPaths>
+                </configuration>
+            </plugin>
             <plugin>
                 <groupId>org.springframework.boot</groupId>
                 <artifactId>spring-boot-maven-plugin</artifactId>
@@ -75,27 +88,27 @@
                     </excludes>
                 </configuration>
             </plugin>
+            <!-- Grant native access to classpath code (sqlite-jdbc) so the java launcher
+                 reads it at startup; avoids the JDK 25 native-access warning without a flag -->
+            <plugin>
+                <groupId>org.apache.maven.plugins</groupId>
+                <artifactId>maven-jar-plugin</artifactId>
+                <configuration>
+                    <archive>
+                        <manifestEntries>
+                            <Enable-Native-Access>ALL-UNNAMED</Enable-Native-Access>
+                        </manifestEntries>
+                    </archive>
+                </configuration>
+            </plugin>
         </plugins>
     </build>
 
-    <!--
-        Maven build profiles
-
-        Default (no -P flag): mvn clean install
-          Includes MockKiteGateway + application-mock.properties.
-          Used for local development and Postman testing.
-
-        Production: mvn clean install -Pproduction
-          Excludes MockKiteGateway.java from compilation (class absent from JAR).
-          Excludes application-mock.properties from classpath.
-          Run JAR with env var SPRING_PROFILES_ACTIVE=live
-    -->
     <profiles>
         <profile>
             <id>production</id>
             <build>
                 <plugins>
-                    <!-- Exclude mock-only gateway components from compilation -->
                     <plugin>
                         <groupId>org.apache.maven.plugins</groupId>
                         <artifactId>maven-compiler-plugin</artifactId>
@@ -111,7 +124,6 @@
                         <artifactId>spring-boot-maven-plugin</artifactId>
                     </plugin>
                 </plugins>
-                <!-- Exclude application-mock.properties from the packaged JAR -->
                 <resources>
                     <resource>
                         <directory>src/main/resources</directory>
