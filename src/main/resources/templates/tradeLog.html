@@ -1,0 +1,438 @@
+<!DOCTYPE html>
+<html xmlns:th="http://www.thymeleaf.org">
+<head>
+    <title>nqCore — Trade Log</title>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
+    <style>
+        html { scroll-behavior: smooth; }
+
+        /* Sidebar active link */
+        .sidebar-link.active { background: #eff6ff; color: #2563eb; border-left-color: #2563eb; font-weight: 500; }
+
+        /* Trade rows */
+        .trade-row { cursor: pointer; transition: background .1s; }
+        .trade-row:hover { background: #f8fafc; }
+        .child-row { display: none; }
+        .child-row.open { display: table-row; }
+
+        /* Outcome badges */
+        .badge-win    { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
+        .badge-loss   { background: #fee2e2; color: #991b1b; border: 1px solid #fca5a5; }
+        .badge-open   { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+        .badge-closed { background: #f9fafb; color: #374151; border: 1px solid #d1d5db; }
+        .badge-ce     { background: #eff6ff; color: #1d4ed8; border: 1px solid #93c5fd; }
+        .badge-pe     { background: #fdf4ff; color: #7e22ce; border: 1px solid #d8b4fe; }
+        .badge-buy    { background: #f0fdf4; color: #15803d; border: 1px solid #86efac; }
+        .badge-sell   { background: #fff1f2; color: #9f1239; border: 1px solid #fda4af; }
+
+        /* Loading spinner */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { width: 24px; height: 24px; border: 3px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin .7s linear infinite; display: inline-block; }
+
+        /* Scrollbar */
+        ::-webkit-scrollbar { width: 5px; height: 5px; }
+        ::-webkit-scrollbar-track { background: #f1f5f9; }
+        ::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; }
+
+        /* Child row indent */
+        .child-leg td:first-child { padding-left: 48px; }
+    </style>
+</head>
+
+<body class="bg-gray-50 font-sans text-sm leading-relaxed text-gray-900 antialiased">
+
+<!-- ===== TOPBAR ===== -->
+<header class="sticky top-0 z-50 h-14 bg-white border-b border-gray-200 flex items-center justify-between px-8">
+    <a href="/signalHome" class="flex items-center gap-2.5 no-underline hover:opacity-80 transition-opacity">
+        <img src="/img/nc.png" alt="nQ" class="w-7 h-7 rounded-md">
+        <span class="text-[15px] font-semibold tracking-tight text-gray-900">nqCore</span>
+    </a>
+    <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+        <span id="topbarDate"></span>
+    </div>
+</header>
+
+<!-- ===== LAYOUT ===== -->
+<div class="flex" style="min-height: calc(100vh - 56px)">
+
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="w-[220px] shrink-0 bg-white border-r border-gray-200 py-5 sticky top-14 overflow-y-auto" style="height: calc(100vh - 56px)">
+
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Auth</div>
+            <a href="/signalHome#auth" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="12" height="9" rx="1"/><path d="M5 5V4a3 3 0 0 1 6 0v1"/></svg>
+                Login &amp; Token
+            </a>
+            <a href="/signalHome#symbols" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,4"/></svg>
+                Symbols
+            </a>
+        </div>
+
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Operations</div>
+            <a href="/signalHome#rollover" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 0 6-6"/><polyline points="5,2 2,2 2,5"/></svg>
+                Rollover
+            </a>
+            <a href="/signalHome#cache" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="5" rx="5" ry="2.5"/><path d="M3 5v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V5"/><path d="M3 8v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V8"/></svg>
+                Cache
+            </a>
+            <a href="/signalHome#instruments" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>
+                Instruments
+            </a>
+        </div>
+
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">System</div>
+            <a href="/signalHome#position-size" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="5" width="3" height="10"/><rect x="11" y="2" width="3" height="13"/></svg>
+                Position Size
+            </a>
+        </div>
+
+        <div>
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Analytics</div>
+            <a href="/signalHome#equity" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,14 5,8 9,10 15,3"/></svg>
+                Equity Curve
+            </a>
+            <a href="/signalHome#calendar" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="1" x2="5" y2="5"/><line x1="11" y1="1" x2="11" y2="5"/></svg>
+                Calendar
+            </a>
+            <a href="/tradeLog" class="sidebar-link active flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/><line x1="4" y1="11" x2="6" y2="11"/></svg>
+                Trade Log
+            </a>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN ===== -->
+    <main class="flex-1 min-w-0 p-8">
+
+        <!-- Header bar -->
+        <div class="flex items-center justify-between mb-6">
+            <div>
+                <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-1">Analytics</div>
+                <h1 class="text-lg font-semibold text-gray-900">Trade Log</h1>
+            </div>
+            <div class="flex items-center gap-3">
+                <!-- Filter -->
+                <div id="filterBar" style="display:none;" class="flex items-center gap-1 bg-gray-100 rounded-lg p-1">
+                    <button onclick="setFilter('ALL')" id="fAll" class="filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700">All</button>
+                    <button onclick="setFilter('LIVE')" id="fLive" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Live</button>
+                    <button onclick="setFilter('CLOSED')" id="fClosed" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Closed</button>
+                </div>
+                <!-- Trade count -->
+                <span id="tradeCount" class="text-xs text-gray-400" style="display:none;"></span>
+                <!-- Buttons -->
+                <button id="loadBtn" onclick="loadTrades()"
+                        class="flex items-center gap-2 px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg border-0 cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+                    Load Trades
+                </button>
+                <button id="unloadBtn" onclick="unloadTrades()" style="display:none;"
+                        class="flex items-center gap-2 px-4 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-semibold rounded-lg border-0 cursor-pointer">
+                    <svg class="w-3.5 h-3.5" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+                    Unload
+                </button>
+            </div>
+        </div>
+
+        <!-- Empty state -->
+        <div id="emptyState" class="flex flex-col items-center justify-center py-32 text-center">
+            <div class="w-16 h-16 rounded-2xl bg-gray-100 flex items-center justify-center mb-4">
+                <svg class="w-8 h-8 text-gray-300" fill="none" stroke="currentColor" stroke-width="1.5" viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="9" y1="21" x2="9" y2="9"/></svg>
+            </div>
+            <div class="text-sm font-medium text-gray-400 mb-1">No trades loaded</div>
+            <div class="text-xs text-gray-300">Click "Load Trades" to fetch records from the database</div>
+        </div>
+
+        <!-- Loading indicator -->
+        <div id="loadingState" style="display:none;" class="flex items-center justify-center py-32 gap-3 text-gray-400 text-sm">
+            <div class="spinner"></div>
+            Fetching trades...
+        </div>
+
+        <!-- Error state -->
+        <div id="errorState" style="display:none;" class="flex flex-col items-center justify-center py-32 text-center">
+            <div class="text-rose-500 text-sm font-medium mb-1">Failed to load trades</div>
+            <div id="errorMsg" class="text-xs text-gray-400"></div>
+        </div>
+
+        <!-- Trade table -->
+        <div id="tableContainer" style="display:none;">
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <table class="w-full text-xs" id="tradeTable">
+                    <thead>
+                        <tr class="border-b border-gray-100 bg-gray-50">
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500 w-8"></th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">#</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Opened</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Closed</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Type</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Status</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Outcome</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Entry</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Exit</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Points</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Exp P&amp;L</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Actual P&amp;L</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Diff%</th>
+                            <th class="px-4 py-3 text-right font-semibold text-gray-500">Brokerage</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Strategy</th>
+                        </tr>
+                    </thead>
+                    <tbody id="tradeBody"></tbody>
+                </table>
+            </div>
+        </div>
+
+    </main>
+</div>
+
+<script>
+    // Topbar date
+    document.getElementById('topbarDate').textContent =
+        new Date().toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short', year: 'numeric' });
+
+    let allTrades = [];
+    let activeFilter = 'ALL';
+
+    function fmt(v) {
+        if (v == null) return '—';
+        return Number(v).toLocaleString('en-IN', { minimumFractionDigits: 0, maximumFractionDigits: 2 });
+    }
+
+    function badge(text, cls) {
+        return `<span class="inline-flex items-center px-1.5 py-0.5 rounded text-[10px] font-semibold ${cls}">${text || '—'}</span>`;
+    }
+
+    function outcomeBadge(outcome) {
+        if (!outcome) return '—';
+        if (outcome === 'WIN')  return badge('WIN', 'badge-win');
+        if (outcome === 'LOSS') return badge('LOSS', 'badge-loss');
+        return badge(outcome, 'badge-closed');
+    }
+
+    function statusBadge(status) {
+        if (!status) return '—';
+        const cls = status === 'LIVE' ? 'badge-open' : status === 'FAILED' ? 'badge-loss' : 'badge-closed';
+        return badge(status, cls);
+    }
+
+    function typeBadge(type) {
+        if (!type) return '—';
+        return badge(type, type === 'CE' ? 'badge-ce' : 'badge-pe');
+    }
+
+    function txnBadge(type) {
+        if (!type) return '—';
+        return badge(type, type === 'BUY' ? 'badge-buy' : 'badge-sell');
+    }
+
+    function pnlClass(v) {
+        if (v == null) return 'text-gray-400';
+        return v >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-600 font-semibold';
+    }
+
+    function buildChildRows(legs, parentId) {
+        if (!legs || legs.length === 0) return '';
+
+        const accentBorder = 'border-blue-300';
+        const headerBg     = 'bg-blue-50';
+        const headerColor  = 'text-blue-700';
+
+        const legRows = legs.map(c => {
+            const diffVal = c.pnlCapturePct != null ? parseFloat(c.pnlCapturePct) : null;
+            const diffClass = diffVal != null
+                ? (diffVal >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold')
+                : 'text-gray-400';
+            return `
+                <tr class="border-b border-gray-100 hover:bg-white transition-colors">
+                    <td class="py-2 pl-3 pr-2 font-mono text-[11px] text-gray-800 truncate" title="${c.exchangeSymbol || ''}">${c.exchangeSymbol || '—'}</td>
+                    <td class="py-2 px-2 text-center">${statusBadge(c.status)}</td>
+                    <td class="py-2 px-2 text-center">${txnBadge(c.side)}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.buyFillPrice != null ? '₹' + fmt(c.buyFillPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.sellFillPrice != null ? '₹' + fmt(c.sellFillPrice) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-500">${c.expectedPnl != null ? '₹' + fmt(c.expectedPnl) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${pnlClass(c.actualPnl)}">${c.actualPnl != null ? '₹' + fmt(c.actualPnl) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] ${diffClass}">${c.pnlCapturePct != null ? c.pnlCapturePct : '—'}</td>
+                    <td class="py-2 px-2 text-[11px] text-gray-500">${c.moneyness || '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-600">${c.quantity != null ? c.quantity : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.openCharges != null ? '₹' + fmt(c.openCharges) : '—'}</td>
+                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.closeCharges != null ? '₹' + fmt(c.closeCharges) : '—'}</td>
+                </tr>`;
+        }).join('');
+
+        // One parent-table row spanning all 15 cols, containing its own mini-table
+        return `
+        <tr class="child-row" data-parent="${parentId}">
+            <td colspan="15" class="p-0 bg-slate-50">
+                <div class="border-l-4 ${accentBorder} ml-8 mr-0">
+                    <table class="w-full text-xs border-collapse table-fixed">
+                        <colgroup>
+                            <col style="width:22%">
+                            <col style="width:8%">
+                            <col style="width:6%">
+                            <col style="width:7%">
+                            <col style="width:7%">
+                            <col style="width:8%">
+                            <col style="width:8%">
+                            <col style="width:7%">
+                            <col style="width:8%">
+                            <col style="width:5%">
+                            <col style="width:7%">
+                            <col style="width:7%">
+                        </colgroup>
+                        <thead>
+                            <tr class="${headerBg} border-b border-gray-200">
+                                <th colspan="12" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
+                                    ${legs.length} legs
+                                </th>
+                            </tr>
+                            <tr class="bg-gray-50 border-b border-gray-200">
+                                <th class="py-1.5 pl-3 pr-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Symbol</th>
+                                <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</th>
+                                <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Txn</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Bought</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Sold</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Exp P&amp;L</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Actual P&amp;L</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Diff%</th>
+                                <th class="py-1.5 px-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Moneyness</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Qty</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Open Brok</th>
+                                <th class="py-1.5 pl-2 pr-3 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Close Brok</th>
+                            </tr>
+                        </thead>
+                        <tbody>${legRows}</tbody>
+                    </table>
+                </div>
+            </td>
+        </tr>`;
+    }
+
+    function renderTrades(trades) {
+        const tbody = document.getElementById('tradeBody');
+        if (!trades || trades.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="13" class="text-center py-10 text-gray-400 text-xs">No trades found</td></tr>`;
+            return;
+        }
+
+        tbody.innerHTML = trades.map(t => {
+            const hasChildren = t.legs && t.legs.length > 0;
+            const chevron = hasChildren
+                ? `<svg class="chevron w-3.5 h-3.5 text-gray-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`
+                : `<span class="w-3.5 h-3.5 inline-block"></span>`;
+
+            const childRows = buildChildRows(t.legs || [], t.id);
+
+            return `
+                <tr class="trade-row border-b border-gray-100" data-trade-id="${t.id}" onclick="toggleChildren(${t.id}, this)">
+                    <td class="px-4 py-3 text-center">${chevron}</td>
+                    <td class="px-4 py-3 font-mono text-gray-500 text-[11px]">#${t.id}</td>
+                    <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${t.openedAt || '—'}</td>
+                    <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${t.closedAt || '—'}</td>
+                    <td class="px-4 py-3">${typeBadge(t.direction)}</td>
+                    <td class="px-4 py-3">${statusBadge(t.status)}</td>
+                    <td class="px-4 py-3">${outcomeBadge(t.result)}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.entrySpot != null ? fmt(t.entrySpot) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.exitSpot != null ? fmt(t.exitSpot) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pointsPnl != null ? fmt(t.pointsPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.expectedPnl != null ? '₹' + fmt(t.expectedPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
+                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
+                    <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
+                </tr>
+                ${childRows}`;
+        }).join('');
+
+        document.getElementById('tradeCount').textContent = `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
+    }
+
+    function toggleChildren(tradeId, row) {
+        const childRows = document.querySelectorAll(`tr[data-parent="${tradeId}"]`);
+        if (!childRows.length) return;
+        const isOpen = childRows[0].classList.contains('open');
+        childRows.forEach(r => r.classList.toggle('open', !isOpen));
+        const chevron = row.querySelector('.chevron');
+        if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+    }
+
+    function setFilter(f) {
+        activeFilter = f;
+        document.querySelectorAll('.filter-btn').forEach(b => {
+            b.className = 'filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700';
+        });
+        const active = document.getElementById('f' + f.charAt(0) + f.slice(1).toLowerCase());
+        if (active) active.className = 'filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700';
+        const filtered = f === 'ALL' ? allTrades : allTrades.filter(t => t.status === f);
+        renderTrades(filtered);
+    }
+
+    async function loadTrades() {
+        document.getElementById('emptyState').style.display = 'none';
+        document.getElementById('errorState').style.display = 'none';
+        document.getElementById('tableContainer').style.display = 'none';
+        document.getElementById('loadingState').style.display = 'flex';
+        document.getElementById('loadBtn').disabled = true;
+
+        try {
+            const res = await fetch('/api/trades');
+            if (!res.ok) throw new Error('HTTP ' + res.status);
+            allTrades = await res.json();
+
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('tableContainer').style.display = 'block';
+            document.getElementById('filterBar').style.display = 'flex';
+            document.getElementById('tradeCount').style.display = 'inline';
+            document.getElementById('unloadBtn').style.display = 'inline-flex';
+            document.getElementById('loadBtn').style.display = 'none';
+
+            setFilter('ALL');
+        } catch (e) {
+            document.getElementById('loadingState').style.display = 'none';
+            document.getElementById('errorState').style.display = 'flex';
+            document.getElementById('errorMsg').textContent = e.message;
+            document.getElementById('loadBtn').disabled = false;
+        }
+    }
+
+    function unloadTrades() {
+        allTrades = [];
+        document.getElementById('tradeBody').innerHTML = '';
+        document.getElementById('tableContainer').style.display = 'none';
+        document.getElementById('filterBar').style.display = 'none';
+        document.getElementById('tradeCount').style.display = 'none';
+        document.getElementById('unloadBtn').style.display = 'none';
+        document.getElementById('loadBtn').style.display = 'inline-flex';
+        document.getElementById('loadBtn').disabled = false;
+        document.getElementById('emptyState').style.display = 'flex';
+    }
+</script>
+</body>
+</html>

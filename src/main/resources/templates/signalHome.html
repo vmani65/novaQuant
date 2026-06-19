@@ -1,880 +1,103 @@
 <!DOCTYPE html>
 <html xmlns:th="http://www.thymeleaf.org">
 <head>
-    <title>novaQuant • Signal Operations Desk</title>
+    <title>nqCore</title>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-	<link rel="icon" href="/img/favicon.png">
+    <link rel="icon" href="/img/favicon.png">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+    <script src="https://cdn.tailwindcss.com"></script>
     <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+    <script>
+        tailwind.config = {
+            theme: {
+                extend: {
+                    fontFamily: {
+                        sans: ['Inter', 'system-ui', 'sans-serif'],
+                        mono: ['"JetBrains Mono"', 'monospace'],
+                    }
+                }
+            }
+        }
+    </script>
     <style>
-        * { 
-            box-sizing: border-box; 
-            margin: 0;
-            padding: 0;
-        }
-        
-        body {
-            font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
-            margin: 0;
-            background: #fafbfc;
-            padding: 40px 24px;
-            color: #1f2937;
-            line-height: 1.5;
-        }
-        
-        .container {
-            width: 100%;
-            max-width: 1200px;
-            margin: 0 auto;
-        }
-
-        /* ==================== TOP BAR ==================== */
-        .top-bar {
-            display: flex;
-            align-items: center;
-            gap: 16px;
-            margin-bottom: 32px;
-            padding-bottom: 20px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-        
-        .logo-wrap {
-            width: 48px;
-            height: 48px;
-            border-radius: 8px;
-            background: #111827;
-            display: flex;
-            align-items: center;
-            justify-content: center;
-        }
-        
-        .logo-wrap img {
-            width: 36px;
-            height: 36px;
-        }
-        
-        .title-block {
-            flex: 1;
-        }
-        
-        .page-header {
-            font-size: 20px;
-            font-weight: 600;
-            color: #111827;
-            margin-bottom: 2px;
-        }
-        
-        .page-sub {
-            font-size: 14px;
-            color: #6b7280;
-        }
-
-        /* ==================== SECTION GRID ==================== */
-        .section-grid {
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
-            gap: 20px;
-        }
-
-        /* ==================== SECTION CARDS ==================== */
-        .section-card {
-            background: #ffffff;
-            border-radius: 8px;
-            border: 1px solid #e5e7eb;
-            padding: 20px;
-            display: flex;
-            flex-direction: column;
-            gap: 16px;
-        }
-
-        .section-header {
-            display: flex;
-            align-items: flex-start;
-            gap: 12px;
-            padding-bottom: 12px;
-            border-bottom: 1px solid #f3f4f6;
-        }
-        
-        .section-icon {
-            font-size: 20px;
-            line-height: 1;
-        }
-        
-        .section-title {
-            font-weight: 600;
-            font-size: 15px;
-            color: #111827;
-            line-height: 1.3;
-        }
-        
-        .section-subtitle {
-            font-size: 13px;
-            color: #6b7280;
-            margin-top: 2px;
-        }
-
-        /* ==================== FORM ELEMENTS ==================== */
-        .form-group {
-            position: relative;
-        }
-        
-        .form-group i {
-            position: absolute;
-            top: 50%;
-            left: 10px;
-            transform: translateY(-50%);
-            color: #9ca3af;
-            font-size: 14px;
-        }
-        
-        input[type="text"] {
-            width: 100%;
-            max-width: 180px;
-            padding: 10px 10px 10px 32px;
-            border: 1px solid #d1d5db;
-            border-radius: 6px;
-            font-size: 14px;
-            color: #111827;
-            background: #ffffff;
-            font-family: inherit;
-        }
-
-        input[type="text"]:focus {
-            outline: none;
-            border-color: #3b82f6;
-            box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-        }
-
-        input[type="text"]::placeholder {
-            color: #9ca3af;
-        }
-
-        /* ==================== BUTTONS ==================== */
-        .action-btn {
-            background: #3b82f6;
-            color: white;
-            padding: 10px 16px;
-            border: none;
-            border-radius: 6px;
-            font-size: 14px;
-            font-weight: 500;
-            cursor: pointer;
-            font-family: inherit;
-            transition: background 0.15s;
-            display: block;
-            margin: 0 auto;
-        }
-        
-        .action-btn:hover {
-            background: #2563eb;
-        }
-
-        .action-btn:active {
-            background: #1d4ed8;
-        }
-        
-        .action-btn:disabled {
-            background: #9ca3af;
-            cursor: not-allowed;
-        }
-        
-        .btn-secondary {
-            background: #6b7280;
-        }
-        
-        .btn-secondary:hover {
-            background: #4b5563;
-        }
-        
-        .btn-danger {
-            background: #dc2626;
-        }
-        
-        .btn-danger:hover {
-            background: #b91c1c;
-        }
-
-        /* ==================== MESSAGES ==================== */
-        .message {
-            font-size: 13px;
-            border-radius: 6px;
-            padding: 10px 12px;
-            border: 1px solid;
-        }
-
-        .success {
-            color: #065f46;
-            background: #d1fae5;
-            border-color: #6ee7b7;
-        }
-
-        .error {
-            color: #991b1b;
-            background: #fee2e2;
-            border-color: #fca5a5;
-        }
-
-        /* ==================== NEEDS ATTENTION ==================== */
-        .needs-attention {
-            border-color: #fca5a5 !important;
-            background: #fef2f2 !important;
-        }
-
-        .needs-attention .section-title {
-            color: #dc2626;
-        }
-
-        /* ==================== READONLY ==================== */
-        .readonly {
-            background: #f9fafb !important;
-            color: #6b7280 !important;
-            cursor: not-allowed;
-        }
-
-        /* ==================== FORM ACTIONS ==================== */
-        .form-actions {
-            display: flex;
-            justify-content: center;
-            gap: 8px;
-            margin-top: 16px;
-        }
-
-        /* ==================== GET URL ==================== */
-        .get-url-container {
-            display: flex;
-            gap: 8px;
-            align-items: center;
-            justify-content: space-between;
-        }
-        
-        .get-url-container input[type="text"] {
-            display: none;
-            padding-left: 10px;
-            flex: 1;
-            max-width: none;
-        }
-        
-        .url-right-section {
-            display: none;
-            flex: 1;
-            gap: 8px;
-            align-items: center;
-        }
-        
-        .copy-icon {
-            background: #f3f4f6;
-            border: 1px solid #d1d5db;
-            cursor: pointer;
-            font-size: 16px;
-            color: #4b5563;
-            padding: 10px;
-            border-radius: 6px;
-            flex-shrink: 0;
-        }
-
-        .copy-icon:hover {
-            background: #e5e7eb;
-        }
-
-        /* ==================== CACHE STATUS ==================== */
-        #cacheStatusDisplay {
-            display: none;
-            margin-top: 12px;
-            padding: 12px;
-            background: #f9fafb;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            max-height: 300px;
-            overflow-y: auto;
-            font-size: 12px;
-        }
-
-        #cacheStatusDisplay h4 {
-            font-size: 13px;
-            font-weight: 600;
-            margin: 12px 0 8px 0;
-            padding-bottom: 6px;
-            border-bottom: 1px solid #e5e7eb;
-        }
-
-        #cacheStatusDisplay h4:first-child {
-            margin-top: 0;
-        }
-
-        #cacheStatusDisplay pre {
-            background: #1f2937;
-            color: #10b981;
-            padding: 10px;
-            border-radius: 4px;
-            overflow-x: auto;
-            font-size: 11px;
-            font-family: 'Monaco', 'Courier New', monospace;
-        }
-
-        #cacheStatusDisplay p {
-            margin: 6px 0;
-        }
-
-        #cacheStatusDisplay > div {
-            border: 1px solid #e5e7eb;
-            border-radius: 4px;
-            padding: 8px;
-            margin-bottom: 8px;
-            background: white;
-        }
-
-        .no-data { 
-            font-style: italic; 
-            color: #9ca3af; 
-            text-align: center;
-        }
-
-        /* ==================== NIFTY INSTRUMENTS ==================== */
-        #niftyInstrumentsBox {
-            display: none;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            background: #f9fafb;
-            padding: 12px;
-            max-height: 280px;
-            overflow-y: auto;
-            font-size: 12px;
-        }
-
-        #niftyInstrumentsBox ul {
-            list-style: none;
-            padding: 0;
-            margin: 0;
-        }
-
-        #niftyInstrumentsBox li {
-            padding: 4px 8px;
-            margin: 0;
-            background: transparent;
-            border: none;
-            font-family: 'Monaco', 'Courier New', monospace;
-            font-size: 12px;
-            color: #374151;
-        }
-
-        #niftyInstrumentsBox li:hover {
-            background: #f3f4f6;
-        }
-
-        /* ==================== POSITION SIZE MATRIX ==================== */
-        .psm-table {
-            width: 100%;
-            border-collapse: collapse;
-            font-size: 12px;
-            background: white;
-            border: 1px solid #e5e7eb;
-            border-radius: 6px;
-            overflow: hidden;
-        }
-        
-        .psm-table thead th {
-            background: #f9fafb;
-            padding: 10px 6px;
-            border-bottom: 1px solid #e5e7eb;
-            text-align: center;
-            font-weight: 600;
-            font-size: 11px;
-            text-transform: uppercase;
-            color: #6b7280;
-        }
-        
-        .psm-table tbody td {
-            border-bottom: 1px solid #f3f4f6;
-            padding: 8px 6px;
-            text-align: center;
-        }
-        
-        .psm-table tbody tr:hover {
-            background: #f9fafb;
-        }
-        
-        .psm-input {
-            width: 60px;
-            text-align: center;
-            padding: 4px;
-            border: 1px solid #d1d5db;
-            border-radius: 4px;
-            font-size: 12px;
-        }
-
-        .psm-input:focus {
-            outline: none;
-            border-color: #3b82f6;
-        }
-        
-        .psm-readonly {
-            background: #f3f4f6;
-            padding: 4px 8px;
-            border-radius: 4px;
-            font-weight: 600;
-            font-size: 11px;
-            color: #374151;
-        }
-        
-        .psm-id-cell {
-            background: #f9fafb;
-            font-weight: 600;
-        }
-		
-		.psm-long-row {
-		    background: #f0fdf4 !important;
-		}
-
-		.psm-short-row {
-		    background: #fef2f2 !important;
-		}
-
-		.psm-long-row:hover {
-		    background: #dcfce7 !important;
-		}
-
-		.psm-short-row:hover {
-		    background: #fee2e2 !important;
-		}
-        
-        #psmBody input[type=number]::-webkit-inner-spin-button,
-        #psmBody input[type=number]::-webkit-outer-spin-button {
-            -webkit-appearance: none;
-            margin: 0;
-        }
-        
-        #psmBody input[type=number] { 
-            -moz-appearance: textfield; 
-        }
-
-		/* ==================== CAPITAL MANAGEMENT ==================== */
-		.capital-input {
-		    width: 100%;
-		    padding: 10px 10px 10px 28px;
-		    border: 1px solid #d1d5db;
-		    border-radius: 6px;
-		    font-size: 14px;
-		    color: #111827;
-		    background: #ffffff;
-		    font-family: inherit;
-		}
-
-		.capital-input:focus {
-		    outline: none;
-		    border-color: #3b82f6;
-		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-		}
-
-		.capital-input::placeholder {
-		    color: #9ca3af;
-		}
-		
-        /* ==================== PERIOD FILTER BUTTONS ==================== */
-        .period-btn {
-            padding: 6px 14px;
-            border: 1px solid #d1d5db;
-            background: white;
-            border-radius: 4px;
-            font-size: 13px;
-            font-weight: 500;
-            cursor: pointer;
-            color: #6b7280;
-            transition: all 0.15s;
-            font-family: inherit;
-        }
-
-        .period-btn:hover {
-            background: #f3f4f6;
-            border-color: #9ca3af;
-        }
-
-        .period-btn.active {
-            background: #3b82f6;
-            color: white;
-            border-color: #3b82f6;
-        }
-
-        /* ==================== BADGES ==================== */
-        .symbol-badge {
-            display: inline-block;
-            padding: 4px 10px;
-            border-radius: 4px;
-            font-weight: 500;
-            font-size: 12px;
-            margin: 4px 0;
-        }
-
-        .symbol-badge.this-week {
-            background: #dbeafe;
-            color: #1e40af;
-        }
-
-        .symbol-badge.rollover {
-            background: #ede9fe;
-            color: #5b21b6;
-        }
-
-        /* ==================== LOADING OVERLAY ==================== */
-        .loading-overlay {
-            position: absolute;
-            top: 0;
-            left: 0;
-            right: 0;
-            bottom: 0;
-            background: rgba(255, 255, 255, 0.8);
-            display: none;
-            align-items: center;
-            justify-content: center;
-            border-radius: 6px;
-            z-index: 10;
-        }
-
-        .loading-overlay.active {
-            display: flex;
-        }
-
-        .spinner {
-            width: 40px;
-            height: 40px;
-            border: 4px solid #e5e7eb;
-            border-top-color: #3b82f6;
-            border-radius: 50%;
-            animation: spin 0.8s linear infinite;
-        }
-
-        @keyframes spin {
-            to { transform: rotate(360deg); }
-        }
-
-		/* ==================== NSE HOLIDAY CALENDAR ==================== */
-		.calendar-container {
-		    display: none;
-		    margin-top: 12px;
-		}
-
-		.calendar-header {
-		    display: flex;
-		    justify-content: space-between;
-		    align-items: center;
-		    padding: 16px;
-		    background: #f9fafb;
-		    border: 1px solid #d1d5db;
-		    border-radius: 6px 6px 0 0;
-		    border-bottom: none;
-		}
-
-		.calendar-nav {
-		    display: flex;
-		    gap: 8px;
-		    align-items: center;
-		}
-
-		.calendar-nav button {
-		    background: white;
-		    border: 1px solid #d1d5db;
-		    border-radius: 4px;
-		    padding: 8px 14px;
-		    cursor: pointer;
-		    font-size: 13px;
-		    font-weight: 500;
-		    color: #374151;
-		    font-family: inherit;
-		    transition: all 0.2s;
-		}
-
-		.calendar-nav button:hover {
-		    background: #f3f4f6;
-		    border-color: #9ca3af;
-		    transform: translateY(-1px);
-		}
-
-		.calendar-nav button:active {
-		    transform: translateY(0);
-		}
-
-		.calendar-month-year {
-		    font-weight: 600;
-		    font-size: 16px;
-		    color: #111827;
-		}
-
-		.calendar-grid {
-		    display: grid;
-		    grid-template-columns: repeat(7, 1fr);
-		    border: 1px solid #d1d5db;
-		    border-radius: 0 0 6px 6px;
-		    overflow: hidden;
-		    background: white;
-		    box-shadow: 0 1px 3px rgba(0, 0, 0, 0.1);
-		}
-
-		.calendar-day-header {
-		    background: #f3f4f6;
-		    padding: 12px 8px;
-		    text-align: center;
-		    font-weight: 600;
-		    font-size: 11px;
-		    color: #374151;
-		    border-bottom: 2px solid #d1d5db;
-		    border-right: 1px solid #e5e7eb;
-		    text-transform: uppercase;
-		    letter-spacing: 0.5px;
-		}
-
-		.calendar-day-header:last-child {
-		    border-right: none;
-		}
-
-		.calendar-day {
-		    min-height: 80px;
-		    padding: 10px;
-		    border-right: 1px solid #e5e7eb;
-		    border-bottom: 1px solid #e5e7eb;
-		    position: relative;
-		    background: white;
-		    transition: all 0.2s;
-		    cursor: default;
-		}
-
-		.calendar-day:hover {
-		    background: #f9fafb;
-		    box-shadow: inset 0 0 0 1px #3b82f6;
-		    z-index: 1;
-		}
-
-		.calendar-day:nth-child(7n) {
-		    border-right: none;
-		}
-
-		.calendar-day.other-month {
-		    background: #f9fafb;
-		    opacity: 0.4;
-		}
-
-		.calendar-day.other-month:hover {
-		    background: #f3f4f6;
-		    opacity: 0.5;
-		}
-
-		.calendar-day.weekend {
-		    background: #fef2f2;
-		    border-left: 3px solid #fca5a5;
-		}
-
-		.calendar-day.weekend:hover {
-		    background: #fee2e2;
-		}
-
-		.calendar-day.holiday {
-		    background: #fee2e2;
-		    border: 2px solid #f87171;
-		}
-		.calendar-day.rollover {
-		    background: #ede9fe;
-		    border-left: 3px solid #8b5cf6;
-		}
-
-		.calendar-day.rollover:hover {
-		    background: #ddd6fe;
-		}
-
-		.calendar-day.today.rollover {
-		    background: linear-gradient(135deg, #dbeafe 50%, #ede9fe 50%);
-		    border: 2px solid #3b82f6;
-		}
-
-		.calendar-day.today.rollover:hover {
-		    background: linear-gradient(135deg, #bfdbfe 50%, #ddd6fe 50%);
-		}
-
-		.rollover-badge {
-		    font-size: 10px;
-		    color: #6b21a8;
-		    font-weight: 600;
-		    line-height: 1.3;
-		    margin-top: 6px;
-		    padding: 4px 6px;
-		    background: rgba(255, 255, 255, 0.7);
-		    border-radius: 3px;
-		    border-left: 2px solid #8b5cf6;
-		}
-		
-		.calendar-day.holiday:hover {
-		    background: #fecaca;
-		    box-shadow: inset 0 0 0 1px #ef4444;
-		}
-
-		.calendar-day.today {
-		    background: #dbeafe;
-		    border: 2px solid #3b82f6;
-		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-		    font-weight: 600;
-		}
-
-		.calendar-day.today:hover {
-		    background: #bfdbfe;
-		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.2);
-		}
-
-		.calendar-day.today.holiday {
-		    background: linear-gradient(135deg, #dbeafe 50%, #fee2e2 50%);
-		    border: 2px solid #3b82f6;
-		    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
-		}
-
-		.calendar-day.today.holiday:hover {
-		    background: linear-gradient(135deg, #bfdbfe 50%, #fecaca 50%);
-		}
-
-		.calendar-day.today.weekend {
-		    background: linear-gradient(135deg, #dbeafe 50%, #fef2f2 50%);
-		    border: 2px solid #3b82f6;
-		}
-
-		.calendar-day.today.weekend:hover {
-		    background: linear-gradient(135deg, #bfdbfe 50%, #fee2e2 50%);
-		}
-
-		.calendar-day-number {
-		    font-weight: 600;
-		    font-size: 14px;
-		    color: #111827;
-		    margin-bottom: 6px;
-		    line-height: 1;
-		}
-
-		.calendar-day.other-month .calendar-day-number {
-		    color: #9ca3af;
-		    font-weight: 500;
-		}
-
-		.calendar-day.today .calendar-day-number {
-		    color: #1e40af;
-		}
-
-		.calendar-day.holiday .calendar-day-number {
-		    color: #991b1b;
-		}
-
-		.holiday-name {
-		    font-size: 10px;
-		    color: #991b1b;
-		    font-weight: 500;
-		    line-height: 1.3;
-		    margin-top: 6px;
-		    padding: 4px 6px;
-		    background: rgba(255, 255, 255, 0.6);
-		    border-radius: 3px;
-		    border-left: 2px solid #dc2626;
-		}
-
-		.calendar-legend {
-		    display: flex;
-		    gap: 20px;
-		    padding: 14px 16px;
-		    background: #f9fafb;
-		    border: 1px solid #d1d5db;
-		    border-top: none;
-		    border-radius: 0 0 6px 6px;
-		    flex-wrap: wrap;
-		    font-size: 12px;
-		    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
-		}
-
-		.legend-item {
-		    display: flex;
-		    align-items: center;
-		    gap: 8px;
-		    color: #374151;
-		    font-weight: 500;
-		}
-
-		.legend-box {
-		    width: 20px;
-		    height: 20px;
-		    border-radius: 4px;
-		    border: 1px solid #d1d5db;
-		    flex-shrink: 0;
-		}
-
-		.legend-box.today {
-		    background: #dbeafe;
-		    border: 2px solid #3b82f6;
-		}
-
-		.legend-box.weekend {
-		    background: #fef2f2;
-		    border-left: 3px solid #fca5a5;
-		}
-
-		.legend-box.holiday {
-		    background: #fee2e2;
-		    border: 2px solid #f87171;
-		}
-
-		/* ==================== RESPONSIVE ==================== */
-		@media (max-width: 768px) {
-		    body { 
-		        padding: 24px 16px; 
-		    }
-		    
-		    .section-grid { 
-		        grid-template-columns: 1fr; 
-		    }
-		    
-		    .top-bar { 
-		        flex-wrap: wrap; 
-		    }
-
-		    .action-btn {
-		        width: 100%;
-		    }
-
-		    .form-actions {
-		        flex-direction: column;
-		    }
-
-		    .calendar-day {
-		        min-height: 70px;
-		        padding: 6px;
-		    }
-		    
-		    .calendar-day-number {
-		        font-size: 13px;
-		    }
-		    
-		    .holiday-name {
-		        font-size: 9px;
-		        padding: 3px 4px;
-		    }
-		    
-		    .calendar-header {
-		        padding: 12px;
-		    }
-		    
-		    .calendar-nav button {
-		        padding: 6px 10px;
-		        font-size: 12px;
-		    }
-		    
-		    .calendar-month-year {
-		        font-size: 14px;
-		    }
-		    
-		    .calendar-legend {
-		        gap: 12px;
-		        padding: 10px 12px;
-		    }
-		    
-		    .legend-item {
-		        font-size: 11px;
-		    }
-		    
-		    .legend-box {
-		        width: 16px;
-		        height: 16px;
-		    }
-		}
+        html { scroll-behavior: smooth; }
+
+        /* JS-controlled message classes */
+        .message { font-size: 13px; border-radius: 6px; padding: 9px 12px; border: 1px solid; margin-top: 8px; }
+        .success { color: #065f46; background: #d1fae5; border-color: #6ee7b7; }
+        .error   { color: #991b1b; background: #fee2e2; border-color: #fca5a5; }
+
+        /* JS-toggled button state */
+        .btn-secondary { background: #9ca3af !important; color: #fff !important; cursor: not-allowed !important; }
+
+        /* Readonly inputs (JS-toggled) */
+        .readonly { background: #f9fafb !important; color: #9ca3af !important; cursor: not-allowed !important; }
+
+        /* Needs-attention card (Thymeleaf) */
+        .needs-attention { border-color: #fca5a5 !important; }
+        .needs-attention .sec-title { color: #dc2626 !important; }
+
+        /* Period filter buttons (JS-toggled active) */
+        .period-btn { padding: 5px 13px; border: 1px solid #d1d5db; background: white; border-radius: 6px; font-size: 12px; font-weight: 500; cursor: pointer; color: #6b7280; font-family: inherit; transition: all .15s; }
+        .period-btn:hover { background: #f3f4f6; }
+        .period-btn.active { background: #2563eb; color: white; border-color: #2563eb; }
+
+        /* Loading overlay */
+        @keyframes spin { to { transform: rotate(360deg); } }
+        .spinner { width: 36px; height: 36px; border: 4px solid #e5e7eb; border-top-color: #3b82f6; border-radius: 50%; animation: spin .8s linear infinite; }
+        .loading-overlay { position: absolute; inset: 0; background: rgba(255,255,255,.85); display: none; align-items: center; justify-content: center; border-radius: 8px; z-index: 10; }
+        .loading-overlay.active { display: flex; }
+
+        /* Remove number spinners (JS-toggled class) */
+        .no-spin::-webkit-inner-spin-button,
+        .no-spin::-webkit-outer-spin-button { -webkit-appearance: none; margin: 0; }
+        .no-spin { -moz-appearance: textfield; }
+
+        /* Cache display inner content */
+        #cacheStatusDisplay h4 { font-size: 13px; font-weight: 600; margin: 12px 0 8px; padding-bottom: 6px; border-bottom: 1px solid #e5e7eb; color: #111827; }
+        #cacheStatusDisplay h4:first-child { margin-top: 0; }
+        #cacheStatusDisplay > div { border: 1px solid #e5e7eb; border-radius: 4px; padding: 8px; margin-bottom: 8px; background: white; font-size: 12px; }
+        #cacheStatusDisplay pre { background: #1f2937; color: #10b981; padding: 10px; border-radius: 4px; overflow-x: auto; font-size: 11px; font-family: 'JetBrains Mono', monospace; }
+        .no-data { font-style: italic; color: #9ca3af; text-align: center; padding: 8px 0; }
+
+        /* Nifty instruments list */
+        #niftyInstrumentsBox ul { list-style: none; padding: 0; margin: 0; }
+        #niftyInstrumentsBox li { padding: 3px 8px; font-family: 'JetBrains Mono', monospace; font-size: 12px; color: #374151; }
+        #niftyInstrumentsBox li:hover { background: #f3f4f6; }
+
+        /* NSE Calendar */
+        .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
+        .calendar-day-header { padding: 10px 4px; text-align: center; font-weight: 600; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; border-right: 1px solid #e5e7eb; border-bottom: 2px solid #e5e7eb; }
+        .calendar-day-header:last-child { border-right: none; }
+        .calendar-day { min-height: 64px; padding: 6px 8px; position: relative; border-radius: 0; cursor: default; transition: background .1s; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; }
+        .calendar-day:nth-child(7n) { border-right: none; }
+        .calendar-day.other-month { opacity: .3; }
+        .calendar-day:not(.other-month):hover { background: #f3f4f6; }
+        .calendar-day.weekend .calendar-day-number { color: #9ca3af; }
+        .calendar-day.holiday { background: #fff1f2; }
+        .calendar-day.holiday:hover { background: #ffe4e6; }
+        .calendar-day.rollover { background: #f5f3ff; }
+        .calendar-day.rollover:hover { background: #ede9fe; }
+        .calendar-day.today .calendar-day-number {
+            background: #2563eb; color: #fff; width: 24px; height: 24px;
+            border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
+        }
+        .calendar-day.today.holiday .calendar-day-number { background: #dc2626; }
+        .calendar-day.today.rollover .calendar-day-number { background: #7c3aed; }
+        .calendar-day-number { font-weight: 500; font-size: 13px; color: #111827; line-height: 1; margin-bottom: 4px; display: block; }
+        .calendar-day.holiday .calendar-day-number { color: #be123c; }
+        .calendar-day.rollover .calendar-day-number { color: #6d28d9; }
+        .calendar-day.other-month .calendar-day-number { color: #9ca3af; font-weight: 400; }
+        .holiday-name { font-size: 10px; color: #be123c; font-weight: 500; line-height: 1.3; margin-top: 3px; }
+        .rollover-badge { font-size: 10px; color: #7c3aed; font-weight: 600; line-height: 1.3; margin-top: 3px; }
+        .calendar-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; }
+        .legend-item { display: flex; align-items: center; gap: 6px; color: #6b7280; }
+        .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+
+        /* Sidebar active link */
+        .sidebar-link.active { background: #eff6ff; color: #2563eb; border-left-color: #2563eb; font-weight: 500; }
     </style>
 
     <script>
@@ -895,35 +118,20 @@
                 try {
                     const date = new Date(timestamp);
                     return date.toLocaleString('en-IN', {
-                        year: 'numeric',
-                        month: 'short',
-                        day: '2-digit',
-                        hour: '2-digit',
-                        minute: '2-digit',
-                        second: '2-digit',
-                        hour12: true
+                        year: 'numeric', month: 'short', day: '2-digit',
+                        hour: '2-digit', minute: '2-digit', second: '2-digit', hour12: true
                     });
-                } catch (e) {
-                    return timestamp;
-                }
+                } catch (e) { return timestamp; }
             },
 
             parseChartDate(dateStr) {
-                // Handle formats like "16 Nov 24" or "16 Nov"
                 const parts = dateStr.split(' ');
                 if (parts.length < 2) return null;
-                
                 const day = parseInt(parts[0]);
                 const month = parts[1];
                 const year = parts.length === 3 ? parseInt('20' + parts[2]) : new Date().getFullYear();
-                
-                const monthMap = {
-                    'Jan': 0, 'Feb': 1, 'Mar': 2, 'Apr': 3, 'May': 4, 'Jun': 5,
-                    'Jul': 6, 'Aug': 7, 'Sep': 8, 'Oct': 9, 'Nov': 10, 'Dec': 11
-                };
-                
+                const monthMap = { 'Jan':0,'Feb':1,'Mar':2,'Apr':3,'May':4,'Jun':5,'Jul':6,'Aug':7,'Sep':8,'Oct':9,'Nov':10,'Dec':11 };
                 if (monthMap[month] === undefined) return null;
-                
                 return new Date(year, monthMap[month], day);
             },
 
@@ -942,38 +150,57 @@
             setLoading(containerId, isLoading) {
                 const container = document.getElementById(containerId);
                 const overlay = container.querySelector('.loading-overlay');
-                if (overlay) {
-                    overlay.classList.toggle('active', isLoading);
-                }
+                if (overlay) overlay.classList.toggle('active', isLoading);
             }
         };
 
-        // ==================== LOGIN URL ====================
-        function fetchLoginUrl() {
-            fetch('/kite-auth/get-login-url')
-                .then(response => response.text())
+        // ==================== TEST KITE CONNECTION ====================
+        function testKiteConnection() {
+            const resultDiv = document.getElementById('kiteTestResult');
+            resultDiv.style.display = '';
+            resultDiv.className = 'message text-xs font-mono flex-1';
+            resultDiv.textContent = 'Testing…';
+            fetch('/kite-auth/test-connection')
+                .then(r => r.json())
                 .then(data => {
-                    const field = document.getElementById('loginUrlField');
-                    const rightSection = document.getElementById('urlRightSection');
-                    field.value = data;
-                    rightSection.style.display = 'flex';
+                    if (data.status === 'OK') {
+                        resultDiv.classList.add('success');
+                        resultDiv.textContent = '✓ ' + data.message;
+                    } else {
+                        resultDiv.classList.add('error');
+                        const code = data.code ? ' [code=' + data.code + ']' : '';
+                        resultDiv.textContent = '✗ ' + data.status + code + ' — ' + data.message;
+                    }
                 })
-                .catch(error => {
-                    alert('Error fetching login URL: ' + error.message);
+                .catch(err => {
+                    resultDiv.classList.add('error');
+                    resultDiv.textContent = '✗ Request failed: ' + err.message;
                 });
         }
 
-        function copyLoginUrl() {
-            const field = document.getElementById('loginUrlField');
-            navigator.clipboard.writeText(field.value)
-                .then(() => {
-                    const icon = document.getElementById('copyIcon');
-                    icon.innerHTML = '✓';
-                    setTimeout(() => icon.innerHTML = '📋', 1200);
+        // ==================== LOGIN URL ====================
+        let _kiteLoginUrl = null;
+        function fetchLoginUrl() {
+            fetch('/kite-auth/get-login-url')
+                .then(r => r.text())
+                .then(url => {
+                    _kiteLoginUrl = url;
+                    window.open(url, '_blank');
+                    document.getElementById('copyUrlBtn').style.display = '';
                 })
-                .catch(err => {
-                    alert('Failed to copy: ' + err.message);
-                });
+                .catch(err => { alert('Error fetching login URL: ' + err.message); });
+        }
+
+        function copyLoginUrl() {
+            if (!_kiteLoginUrl) return;
+            navigator.clipboard.writeText(_kiteLoginUrl)
+                .then(() => {
+                    const btn = document.getElementById('copyUrlBtn');
+                    const orig = btn.textContent;
+                    btn.textContent = 'Copied ✓';
+                    setTimeout(() => btn.textContent = orig, 1500);
+                })
+                .catch(err => { alert('Failed to copy: ' + err.message); });
         }
 
         // ==================== CACHE STATUS ====================
@@ -981,59 +208,39 @@
             const statusDiv = document.getElementById('cacheStatusDisplay');
             statusDiv.innerHTML = '<p class="no-data">Loading...</p>';
             statusDiv.style.display = 'block';
-
             fetch('/api/cacheStatus')
-                .then(response => {
-                    if (!response.ok) throw new Error('Failed to fetch');
-                    return response.json();
-                })
+                .then(response => { if (!response.ok) throw new Error('Failed to fetch'); return response.json(); })
                 .then(data => displayCacheStatus(data))
-                .catch(error => {
-                    statusDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>';
-                });
+                .catch(error => { statusDiv.innerHTML = '<div class="error">Error: ' + error.message + '</div>'; });
         }
 
         function displayCacheStatus(data) {
             const statusDiv = document.getElementById('cacheStatusDisplay');
             let html = '';
-
             html += '<h4>Signal Cache</h4>';
             html += '<p><strong>Cached:</strong> ' + data.cacheSize + ' | <strong>TTL:</strong> ' + data.ttlDays + ' days</p>';
-
             if (data.cachedSignals && data.cachedSignals.length > 0) {
                 const signalsArray = Array.isArray(data.cachedSignals) ? data.cachedSignals : Array.from(data.cachedSignals);
                 const displaySignals = signalsArray.slice(0, 5);
                 html += '<pre>' + JSON.stringify(displaySignals, null, 2) + '</pre>';
-                if (signalsArray.length > 5) {
-                    html += '<p style="font-size:11px; color:#6b7280;"><em>... and ' + (signalsArray.length - 5) + ' more</em></p>';
-                }
-            } else {
-                html += '<p class="no-data">No signals cached</p>';
-            }
-
+                if (signalsArray.length > 5) html += '<p style="font-size:11px;color:#6b7280;"><em>... and ' + (signalsArray.length - 5) + ' more</em></p>';
+            } else { html += '<p class="no-data">No signals cached</p>'; }
             html += '<h4>Duplicate Tracking</h4>';
             if (data.duplicateKeys && Object.keys(data.duplicateKeys).length > 0) {
                 html += '<pre>' + JSON.stringify(data.duplicateKeys, null, 2) + '</pre>';
-            } else {
-                html += '<p class="no-data">None tracked</p>';
-            }
-
+            } else { html += '<p class="no-data">None tracked</p>'; }
             html += '<h4>Strategy Tracking</h4>';
             html += '<p><strong>Tracked:</strong> ' + data.previousTracked + '</p>';
-
             if (data.previousByStrategy && Object.keys(data.previousByStrategy).length > 0) {
                 for (const [strategyName, details] of Object.entries(data.previousByStrategy)) {
                     html += '<div>';
-                    html += '<p style="font-weight:600; margin-bottom:4px;">' + strategyName + '</p>';
+                    html += '<p style="font-weight:600;margin-bottom:4px;">' + strategyName + '</p>';
                     html += '<p><strong>Action:</strong> ' + details.action + ' | <strong>Signal:</strong> ' + details.signalType + '</p>';
                     html += '<p><strong>Price:</strong> ' + details.currentPrice + ' | <strong>Time:</strong> ' + details.time + '</p>';
-                    html += '<p style="font-size:11px; color:#6b7280;">Received: ' + Utils.formatDateTime(details.receivedAt) + '</p>';
+                    html += '<p style="font-size:11px;color:#6b7280;">Received: ' + Utils.formatDateTime(details.receivedAt) + '</p>';
                     html += '</div>';
                 }
-            } else {
-                html += '<p class="no-data">None tracked</p>';
-            }
-
+            } else { html += '<p class="no-data">None tracked</p>'; }
             statusDiv.innerHTML = html;
         }
 
@@ -1041,51 +248,190 @@
             if (confirm('Clear all caches?')) {
                 fetch('/api/clearCache', { method: 'POST' })
                     .then(response => response.text())
-                    .then(data => {
-                        alert(data);
-                        document.getElementById('cacheStatusDisplay').style.display = 'none';
-                    })
+                    .then(data => { alert(data); document.getElementById('cacheStatusDisplay').style.display = 'none'; })
                     .catch(error => alert('Error: ' + error.message));
             }
+        }
+
+        // ==================== SHARED AJAX FORM HELPER ====================
+        function postForm(url, params, msgId, onSuccess) {
+            fetch(url, { method: 'POST', headers: { 'Content-Type': 'application/x-www-form-urlencoded' }, body: new URLSearchParams(params) })
+                .then(r => r.json().then(result => {
+                    const el = document.getElementById(msgId);
+                    const isSuccess = r.ok && result.success;
+                    el.textContent = result.message;
+                    el.className = isSuccess ? 'message success' : 'message error';
+                    el.style.display = 'block';
+                    if (isSuccess && onSuccess) onSuccess();
+                }))
+                .catch(err => {
+                    const el = document.getElementById(msgId);
+                    el.textContent = 'Error: ' + err.message;
+                    el.className = 'message error';
+                    el.style.display = 'block';
+                });
+        }
+
+        // ==================== TOKEN SAVE ====================
+        function saveToken(event) {
+            event.preventDefault();
+            const token = document.getElementById('tokenInput').value.trim();
+            if (!token) return;
+            postForm('/kite-auth/save', { requestToken: token }, 'tokenMsg',
+                () => document.getElementById('tokenInput').value = '');
+        }
+
+        // ==================== SYMBOLS SAVE ====================
+        function saveSymbols(event) {
+            event.preventDefault();
+            const tw = document.getElementById('thisWeekSymbolInput').value.trim();
+            const ro = document.getElementById('rolloverSymbolInput').value.trim();
+            const rd = document.getElementById('rolloverDayInput').value;
+            postForm('/symbol/save', { thisWeekSymbol: tw, rolloverSymbol: ro, rolloverDay: rd }, 'symbolsMsg',
+                () => setSymbolsEditable(false));
+        }
+
+        // ==================== LEG TEMPLATES ====================
+        function loadLegTemplates() {
+            fetch('/api/leg-templates')
+                .then(r => r.json())
+                .then(legs => {
+                    renderLegRows('longLegsBody',  legs.filter(l => l.direction === 'LONG'),  'LONG');
+                    renderLegRows('shortLegsBody', legs.filter(l => l.direction === 'SHORT'), 'SHORT');
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Load error: ' + e, true));
+        }
+
+        function renderLegRows(tbodyId, legs, direction) {
+            const tbody = document.getElementById(tbodyId);
+            if (legs.length === 0) {
+                tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
+                return;
+            }
+            tbody.innerHTML = legs.map(l => `
+                <tr class="border-t border-gray-100" data-leg-id="${l.id}">
+                    <td class="px-2 py-1.5 font-medium text-gray-900 text-center">${l.optionType}</td>
+                    <td class="px-2 py-1.5 text-gray-700 text-center">${l.side}</td>
+                    <td class="px-2 py-1.5 font-mono text-gray-700 text-center">${l.offsetPts > 0 ? '+' + l.offsetPts : l.offsetPts}</td>
+                    <td class="px-2 py-1.5 font-mono font-semibold text-gray-900 text-center">${l.lots}</td>
+                    <td class="px-2 py-1.5 text-center">
+                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots})"
+                                class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
+                        <button onclick="deleteLeg(${l.id})"
+                                class="px-2 py-0.5 text-rose-600 hover:bg-rose-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Delete</button>
+                    </td>
+                </tr>`).join('');
+        }
+
+        function showAddLegRow(direction) {
+            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
+            const tbody = document.getElementById(tbodyId);
+            // Remove any existing add/edit-form rows first
+            tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
+            // Remove "no legs" placeholder if present
+            const placeholder = tbody.querySelector('td[colspan="5"]');
+            if (placeholder) placeholder.parentElement.remove();
+            const row = document.createElement('tr');
+            row.className = 'leg-form-row bg-blue-50 border-t border-blue-100';
+            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1);
+            tbody.appendChild(row);
+        }
+
+        function editLegRow(id, direction, optionType, side, offsetPts, lots) {
+            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
+            const tbody = document.getElementById(tbodyId);
+            tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
+            const existing = tbody.querySelector(`tr[data-leg-id="${id}"]`);
+            if (!existing) return;
+            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
+        }
+
+        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots) {
+            const optSel = ['CE', 'PE'].map(o => `<option value="${o}" ${o === optionType ? 'selected' : ''}>${o}</option>`).join('');
+            const sideSel = ['BUY', 'SELL'].map(s => `<option value="${s}" ${s === side ? 'selected' : ''}>${s}</option>`).join('');
+            return `
+                <td class="px-2 py-1.5 text-center">
+                    <select class="leg-opt px-2 py-1 border border-gray-200 rounded text-xs text-center">${optSel}</select>
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <select class="leg-side px-2 py-1 border border-gray-200 rounded text-xs text-center">${sideSel}</select>
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <input type="number" class="leg-offset w-20 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${offsetPts}" step="50" />
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <input type="number" class="leg-lots w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${lots}" min="1" />
+                </td>
+                <td class="px-2 py-1.5 text-center">
+                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}')"
+                            class="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] border-0 cursor-pointer">Save</button>
+                    <button onclick="loadLegTemplates()"
+                            class="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded text-[11px] border-0 cursor-pointer bg-transparent">Cancel</button>
+                </td>`;
+        }
+
+        function saveLeg(btn, id, direction) {
+            const row = btn.closest('tr');
+            const body = {
+                direction,
+                optionType: row.querySelector('.leg-opt').value,
+                side:       row.querySelector('.leg-side').value,
+                offsetPts:  parseInt(row.querySelector('.leg-offset').value) || 0,
+                lots:       parseInt(row.querySelector('.leg-lots').value) || 0
+            };
+            const url = id ? `/api/leg-templates/${id}` : '/api/leg-templates';
+            const method = id ? 'PUT' : 'POST';
+            fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        Utils.showMessage('legTemplatesMsg', id ? 'Leg updated.' : 'Leg added.', false);
+                        loadLegTemplates();
+                    } else {
+                        Utils.showMessage('legTemplatesMsg', res.message || 'Save failed', true);
+                    }
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Error: ' + e, true));
+        }
+
+        function deleteLeg(id) {
+            if (!confirm('Delete this leg?')) return;
+            fetch(`/api/leg-templates/${id}`, { method: 'DELETE' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        Utils.showMessage('legTemplatesMsg', 'Leg deleted.', false);
+                        loadLegTemplates();
+                    } else {
+                        Utils.showMessage('legTemplatesMsg', res.message || 'Delete failed', true);
+                    }
+                })
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Error: ' + e, true));
         }
 
         // ==================== ROLLOVER ====================
         function triggerRollover() {
             const price = document.getElementById('signalPriceInput').value.trim();
-            const msg = document.getElementById('rolloverMsg');
-
-            if (!/^\d{5}$/.test(price)) {
-                Utils.showMessage('rolloverMsg', 'Enter a valid 5-digit number.', true);
-                return;
-            }
-
+            if (!/^\d{5}$/.test(price)) { Utils.showMessage('rolloverMsg', 'Enter a valid 5-digit number.', true); return; }
             fetch('/api/rollover?signalPrice=' + encodeURIComponent(price))
                 .then(resp => resp.text())
-                .then(text => {
-                    Utils.showMessage('rolloverMsg', 'Success: ' + text, false);
-                })
-                .catch(err => {
-                    Utils.showMessage('rolloverMsg', 'Error: ' + err, true);
-                });
+                .then(text => { Utils.showMessage('rolloverMsg', 'Success: ' + text, false); })
+                .catch(err => { Utils.showMessage('rolloverMsg', 'Error: ' + err, true); });
         }
 
         function validateSignalPrice(input) {
             input.value = input.value.replace(/[^0-9]/g, '');
-            if (input.value.length > 5) {
-                input.value = input.value.slice(0, 5);
-            }
+            if (input.value.length > 5) input.value = input.value.slice(0, 5);
         }
 
         // ==================== POSITION SIZE MATRIX ====================
-        function togglePsm() {
-            const body = document.getElementById('psmBody');
-            const btn = document.getElementById('psmToggleBtn');
+        function toggleLegTemplates() {
+            const body = document.getElementById('legTemplatesBody');
+            const btn = document.getElementById('legTemplatesToggleBtn');
             if (body.style.display === 'none' || body.style.display === '') {
-                body.style.display = 'block';
-                btn.textContent = '▲';
+                body.style.display = 'block'; btn.textContent = '▲';
             } else {
-                body.style.display = 'none';
-                btn.textContent = '▼';
+                body.style.display = 'none'; btn.textContent = '▼';
             }
         }
 
@@ -1093,32 +439,24 @@
         function setSymbolsEditable(editable) {
             const tw = document.getElementById('thisWeekSymbolInput');
             const ro = document.getElementById('rolloverSymbolInput');
+            const rd = document.getElementById('rolloverDayInput');
             const save = document.getElementById('saveSymbolsBtn');
             const edit = document.getElementById('editSymbolsBtn');
             const cancel = document.getElementById('cancelSymbolsBtn');
-
             if (editable) {
-                tw.removeAttribute('disabled');
-                ro.removeAttribute('disabled');
+                tw.removeAttribute('disabled'); ro.removeAttribute('disabled'); rd.removeAttribute('disabled');
                 save.removeAttribute('disabled');
-                tw.classList.remove('readonly');
-                ro.classList.remove('readonly');
+                tw.classList.remove('readonly'); ro.classList.remove('readonly'); rd.classList.remove('readonly');
                 save.classList.remove('btn-secondary');
-                edit.style.display = 'none';
-                cancel.style.display = 'inline-block';
-                tw.focus();
+                edit.style.display = 'none'; cancel.style.display = 'inline-block'; tw.focus();
             } else {
-                tw.setAttribute('disabled', 'disabled');
-                ro.setAttribute('disabled', 'disabled');
-                save.setAttribute('disabled', 'disabled');
-                tw.classList.add('readonly');
-                ro.classList.add('readonly');
+                tw.setAttribute('disabled','disabled'); ro.setAttribute('disabled','disabled'); rd.setAttribute('disabled','disabled');
+                save.setAttribute('disabled','disabled');
+                tw.classList.add('readonly'); ro.classList.add('readonly'); rd.classList.add('readonly');
                 save.classList.add('btn-secondary');
-                edit.style.display = 'inline-block';
-                cancel.style.display = 'none';
+                edit.style.display = 'inline-block'; cancel.style.display = 'none';
             }
         }
-
         function enableSymbolEdit() { setSymbolsEditable(true); }
         function cancelSymbolEdit() { setSymbolsEditable(false); }
 
@@ -1126,1367 +464,1022 @@
         function fetchNiftyInstruments() {
             const box = document.getElementById('niftyInstrumentsBox');
             const status = document.getElementById('niftyInstrumentsStatus');
-
-            status.style.display = 'block';
-            status.className = 'message';
-            status.textContent = 'Loading...';
-
+            status.style.display = 'block'; status.className = 'message'; status.textContent = 'Loading...';
             fetch('/getNiftyInstruments')
-                .then(r => {
-                    if (!r.ok) throw new Error('Server error ' + r.status);
-                    return r.json();
-                })
+                .then(r => { if (!r.ok) throw new Error('Server error ' + r.status); return r.json(); })
                 .then(list => {
                     status.style.display = 'none';
                     if (!Array.isArray(list) || list.length === 0) {
-                        box.style.display = 'block';
-                        box.innerHTML = '<p class="no-data">No instruments found</p>';
-                        return;
+                        box.style.display = 'block'; box.innerHTML = '<p class="no-data">No instruments found</p>'; return;
                     }
                     const items = list.map(s => `<li>${s}</li>`).join('');
-                    box.innerHTML = `<div style="margin-bottom:8px; color:#6b7280; font-weight:500;">Total: ${list.length}</div><ul>${items}</ul>`;
+                    box.innerHTML = `<div style="margin-bottom:8px;color:#6b7280;font-weight:500;font-size:12px;">Total: ${list.length}</div><ul>${items}</ul>`;
                     box.style.display = 'block';
                 })
                 .catch(err => {
-                    box.style.display = 'none';
-                    status.style.display = 'block';
-                    status.className = 'message error';
-                    status.textContent = 'Error: ' + err.message;
+                    box.style.display = 'none'; status.style.display = 'block';
+                    status.className = 'message error'; status.textContent = 'Error: ' + err.message;
                 });
         }
 
         function clearNiftyInstruments() {
             const box = document.getElementById('niftyInstrumentsBox');
             const status = document.getElementById('niftyInstrumentsStatus');
-            box.style.display = 'none';
-            box.innerHTML = '';
-            status.style.display = 'none';
-            status.textContent = '';
+            box.style.display = 'none'; box.innerHTML = '';
+            status.style.display = 'none'; status.textContent = '';
         }
-		
-		// ==================== CAPITAL MANAGEMENT ====================
-		function saveCapital(event) {
-		    event.preventDefault();
-		    
-		    const successMsg = document.getElementById('capitalSuccessMsg');
-		    const errorMsg = document.getElementById('capitalErrorMsg');
-		    
-		    // Hide previous messages
-		    successMsg.style.display = 'none';
-		    errorMsg.style.display = 'none';
-		    
-		    // Get values and remove commas
-		    const currentCapital = parseFloat(document.getElementById('currentCapitalInput').value.replace(/,/g, '')) || null;
-		    const additionalCapital = parseFloat(document.getElementById('additionalCapitalInput').value.replace(/,/g, '')) || null;
-		    const ceilingToHit = parseFloat(document.getElementById('ceilingToHitInput').value.replace(/,/g, '')) || null;
-		    const nrmlCostPerLot = parseInt(document.getElementById('nrmlCostPerLotInput').value.replace(/,/g, '')) || null;
-		    const definedRiskPerLot = parseInt(document.getElementById('definedRiskPerLotInput').value.replace(/,/g, '')) || null;
-			const currentRiskPerLot = parseInt(document.getElementById('currentRiskPerLotInput').value.replace(/,/g, '')) || null;
 
-		    const data = {
-		        currentCapital: currentCapital,
-		        additionalCapital: additionalCapital,
-		        ceilingToHit: ceilingToHit,
-		        nrmlCostPerLot: nrmlCostPerLot,
-		        definedRiskPerLot: definedRiskPerLot,
-				currentRiskPerLot: currentRiskPerLot
-		    };
-		    
-		    fetch('/api/capital/save', {
-		        method: 'POST',
-		        headers: {
-		            'Content-Type': 'application/json'
-		        },
-		        body: JSON.stringify(data)
-		    })
-		    .then(response => response.json())
-		    .then(result => {
-		        if (result.success) {
-		            successMsg.textContent = result.message;
-		            successMsg.style.display = 'block';
-		            
-					if (result.success) {
-					    successMsg.textContent = result.message;
-					    successMsg.style.display = 'block';
-					    if (result.data && result.data.currentCapital) {
-					        document.getElementById('currentCapitalInput').value = formatIndianCurrency(result.data.currentCapital);
-					    }
-					    document.getElementById('additionalCapitalInput').value = '';					    
-					    setTimeout(() => {
-					        cancelCapitalEdit();
-					    }, 1500);
-					}
-		            
-		            document.getElementById('additionalCapitalInput').value = '';
-		            setTimeout(() => {
-		                cancelCapitalEdit();
-		            }, 1500);
-		        } else {
-		            errorMsg.textContent = result.message;
-		            errorMsg.style.display = 'block';
-		        }
-		    })
-		    .catch(error => {
-		        errorMsg.textContent = 'Error: ' + error.message;
-		        errorMsg.style.display = 'block';
-		    });
-		}
+        // ==================== CAPITAL MANAGEMENT ====================
+        function saveCapital(event) {
+            event.preventDefault();
+            const successMsg = document.getElementById('capitalSuccessMsg');
+            const errorMsg = document.getElementById('capitalErrorMsg');
+            successMsg.style.display = 'none'; errorMsg.style.display = 'none';
+            const currentCapital     = parseFloat(document.getElementById('currentCapitalInput').value.replace(/,/g,'')) || null;
+            const additionalCapital  = parseFloat(document.getElementById('additionalCapitalInput').value.replace(/,/g,'')) || null;
+            const ceilingToHit       = parseFloat(document.getElementById('ceilingToHitInput').value.replace(/,/g,'')) || null;
+            const definedRiskPerLot  = parseInt(document.getElementById('definedRiskPerLotInput').value.replace(/,/g,'')) || null;
+            const currentRiskPerLot  = parseInt(document.getElementById('currentRiskPerLotInput').value.replace(/,/g,'')) || null;
+            const data = { currentCapital, additionalCapital, ceilingToHit, definedRiskPerLot, currentRiskPerLot };
+            fetch('/api/capital/save', { method:'POST', headers:{'Content-Type':'application/json'}, body:JSON.stringify(data) })
+                .then(response => response.json())
+                .then(result => {
+                    if (result.success) {
+                        successMsg.textContent = result.message; successMsg.style.display = 'block';
+                        if (result.data && result.data.currentCapital)
+                            document.getElementById('currentCapitalInput').value = formatIndianCurrency(result.data.currentCapital);
+                        document.getElementById('additionalCapitalInput').value = '';
+                        setTimeout(() => { cancelCapitalEdit(); }, 1500);
+                    } else { errorMsg.textContent = result.message; errorMsg.style.display = 'block'; }
+                })
+                .catch(error => { errorMsg.textContent = 'Error: ' + error.message; errorMsg.style.display = 'block'; });
+        }
 
-		function loadCapitalData() {
-		    fetch('/api/capital')
-		        .then(response => response.json())
-		        .then(data => {
-		            if (data) {
-		                document.getElementById('currentCapitalInput').value = formatIndianCurrency(data.currentCapital) || '0';
-		                document.getElementById('ceilingToHitInput').value = formatIndianCurrency(data.ceilingToHit) || '0';
-		                document.getElementById('nrmlCostPerLotInput').value = formatIndianCurrency(data.nrmlCostPerLot) || '0';
-		                document.getElementById('definedRiskPerLotInput').value = formatIndianCurrency(data.definedRiskPerLot) || '0';
-		                document.getElementById('currentRiskPerLotInput').value = formatIndianCurrency(data.currentRiskPerLot) || '0';
-		            }
-		        })
-		        .catch(error => {
-		            console.error('Error loading capital data:', error);
-		        });
-		}
+        function loadCapitalData() {
+            fetch('/api/capital')
+                .then(response => response.json())
+                .then(data => {
+                    if (data) {
+                        document.getElementById('currentCapitalInput').value   = formatIndianCurrency(data.currentCapital)   || '0';
+                        document.getElementById('ceilingToHitInput').value     = formatIndianCurrency(data.ceilingToHit)     || '0';
+                        document.getElementById('definedRiskPerLotInput').value= formatIndianCurrency(data.definedRiskPerLot)|| '0';
+                        document.getElementById('currentRiskPerLotInput').value= formatIndianCurrency(data.currentRiskPerLot)|| '0';
+                        document.getElementById('highestNrmlCostPerLotDisplay').textContent = (data.highestNrmlCostPerLot != null) ? '₹ ' + Number(data.highestNrmlCostPerLot).toLocaleString('en-IN') : '—';
+                        document.getElementById('averageNrmlCostPerLotDisplay').textContent  = (data.averageNrmlCostPerLot  != null) ? '₹ ' + Number(data.averageNrmlCostPerLot).toLocaleString('en-IN')  : '—';
+                        document.getElementById('lowestNrmlCostPerLotDisplay').textContent  = (data.lowestNrmlCostPerLot  != null) ? '₹ ' + Number(data.lowestNrmlCostPerLot).toLocaleString('en-IN')  : '—';
+                    }
+                })
+                .catch(error => { console.error('Error loading capital data:', error); });
+        }
 
-		function toggleCapital() {
-		    const body = document.getElementById('capitalBody');
-		    const btn = document.getElementById('capitalToggleBtn');
-		    if (body.style.display === 'none' || body.style.display === '') {
-		        body.style.display = 'block';
-		        btn.textContent = '▲';
-		    } else {
-		        body.style.display = 'none';
-		        btn.textContent = '▼';
-		    }
-		}
+        function toggleCapital() {
+            const body = document.getElementById('capitalBody');
+            const btn  = document.getElementById('capitalToggleBtn');
+            if (body.style.display === 'none' || body.style.display === '') {
+                body.style.display = 'block'; btn.textContent = '▲';
+            } else { body.style.display = 'none'; btn.textContent = '▼'; }
+        }
 
-		function formatCurrencyInput(input) {
-		    let value = input.value.replace(/[^0-9.]/g, '');		    
-		    const parts = value.split('.');
-		    if (parts.length > 2) {
-		        value = parts[0] + '.' + parts.slice(1).join('');
-		    }
-		    
-		    // Limit to 2 decimal places
-		    if (parts[1] && parts[1].length > 2) {
-		        value = parts[0] + '.' + parts[1].substring(0, 2);
-		    }		    
-		    input.value = value;
-		}
-		
-		function formatCurrencyOnBlur(input) {
-		    if (input.value && input.value.trim() !== '') {
-		        const numericValue = input.value.replace(/,/g, '');
-		        input.value = formatIndianCurrency(numericValue);
-		    }
-		}
+        function formatCurrencyInput(input) {
+            let value = input.value.replace(/[^0-9.]/g, '');
+            const parts = value.split('.');
+            if (parts.length > 2) value = parts[0] + '.' + parts.slice(1).join('');
+            if (parts[1] && parts[1].length > 2) value = parts[0] + '.' + parts[1].substring(0, 2);
+            input.value = value;
+        }
 
-		function formatIndianCurrency(value) {
-		    if (!value || value === '' || value === null || value === undefined) return '';		    
-		    const stringValue = String(value);
-		    const num = parseFloat(stringValue.replace(/,/g, ''));
-		    if (isNaN(num)) return stringValue;
-		    const parts = num.toFixed(2).split('.');
-		    const integerPart = parts[0];
-		    const decimalPart = parts[1];
-		    let lastThree = integerPart.substring(integerPart.length - 3);
-		    const otherNumbers = integerPart.substring(0, integerPart.length - 3);		    
-		    if (otherNumbers !== '') {
-		        lastThree = ',' + lastThree;
-		    }		    
-		    const formatted = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + lastThree;		    
-		    return decimalPart ? formatted + '.' + decimalPart : formatted;
-		}
+        function formatCurrencyOnBlur(input) {
+            if (input.value && input.value.trim() !== '') {
+                input.value = formatIndianCurrency(input.value.replace(/,/g, ''));
+            }
+        }
 
-		function setCapitalEditable(editable) {
-			const inputs = [
-			    'currentCapitalInput',
-			    'additionalCapitalInput',
-			    'ceilingToHitInput',
-			    'nrmlCostPerLotInput',
-			    'definedRiskPerLotInput',
-			    'currentRiskPerLotInput'
-			];
-		    
-		    const save = document.getElementById('saveCapitalBtn');
-		    const edit = document.getElementById('editCapitalBtn');
-		    const cancel = document.getElementById('cancelCapitalBtn');
-		    
-		    if (editable) {
-		        inputs.forEach(id => {
-		            const input = document.getElementById(id);
-		            input.removeAttribute('disabled');
-		            input.classList.remove('readonly');
-		        });
-		        save.removeAttribute('disabled');
-		        save.classList.remove('btn-secondary');
-		        edit.style.display = 'none';
-		        cancel.style.display = 'inline-block';
-		        document.getElementById('additionalCapitalInput').focus();
-		    } else {
-		        inputs.forEach(id => {
-		            const input = document.getElementById(id);
-		            input.setAttribute('disabled', 'disabled');
-		            input.classList.add('readonly');
-		        });
-		        save.setAttribute('disabled', 'disabled');
-		        save.classList.add('btn-secondary');
-		        edit.style.display = 'inline-block';
-		        cancel.style.display = 'none';
-		        
-		        // Clear additional capital on cancel
-		        document.getElementById('additionalCapitalInput').value = '';
-		    }
-		}
+        function formatIndianCurrency(value) {
+            if (!value || value === '' || value === null || value === undefined) return '';
+            const num = parseFloat(String(value).replace(/,/g, ''));
+            if (isNaN(num)) return String(value);
+            const parts = num.toFixed(2).split('.');
+            const integerPart = parts[0];
+            const decimalPart = parts[1];
+            let lastThree = integerPart.substring(integerPart.length - 3);
+            const otherNumbers = integerPart.substring(0, integerPart.length - 3);
+            if (otherNumbers !== '') lastThree = ',' + lastThree;
+            const formatted = otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ',') + lastThree;
+            return decimalPart ? formatted + '.' + decimalPart : formatted;
+        }
 
-		function enableCapitalEdit() { 
-		    setCapitalEditable(true); 
-		}
-
-		function cancelCapitalEdit() { 
-		    setCapitalEditable(false);
-		    // Hide any messages
-		    document.getElementById('capitalSuccessMsg').style.display = 'none';
-		    document.getElementById('capitalErrorMsg').style.display = 'none';
-		}
+        function setCapitalEditable(editable) {
+            const inputs = ['currentCapitalInput','additionalCapitalInput','ceilingToHitInput','definedRiskPerLotInput','currentRiskPerLotInput'];
+            const save   = document.getElementById('saveCapitalBtn');
+            const edit   = document.getElementById('editCapitalBtn');
+            const cancel = document.getElementById('cancelCapitalBtn');
+            if (editable) {
+                inputs.forEach(id => { const i = document.getElementById(id); i.removeAttribute('disabled'); i.classList.remove('readonly'); });
+                save.removeAttribute('disabled'); save.classList.remove('btn-secondary');
+                edit.style.display = 'none'; cancel.style.display = 'inline-block';
+                document.getElementById('additionalCapitalInput').focus();
+            } else {
+                inputs.forEach(id => { const i = document.getElementById(id); i.setAttribute('disabled','disabled'); i.classList.add('readonly'); });
+                save.setAttribute('disabled','disabled'); save.classList.add('btn-secondary');
+                edit.style.display = 'inline-block'; cancel.style.display = 'none';
+                document.getElementById('additionalCapitalInput').value = '';
+            }
+        }
+        function enableCapitalEdit()  { setCapitalEditable(true); }
+        function cancelCapitalEdit()  {
+            setCapitalEditable(false);
+            document.getElementById('capitalSuccessMsg').style.display = 'none';
+            document.getElementById('capitalErrorMsg').style.display   = 'none';
+        }
 
         // ==================== AUTO-ENABLE ====================
         document.addEventListener('DOMContentLoaded', function () {
             const card = document.querySelector('[data-no-symbols]');
             const noSymbols = card && card.getAttribute('data-no-symbols') === 'true';
-            if (noSymbols) {
-                setSymbolsEditable(true);
-            }
-			loadCapitalData();
+            if (noSymbols) setSymbolsEditable(true);
+            loadCapitalData();
+            loadLegTemplates();
+            EquityCurve.loadEquityCurve();
+            // Set date in topbar
+            document.getElementById('topbarDate').textContent =
+                new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
         });
 
         // ==================== EQUITY CURVE ====================
         const EquityCurve = {
             loadAvailableStrategies() {
                 fetch('/api/strategies')
-                    .then(response => {
-                        if (!response.ok) throw new Error('Failed to fetch strategies');
-                        return response.json();
-                    })
-                    .then(strategies => {
-                        AppState.availableStrategies = strategies || [];
-                        this.populateStrategyDropdown(strategies);
-                    })
-                    .catch(error => {
-                        console.error('Error loading strategies:', error);
-                    });
+                    .then(response => { if (!response.ok) throw new Error('Failed'); return response.json(); })
+                    .then(strategies => { AppState.availableStrategies = strategies || []; this.populateStrategyDropdown(strategies); })
+                    .catch(error => { console.error('Error loading strategies:', error); });
             },
 
             populateStrategyDropdown(strategies) {
                 const dropdown = document.getElementById('strategyFilter');
                 dropdown.innerHTML = '<option value="All">All Strategies</option>';
-                
                 if (strategies && strategies.length > 0) {
                     strategies.forEach(strategy => {
                         const option = document.createElement('option');
-                        option.value = strategy;
-                        option.textContent = strategy;
+                        option.value = strategy; option.textContent = strategy;
                         dropdown.appendChild(option);
                     });
                 }
             },
 
-            filterByStrategy(strategy) {
-                AppState.currentStrategy = strategy;
-                this.loadEquityCurveWithFilters();
-            },
+            filterByStrategy(strategy) { AppState.currentStrategy = strategy; this.loadEquityCurveWithFilters(); },
 
             loadEquityCurveWithFilters() {
                 const container = document.getElementById('equityCurveContainer');
-                const filters = document.getElementById('equityFilters');
-                const status = document.getElementById('equityCurveStatus');
-                
-                status.style.display = 'block';
-                status.className = 'message';
-                status.textContent = 'Loading equity curve...';
+                const filters   = document.getElementById('equityFilters');
+                const status    = document.getElementById('equityCurveStatus');
+                status.style.display = 'block'; status.className = 'message'; status.textContent = 'Loading equity curve...';
                 container.style.position = 'relative';
-
-                const url = `/api/equity-curve?strategy=${encodeURIComponent(AppState.currentStrategy)}`;
-
-                fetch(url)
-                    .then(response => {
-                        if (!response.ok) throw new Error('Failed to fetch equity data');
-                        return response.json();
-                    })
+                fetch(`/api/equity-curve?strategy=${encodeURIComponent(AppState.currentStrategy)}`)
+                    .then(response => { if (!response.ok) throw new Error('Failed to fetch equity data'); return response.json(); })
                     .then(data => {
                         if (!data || !data.equity || data.equity.length === 0) {
-                            status.style.display = 'block';
-                            status.className = 'message error';
+                            status.style.display = 'block'; status.className = 'message error';
                             status.textContent = 'No data available for selected strategy';
-                            container.style.display = 'none';
-                            filters.style.display = 'none';
-                            return;
+                            container.style.display = 'none'; filters.style.display = 'none'; return;
                         }
-
                         AppState.fullEquityData = data;
-                        status.style.display = 'none';
-                        container.style.display = 'block';
-                        filters.style.display = 'block';
-                        
-                        const filteredData = this.filterDataByPeriod(AppState.fullEquityData, AppState.currentPeriod);
-                        this.renderEquityCurve(filteredData);
+                        status.style.display = 'none'; container.style.display = 'block'; filters.style.display = 'block';
+                        this.renderEquityCurve(this.filterDataByPeriod(data, AppState.currentPeriod));
                     })
                     .catch(error => {
-                        status.style.display = 'block';
-                        status.className = 'message error';
+                        status.style.display = 'block'; status.className = 'message error';
                         status.textContent = 'Error: ' + error.message;
-                        container.style.display = 'none';
-                        filters.style.display = 'none';
+                        container.style.display = 'none'; filters.style.display = 'none';
                     });
             },
 
             selectPeriod(period, button) {
                 document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
                 button.classList.add('active');
-                
                 AppState.currentPeriod = period;
-                
-                if (AppState.fullEquityData) {
-                    const filteredData = this.filterDataByPeriod(AppState.fullEquityData, period);
-                    this.renderEquityCurve(filteredData);
-                }
+                if (AppState.fullEquityData) this.renderEquityCurve(this.filterDataByPeriod(AppState.fullEquityData, period));
             },
 
             applyCustomDateRange() {
                 const startDate = document.getElementById('equityStartDate').value;
-                const endDate = document.getElementById('equityEndDate').value;
-                
-                if (!startDate || !endDate) {
-                    alert('Please select both start and end dates');
-                    return;
-                }
-                
-                if (new Date(startDate) > new Date(endDate)) {
-                    alert('Start date must be before end date');
-                    return;
-                }
-                
+                const endDate   = document.getElementById('equityEndDate').value;
+                if (!startDate || !endDate) { alert('Please select both start and end dates'); return; }
+                if (new Date(startDate) > new Date(endDate)) { alert('Start date must be before end date'); return; }
                 document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
-                
-                if (AppState.fullEquityData) {
-                    const filteredData = this.filterDataByDateRange(AppState.fullEquityData, startDate, endDate);
-                    this.renderEquityCurve(filteredData);
-                }
+                if (AppState.fullEquityData) this.renderEquityCurve(this.filterDataByDateRange(AppState.fullEquityData, startDate, endDate));
             },
 
             filterDataByPeriod(data, period) {
-                if (period === 'ALL') {
-                    return data;
-                }
-
-                if (!data || !data.dates || !data.equity || data.dates.length === 0 || data.equity.length === 0) {
-                    return data;
-                }
-
+                if (period === 'ALL') return data;
+                if (!data || !data.dates || data.dates.length === 0) return data;
                 let daysToShow = 7;
                 if (period === '1M') daysToShow = 30;
                 if (period === '3M') daysToShow = 90;
                 if (period === '6M') daysToShow = 180;
                 if (period === '1Y') daysToShow = 365;
-
-                const cutoff = new Date();
-                cutoff.setDate(cutoff.getDate() - daysToShow);
-                cutoff.setHours(0, 0, 0, 0);
-
+                const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysToShow); cutoff.setHours(0,0,0,0);
                 const filteredIndices = [];
                 for (let i = 0; i < data.dates.length; i++) {
                     const parsedDate = Utils.parseChartDate(data.dates[i]);
-                    if (parsedDate && parsedDate >= cutoff) {
-                        filteredIndices.push(i);
-                    }
+                    if (parsedDate && parsedDate >= cutoff) filteredIndices.push(i);
                 }
-
-                if (filteredIndices.length === 0) {
-                    return data;
-                }
-
+                if (filteredIndices.length === 0) return data;
                 return {
                     startingEquity: data.equity[filteredIndices[0]],
-                    currentEquity: data.equity[filteredIndices[filteredIndices.length - 1]],
-                    dates: filteredIndices.map(i => data.dates[i]),
-                    equity: filteredIndices.map(i => data.equity[i]),
-                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
+                    currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
+                    dates:    filteredIndices.map(i => data.dates[i]),
+                    equity:   filteredIndices.map(i => data.equity[i]),
+                    lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
+                    outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
+                    charges:  data.charges  ? filteredIndices.map(i => data.charges[i])  : []
                 };
             },
 
             filterDataByDateRange(data, startDateStr, endDateStr) {
-                if (!data || !data.dates || data.dates.length === 0) {
-                    return data;
-                }
-                
+                if (!data || !data.dates || data.dates.length === 0) return data;
                 const startDate = new Date(startDateStr);
-                const endDate = new Date(endDateStr);
-                endDate.setHours(23, 59, 59, 999);
-                
+                const endDate   = new Date(endDateStr); endDate.setHours(23,59,59,999);
                 const filteredIndices = [];
-                
                 for (let i = 0; i < data.dates.length; i++) {
                     const parsedDate = Utils.parseChartDate(data.dates[i]);
-                    
-                    if (parsedDate && parsedDate >= startDate && parsedDate <= endDate) {
-                        filteredIndices.push(i);
-                    }
+                    if (parsedDate && parsedDate >= startDate && parsedDate <= endDate) filteredIndices.push(i);
                 }
-                
-                if (filteredIndices.length === 0) {
-                    alert('No data found in the selected date range');
-                    return data;
-                }
-                
+                if (filteredIndices.length === 0) { alert('No data found in the selected date range'); return data; }
                 return {
                     startingEquity: data.equity[filteredIndices[0]],
-                    currentEquity: data.equity[filteredIndices[filteredIndices.length - 1]],
-                    dates: filteredIndices.map(i => data.dates[i]),
-                    equity: filteredIndices.map(i => data.equity[i]),
-                    lotSize: data.lotSize ? filteredIndices.map(i => data.lotSize[i]) : []
+                    currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
+                    dates:    filteredIndices.map(i => data.dates[i]),
+                    equity:   filteredIndices.map(i => data.equity[i]),
+                    lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
+                    outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
+                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
+                    charges:  data.charges  ? filteredIndices.map(i => data.charges[i])  : []
                 };
             },
 
-            showMockEquityCurve() {
-                const mockStrategies = ['SwingMaster', 'V-LinTra', 'BreakoutPro'];
-                AppState.availableStrategies = mockStrategies;
-                this.populateStrategyDropdown(mockStrategies);
-                
-                const startDate = new Date();
-                startDate.setDate(startDate.getDate() - 365);
-                
-                const dates = [];
-                const equity = [];
-                const lotSize = [];
-                let currentEquity = 100000;
-                let currentLotSize = 1;
-                
-                for (let i = 0; i < 365; i++) {
-                    const date = new Date(startDate);
-                    date.setDate(date.getDate() + i);
-                    
-                    if (date.getDate() === 1) {
-                        dates.push(date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short', year: '2-digit' }));
-                    } else {
-                        dates.push(date.toLocaleDateString('en-IN', { day: '2-digit', month: 'short' }));
-                    }
-                    
-                    const trend = Math.sin(i / 30) * 1000;
-                    const randomPnl = (Math.random() - 0.35) * 4000;
-                    const dailyPnl = randomPnl + trend;
-                    
-                    currentEquity += dailyPnl;
-                    
-                    if (currentEquity < 50000) {
-                        currentEquity = 50000 + Math.random() * 5000;
-                    }
-                    
-                    equity.push(Math.round(currentEquity));
-                    
-                    if (currentEquity >= 150000 && currentLotSize < 3) {
-                        currentLotSize = 3;
-                    } else if (currentEquity >= 120000 && currentLotSize < 2) {
-                        currentLotSize = 2;
-                    } else if (currentEquity < 90000 && currentLotSize > 1) {
-                        currentLotSize = 1;
-                    }
-                    
-                    lotSize.push(currentLotSize);
-                }
-                
-                AppState.fullEquityData = {
-                    startingEquity: 100000,
-                    currentEquity: Math.round(currentEquity),
-                    dates: dates,
-                    equity: equity,
-                    lotSize: lotSize
-                };
-                
-                document.getElementById('equityCurveStatus').style.display = 'none';
-                document.getElementById('equityCurveContainer').style.display = 'block';
-                document.getElementById('equityFilters').style.display = 'block';
-                
-                const filteredData = this.filterDataByPeriod(AppState.fullEquityData, AppState.currentPeriod);
-                this.renderEquityCurve(filteredData);
-            },
-
-            loadEquityCurve() {
-                this.loadAvailableStrategies();
-                this.loadEquityCurveWithFilters();
-            },
-
-            refreshEquityCurve() {
-                if (document.getElementById('equityCurveContainer').style.display === 'block') {
-                    this.loadEquityCurveWithFilters();
-                }
-            },
+            loadEquityCurve() { this.loadAvailableStrategies(); this.loadEquityCurveWithFilters(); },
+            refreshEquityCurve() { this.loadEquityCurveWithFilters(); },
 
             renderEquityCurve(data) {
-                if (!data || !data.equity || data.equity.length === 0) {
-                    alert('No equity data available to display');
-                    return;
-                }
-                
+                if (!data || !data.equity || data.equity.length === 0) { alert('No equity data available'); return; }
                 const startingEquity = data.startingEquity || 0;
-                const currentEquity = data.currentEquity || 0;
-                const totalPnl = currentEquity - startingEquity;
-                const returnPercent = startingEquity > 0 ? ((totalPnl / startingEquity) * 100).toFixed(2) : 0;
-
+                const currentEquity  = data.currentEquity  || 0;
+                const totalPnl       = currentEquity - startingEquity;
+                const returnPercent  = startingEquity > 0 ? ((totalPnl / startingEquity) * 100).toFixed(2) : 0;
                 document.getElementById('startingEquity').textContent = '₹' + startingEquity.toLocaleString('en-IN');
-                document.getElementById('currentEquity').textContent = '₹' + currentEquity.toLocaleString('en-IN');
-                document.getElementById('totalPnl').textContent = '₹' + totalPnl.toLocaleString('en-IN');
-                document.getElementById('totalPnl').style.color = totalPnl >= 0 ? '#059669' : '#dc2626';
-                document.getElementById('returnPercent').textContent = returnPercent + '%';
-                document.getElementById('returnPercent').style.color = returnPercent >= 0 ? '#059669' : '#dc2626';
-
+                document.getElementById('currentEquity').textContent  = '₹' + currentEquity.toLocaleString('en-IN');
+                document.getElementById('totalPnl').textContent       = '₹' + totalPnl.toLocaleString('en-IN');
+                document.getElementById('totalPnl').style.color       = totalPnl >= 0 ? '#059669' : '#dc2626';
+                document.getElementById('returnPercent').textContent  = returnPercent + '%';
+                document.getElementById('returnPercent').style.color  = returnPercent >= 0 ? '#059669' : '#dc2626';
+                const outcomes = data.outcomes || [];
+                const pts      = data.points   || [];
+                let winCount = 0, lossCount = 0, winPtsSum = 0, lossPtsSum = 0;
+                for (let i = 0; i < outcomes.length; i++) {
+                    if (outcomes[i] === 'WIN')       { winCount++;  winPtsSum  += pts[i] || 0; }
+                    else if (outcomes[i] === 'LOSS') { lossCount++; lossPtsSum += Math.abs(pts[i] || 0); }
+                }
+                const totalTrades = winCount + lossCount;
+                const winRate     = totalTrades > 0 ? ((winCount / totalTrades) * 100).toFixed(1) + '%' : '-';
+                const avgWin      = winCount  > 0 ? (winPtsSum  / winCount).toFixed(1)  : '-';
+                const avgLoss     = lossCount > 0 ? (lossPtsSum / lossCount).toFixed(1) : '-';
+                document.getElementById('winRate').textContent    = winRate;
+                document.getElementById('winRate').style.color    = '#059669';
+                document.getElementById('avgWinSize').textContent = avgWin;
+                document.getElementById('avgWinSize').style.color = '#059669';
+                document.getElementById('avgLossSize').textContent = avgLoss;
+                document.getElementById('avgLossSize').style.color = '#dc2626';
+                const pointsCaptured = winPtsSum - lossPtsSum;
+                document.getElementById('winPoints').textContent      = totalTrades > 0 ? winPtsSum.toFixed(1) : '-';
+                document.getElementById('winPoints').style.color      = '#059669';
+                document.getElementById('lossPoints').textContent     = totalTrades > 0 ? lossPtsSum.toFixed(1) : '-';
+                document.getElementById('lossPoints').style.color     = '#dc2626';
+                document.getElementById('pointsCaptured').textContent = totalTrades > 0 ? pointsCaptured.toFixed(1) : '-';
+                document.getElementById('pointsCaptured').style.color = pointsCaptured >= 0 ? '#059669' : '#dc2626';
+                const avgPointsPerTrade = totalTrades > 0 ? pointsCaptured / totalTrades : 0;
+                document.getElementById('avgPointsPerTrade').textContent = totalTrades > 0 ? avgPointsPerTrade.toFixed(1) : '-';
+                document.getElementById('avgPointsPerTrade').style.color = avgPointsPerTrade >= 0 ? '#059669' : '#dc2626';
+                const tradeCount = outcomes.length;
+                document.getElementById('tradeCount').textContent = tradeCount > 0 ? String(tradeCount) : '-';
+                const charges = data.charges || [];
+                const totalBrokerage = charges.reduce((sum, c) => sum + (c || 0), 0);
+                document.getElementById('totalBrokerage').textContent = tradeCount > 0 ? '₹' + totalBrokerage.toLocaleString('en-IN', { maximumFractionDigits: 0 }) : '-';
+                document.getElementById('totalBrokerage').style.color = '#dc2626';
                 const equityValues = data.equity || [];
-                const lotSizes = data.lotSize || [];
-                const drawdowns = [];
+                const lotSizes     = data.lotSize || [];
+                const drawdowns    = [];
                 let peak = equityValues[0] || 0;
-                
                 for (let i = 0; i < equityValues.length; i++) {
-                    const currentValue = equityValues[i];
-                    if (currentValue > peak) {
-                        peak = currentValue;
-                    }
-                    const drawdown = peak > 0 ? ((currentValue - peak) / peak) * 100 : 0;
-                    drawdowns.push(drawdown);
+                    if (equityValues[i] > peak) peak = equityValues[i];
+                    drawdowns.push(peak > 0 ? ((equityValues[i] - peak) / peak) * 100 : 0);
                 }
-
-                if (AppState.equityCurveChart) {
-                    AppState.equityCurveChart.destroy();
-                }
-
-                const ctx = document.getElementById('equityCurveChart').getContext('2d');
-                
-                AppState.equityCurveChart = new Chart(ctx, {
-                    type: 'line',
-                    data: {
-                        labels: data.dates || [],
-                        datasets: [{
-                            label: 'Equity',
-                            data: data.equity || [],
-                            borderColor: '#3b82f6',
-                            backgroundColor: 'rgba(59, 130, 246, 0.1)',
-                            borderWidth: 2,
-                            fill: true,
-                            tension: 0.1,
-                            pointRadius: 2,
-                            pointHoverRadius: 5
-                        }]
-                    },
-                    options: {
-                        responsive: true,
-                        maintainAspectRatio: true,
-                        plugins: {
-                            legend: {
-                                display: false
-                            },
-                            tooltip: {
-                                mode: 'index',
-                                intersect: false,
-                                callbacks: {
-                                    title: function(context) {
-                                        return context[0].label;
-                                    },
-                                    label: function(context) {
-                                        return 'Equity: ₹' + context.parsed.y.toLocaleString('en-IN');
-                                    },
-                                    afterLabel: function(context) {
-                                        const index = context.dataIndex;
-                                        const drawdown = drawdowns[index];
-                                        const lotSize = lotSizes[index];
-                                        
-                                        let lines = [];
-                                        
-                                        if (drawdown === 0) {
-                                            lines.push('Drawdown: 0% (Peak)');
-                                        } else {
-                                            lines.push('Drawdown: ' + drawdown.toFixed(2) + '%');
-                                        }
-                                        
-                                        if (lotSize !== undefined && lotSize !== null) {
-                                            lines.push('Lot Size: ' + lotSize);
-                                        }
-                                        
-                                        return lines;
-                                    }
-                                },
-                                backgroundColor: 'rgba(0, 0, 0, 0.8)',
-                                titleColor: '#fff',
-                                bodyColor: '#fff',
-                                borderColor: '#3b82f6',
-                                borderWidth: 1,
-                                padding: 10,
-                                displayColors: false
-                            }
+                if (AppState.equityCurveChart) AppState.equityCurveChart.destroy();
+                AppState.equityCurveChart = new Chart(
+                    document.getElementById('equityCurveChart').getContext('2d'),
+                    {
+                        type: 'line',
+                        data: {
+                            labels: data.dates || [],
+                            datasets: [{
+                                label: 'Equity', data: data.equity || [],
+                                borderColor: '#2563eb', backgroundColor: 'rgba(37,99,235,0.07)',
+                                borderWidth: 2, fill: true, tension: 0.1, pointRadius: 2, pointHoverRadius: 5
+                            }]
                         },
-                        scales: {
-                            x: {
-                                grid: {
-                                    display: false
-                                },
-                                ticks: {
-                                    maxTicksLimit: 12,
-                                    autoSkip: true
+                        options: {
+                            responsive: true, maintainAspectRatio: true,
+                            plugins: {
+                                legend: { display: false },
+                                tooltip: {
+                                    mode: 'index', intersect: false,
+                                    callbacks: {
+                                        title: ctx => ctx[0].label,
+                                        label: ctx => 'Equity: ₹' + ctx.parsed.y.toLocaleString('en-IN'),
+                                        afterLabel: ctx => {
+                                            const lines = [];
+                                            const dd = drawdowns[ctx.dataIndex];
+                                            lines.push(dd === 0 ? 'Drawdown: 0% (Peak)' : 'Drawdown: ' + dd.toFixed(2) + '%');
+                                            const ls = lotSizes[ctx.dataIndex];
+                                            if (ls !== undefined && ls !== null) lines.push('Lot Size: ' + ls);
+                                            return lines;
+                                        }
+                                    },
+                                    backgroundColor: 'rgba(0,0,0,0.85)', titleColor: '#fff', bodyColor: '#fff',
+                                    borderColor: '#2563eb', borderWidth: 1, padding: 10, displayColors: false
                                 }
                             },
-                            y: {
-                                beginAtZero: false,
-                                ticks: {
-                                    callback: function(value) {
-                                        return '₹' + value.toLocaleString('en-IN');
-                                    }
-                                },
-                                suggestedMin: function(context) {
-                                    const data = context.chart.data.datasets[0].data;
-                                    const min = Math.min(...data);
-                                    return min * 0.95;
-                                },
-                                suggestedMax: function(context) {
-                                    const data = context.chart.data.datasets[0].data;
-                                    const max = Math.max(...data);
-                                    return max * 1.05;
+                            scales: {
+                                x: { grid: { display: false }, ticks: { maxTicksLimit: 12, autoSkip: true } },
+                                y: {
+                                    beginAtZero: false,
+                                    ticks: { callback: value => '₹' + value.toLocaleString('en-IN') }
                                 }
                             }
                         }
                     }
-                });
+                );
             }
         };
 
-        // Expose EquityCurve methods globally
-        function loadEquityCurve() { EquityCurve.loadEquityCurve(); }
         function refreshEquityCurve() { EquityCurve.refreshEquityCurve(); }
-        function showMockEquityCurve() { EquityCurve.showMockEquityCurve(); }
         function selectPeriod(period, button) { EquityCurve.selectPeriod(period, button); }
-        function applyCustomDateRange() { EquityCurve.applyCustomDateRange(); }
+        function applyCustomDateRange(){ EquityCurve.applyCustomDateRange(); }
         function filterByStrategy(strategy) { EquityCurve.filterByStrategy(strategy); }
 
         // ==================== NSE HOLIDAY CALENDAR ====================
         const NSECalendar = {
             holidays2026: [
-                { date: '2026-01-15', name: 'Municipal Corporation Election - Maharashtra' },
-                { date: '2026-01-26', name: 'Republic Day' },
-                { date: '2026-03-03', name: 'Holi' },
-                { date: '2026-03-26', name: 'Shri Ram Navami' },
-                { date: '2026-03-31', name: 'Shri Mahavir Jayanti' },
-                { date: '2026-04-03', name: 'Good Friday' },
-                { date: '2026-04-14', name: 'Dr. Baba Saheb Ambedkar Jayanti' },
-                { date: '2026-05-01', name: 'Maharashtra Day' },
-                { date: '2026-05-28', name: 'Bakri Id' },
-                { date: '2026-06-26', name: 'Muharram' },
-                { date: '2026-09-14', name: 'Ganesh Chaturthi' },
-                { date: '2026-10-02', name: 'Mahatma Gandhi Jayanti' },
-                { date: '2026-10-20', name: 'Dussehra' },
-                { date: '2026-11-10', name: 'Diwali-Balipratipada' },
-                { date: '2026-11-24', name: 'Prakash Gurpurb Sri Guru Nanak Dev' },
-                { date: '2026-12-25', name: 'Christmas' }
+                { date:'2026-01-15', name:'Municipal Corporation Election - Maharashtra' },
+                { date:'2026-01-26', name:'Republic Day' },
+                { date:'2026-03-03', name:'Holi' },
+                { date:'2026-03-26', name:'Shri Ram Navami' },
+                { date:'2026-03-31', name:'Shri Mahavir Jayanti' },
+                { date:'2026-04-03', name:'Good Friday' },
+                { date:'2026-04-14', name:'Dr. Baba Saheb Ambedkar Jayanti' },
+                { date:'2026-05-01', name:'Maharashtra Day' },
+                { date:'2026-05-28', name:'Bakri Id' },
+                { date:'2026-06-26', name:'Muharram' },
+                { date:'2026-09-14', name:'Ganesh Chaturthi' },
+                { date:'2026-10-02', name:'Mahatma Gandhi Jayanti' },
+                { date:'2026-10-20', name:'Dussehra' },
+                { date:'2026-11-10', name:'Diwali-Balipratipada' },
+                { date:'2026-11-24', name:'Prakash Gurpurb Sri Guru Nanak Dev' },
+                { date:'2026-12-25', name:'Christmas' }
             ],
-            
             currentMonth: new Date().getMonth(),
-            currentYear: new Date().getFullYear(),
-            
-			isFriday(date) {
-			    return date.getDay() === 5; // Friday is day 5
-			},			    
-			isRolloverDay(date) {
-			    const dateStr = this.formatDate(date);
-			    const isHoliday = this.isHoliday(dateStr);
-			    const isFriday = this.isFriday(date);			        
-			    return isFriday && !isHoliday;
-			},				
+            currentYear:  new Date().getFullYear(),
+
+            isMonday(date)      { return date.getDay() === 1; },
+            isRolloverDay(date) { return this.isMonday(date) && !this.isHoliday(this.formatDate(date)); },
+            isHoliday(dateStr)  { return this.holidays2026.find(h => h.date === dateStr); },
+            isWeekend(date)     { const d = date.getDay(); return d === 0 || d === 6; },
+            isToday(date)       {
+                const t = new Date();
+                return date.getDate() === t.getDate() && date.getMonth() === t.getMonth() && date.getFullYear() === t.getFullYear();
+            },
+            formatDate(date) {
+                return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`;
+            },
+
             toggleCalendar() {
                 const container = document.getElementById('calendarContainer');
-                const btn = document.getElementById('calendarToggleBtn');
-                
+                const btn       = document.getElementById('calendarToggleBtn');
                 if (container.style.display === 'none' || container.style.display === '') {
-                    container.style.display = 'block';
-                    btn.textContent = '▲';
-                    this.renderCalendar();
-                } else {
-                    container.style.display = 'none';
-                    btn.textContent = '▼';
+                    container.style.display = 'block'; btn.textContent = '▲'; this.renderCalendar();
+                } else { container.style.display = 'none'; btn.textContent = '▼'; }
+            },
+            prevMonth()  { if (--this.currentMonth < 0) { this.currentMonth = 11; this.currentYear--; } this.renderCalendar(); },
+            nextMonth()  { if (++this.currentMonth > 11) { this.currentMonth = 0;  this.currentYear++; } this.renderCalendar(); },
+            goToToday()  { const t = new Date(); this.currentMonth = t.getMonth(); this.currentYear = t.getFullYear(); this.renderCalendar(); },
+
+            renderCalendar() {
+                const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
+                const dayNames   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+                document.getElementById('calendarMonthYear').textContent = `${monthNames[this.currentMonth]} ${this.currentYear}`;
+                const firstDay      = new Date(this.currentYear, this.currentMonth, 1);
+                const lastDay       = new Date(this.currentYear, this.currentMonth + 1, 0);
+                const prevLastDay   = new Date(this.currentYear, this.currentMonth, 0);
+                const firstDayOfWeek  = firstDay.getDay();
+                const lastDateOfMonth = lastDay.getDate();
+                const prevLastDate    = prevLastDay.getDate();
+                let html = '';
+                dayNames.forEach(d => { html += `<div class="calendar-day-header">${d}</div>`; });
+                for (let i = firstDayOfWeek - 1; i >= 0; i--)
+                    html += `<div class="calendar-day other-month"><div class="calendar-day-number">${prevLastDate - i}</div></div>`;
+                for (let day = 1; day <= lastDateOfMonth; day++) {
+                    const date    = new Date(this.currentYear, this.currentMonth, day);
+                    const dateStr = this.formatDate(date);
+                    const holiday   = this.isHoliday(dateStr);
+                    const isWeekend = this.isWeekend(date);
+                    const isToday   = this.isToday(date);
+                    const isRollover= this.isRolloverDay(date);
+                    let classes = 'calendar-day';
+                    if (isToday)   classes += ' today';
+                    if (holiday)   classes += ' holiday';
+                    else if (isRollover) classes += ' rollover';
+                    else if (isWeekend)  classes += ' weekend';
+                    html += `<div class="${classes}">
+                        <div class="calendar-day-number">${day}</div>
+                        ${holiday    ? `<div class="holiday-name">${holiday.name}</div>` : ''}
+                        ${isRollover ? `<div class="rollover-badge">Rollover</div>` : ''}
+                    </div>`;
                 }
-            },
-            
-            isHoliday(dateStr) {
-                return this.holidays2026.find(h => h.date === dateStr);
-            },
-            
-            isWeekend(date) {
-                const day = date.getDay();
-                return day === 0 || day === 6; // Sunday or Saturday
-            },
-            
-            isToday(date) {
-                const today = new Date();
-                return date.getDate() === today.getDate() &&
-                       date.getMonth() === today.getMonth() &&
-                       date.getFullYear() === today.getFullYear();
-            },
-            
-            formatDate(date) {
-                const year = date.getFullYear();
-                const month = String(date.getMonth() + 1).padStart(2, '0');
-                const day = String(date.getDate()).padStart(2, '0');
-                return `${year}-${month}-${day}`;
-            },
-            
-            prevMonth() {
-                this.currentMonth--;
-                if (this.currentMonth < 0) {
-                    this.currentMonth = 11;
-                    this.currentYear--;
-                }
-                this.renderCalendar();
-            },
-            
-            nextMonth() {
-                this.currentMonth++;
-                if (this.currentMonth > 11) {
-                    this.currentMonth = 0;
-                    this.currentYear++;
-                }
-                this.renderCalendar();
-            },
-            
-            goToToday() {
-                const today = new Date();
-                this.currentMonth = today.getMonth();
-                this.currentYear = today.getFullYear();
-                this.renderCalendar();
-            },
-            
-			renderCalendar() {
-			        const monthNames = ['January', 'February', 'March', 'April', 'May', 'June',
-			                           'July', 'August', 'September', 'October', 'November', 'December'];
-			        const dayNames = ['Sun', 'Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat'];
-			        
-			        document.getElementById('calendarMonthYear').textContent = 
-			            `${monthNames[this.currentMonth]} ${this.currentYear}`;
-			        
-			        const firstDay = new Date(this.currentYear, this.currentMonth, 1);
-			        const lastDay = new Date(this.currentYear, this.currentMonth + 1, 0);
-			        const prevLastDay = new Date(this.currentYear, this.currentMonth, 0);
-			        
-			        const firstDayOfWeek = firstDay.getDay();
-			        const lastDateOfMonth = lastDay.getDate();
-			        const prevLastDate = prevLastDay.getDate();
-			        
-			        let calendarHTML = '';
-			        
-			        dayNames.forEach(day => {
-			            calendarHTML += `<div class="calendar-day-header">${day}</div>`;
-			        });
-			        
-			        for (let i = firstDayOfWeek - 1; i >= 0; i--) {
-			            const day = prevLastDate - i;
-			            calendarHTML += `<div class="calendar-day other-month">
-			                <div class="calendar-day-number">${day}</div>
-			            </div>`;
-			        }
-			        
-			        for (let day = 1; day <= lastDateOfMonth; day++) {
-			            const date = new Date(this.currentYear, this.currentMonth, day);
-			            const dateStr = this.formatDate(date);
-			            const holiday = this.isHoliday(dateStr);
-			            const isWeekend = this.isWeekend(date);
-			            const isToday = this.isToday(date);
-			            const isRollover = this.isRolloverDay(date);
-			            
-			            let classes = 'calendar-day';
-			            if (isToday) classes += ' today';
-			            if (holiday) classes += ' holiday';
-			            else if (isRollover) classes += ' rollover';
-			            else if (isWeekend) classes += ' weekend';
-			            
-			            calendarHTML += `<div class="${classes}">
-			                <div class="calendar-day-number">${day}</div>
-			                ${holiday ? `<div class="holiday-name">${holiday.name}</div>` : ''}
-			                ${isRollover ? `<div class="rollover-badge">🔄 Rollover Day</div>` : ''}
-			            </div>`;
-			        }
-			        
-			        const remainingDays = 42 - (firstDayOfWeek + lastDateOfMonth);
-			        for (let day = 1; day <= remainingDays; day++) {
-			            calendarHTML += `<div class="calendar-day other-month">
-			                <div class="calendar-day-number">${day}</div>
-			            </div>`;
-			        }
-			        
-			        document.getElementById('calendarGrid').innerHTML = calendarHTML;
-			    }
-			};
+                const remaining = 42 - (firstDayOfWeek + lastDateOfMonth);
+                for (let day = 1; day <= remaining; day++)
+                    html += `<div class="calendar-day other-month"><div class="calendar-day-number">${day}</div></div>`;
+                document.getElementById('calendarGrid').innerHTML = html;
+            }
+        };
 
         function toggleCalendar() { NSECalendar.toggleCalendar(); }
-        function prevMonth() { NSECalendar.prevMonth(); }
-        function nextMonth() { NSECalendar.nextMonth(); }
-        function goToToday() { NSECalendar.goToToday(); }
+        function prevMonth()      { NSECalendar.prevMonth(); }
+        function nextMonth()      { NSECalendar.nextMonth(); }
+        function goToToday()      { NSECalendar.goToToday(); }
     </script>
 </head>
-<body>
-<div class="container">
-    <!-- TOP BAR -->
-    <div class="top-bar">
-        <div class="logo-wrap">
-            <img src="/img/nc.png" alt="novaQuant">
-        </div>
-        <div class="title-block">
-            <div class="page-header">novaQuant • Signals Operations Desk</div>
-            <div class="page-sub">Manage Kite auth, symbols, rollover trigger and runtime cache</div>
-        </div>
+
+<body class="bg-gray-50 font-sans text-sm leading-relaxed text-gray-900 antialiased">
+
+<!-- ===== TOPBAR ===== -->
+<header class="sticky top-0 z-50 h-14 bg-white border-b border-gray-200 flex items-center justify-between px-8">
+    <a href="/signalHome" class="flex items-center gap-2.5 no-underline hover:opacity-80 transition-opacity">
+        <img src="/img/nc.png" alt="nQ" class="w-7 h-7 rounded-md">
+        <span class="text-[15px] font-semibold tracking-tight text-gray-900">nqCore</span>
+    </a>
+    <div class="flex items-center gap-2 text-xs text-gray-400">
+        <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+        <span id="topbarDate">Signals Desk</span>
     </div>
+</header>
 
-    <div class="section-grid">
+<!-- ===== LAYOUT ===== -->
+<div class="flex" style="min-height: calc(100vh - 56px)">
 
-        <!-- Get Login URL -->
-        <div class="section-card">
-            <div class="section-header">
-                <div class="section-icon">🔗</div>
-                <div>
-                    <div class="section-title">Get Login URL</div>
-                    <div class="section-subtitle">Fetch the broker login link</div>
-                </div>
-            </div>
-            <div class="get-url-container">
-                <button class="action-btn" onclick="fetchLoginUrl()" style="margin: 0; width: auto; padding: 10px 16px;">Fetch URL</button>
-                <div id="urlRightSection" class="url-right-section">
-                    <input type="text" id="loginUrlField" readonly style="display: block;" />
-                    <button id="copyIcon" class="copy-icon" onclick="copyLoginUrl()">📋</button>
-                </div>
-            </div>
-            <p style="font-size:12px; color:#6b7280;">Click "Fetch URL", copy and open in browser</p>
+    <!-- ===== SIDEBAR ===== -->
+    <aside class="w-[220px] shrink-0 bg-white border-r border-gray-200 py-5 sticky top-14 overflow-y-auto" style="height: calc(100vh - 56px)">
+
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Auth</div>
+            <a href="#auth" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="12" height="9" rx="1"/><path d="M5 5V4a3 3 0 0 1 6 0v1"/></svg>
+                Login &amp; Token
+            </a>
+            <a href="#symbols" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,4"/></svg>
+                Symbols
+            </a>
         </div>
 
-        <!-- Save Token -->
-        <div class="section-card">
-            <div class="section-header">
-                <div class="section-icon">🔑</div>
-                <div>
-                    <div class="section-title">Save Request Token</div>
-                    <div class="section-subtitle">Store your request token</div>
-                </div>
-            </div>
-            <form method="post" th:action="@{/kite-auth/save}">
-                <div class="form-group">
-                    <i>🔐</i>
-                    <input type="text" name="requestToken" required placeholder="Enter Request Token" style="max-width: none;"/>
-                </div>
-                <button type="submit" class="action-btn" style="margin-top: 12px;">Save Request Token</button>
-            </form>
-            <div class="message success"
-                 th:if="${success != null} and (${source} == null or ${source} != 'symbols')"
-                 th:text="${success}"></div>
-            <div class="message error"
-                 th:if="${error != null} and (${source} == null or ${source} != 'symbols')"
-                 th:text="${error}"></div>
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Operations</div>
+            <a href="#rollover" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 0 6-6"/><polyline points="5,2 2,2 2,5"/></svg>
+                Rollover
+            </a>
+            <a href="#cache" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="5" rx="5" ry="2.5"/><path d="M3 5v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V5"/><path d="M3 8v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V8"/></svg>
+                Cache
+            </a>
+            <a href="#instruments" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>
+                Instruments
+            </a>
         </div>
 
-        <!-- Save Symbols -->
-        <div class="section-card"
-             th:classappend="${noSymbols} ? ' needs-attention' : ''"
-             th:attr="data-no-symbols=${noSymbols}">
-            <div class="section-header">
-                <div class="section-icon">📈</div>
-                <div>
-                    <div class="section-title">Save Symbols</div>
-                    <div class="section-subtitle">This week &amp; rollover symbols</div>
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">System</div>
+            <a href="#position-size" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="5" width="3" height="10"/><rect x="11" y="2" width="3" height="13"/></svg>
+                Position Size
+            </a>
+        </div>
+
+        <div>
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Analytics</div>
+            <a href="#equity" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,14 5,8 9,10 15,3"/></svg>
+                Equity Curve
+            </a>
+            <a href="#calendar" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="11" rx="1"/><line x1="2" y1="7" x2="14" y2="7"/><line x1="5" y1="1" x2="5" y2="5"/><line x1="11" y1="1" x2="11" y2="5"/></svg>
+                Calendar
+            </a>
+            <a href="/tradeLog" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="1" y="2" width="14" height="12" rx="1"/><line x1="1" y1="6" x2="15" y2="6"/><line x1="4" y1="9" x2="8" y2="9"/><line x1="4" y1="11" x2="6" y2="11"/></svg>
+                Trade Log
+            </a>
+        </div>
+    </aside>
+
+    <!-- ===== MAIN ===== -->
+    <main class="flex-1 min-w-0 p-8 space-y-8">
+
+        <!-- ===== AUTH ===== -->
+        <section id="auth" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Auth &amp; Tokens</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100">
+                    <div class="text-sm font-semibold text-gray-900">Kite Authentication</div>
+                    <div class="text-xs text-gray-400 mt-0.5">Login and save your daily request token</div>
+                </div>
+                <div class="px-5 py-4 space-y-4">
+                    <!-- Login URL row -->
+                    <div class="flex items-center gap-3">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Login URL</span>
+                        <button onclick="fetchLoginUrl()"
+                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Open Kite Login ↗
+                        </button>
+                        <button id="copyUrlBtn" onclick="copyLoginUrl()" style="display:none;"
+                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Copy URL
+                        </button>
+                    </div>
+                    <!-- Token row -->
+                    <form id="tokenForm" onsubmit="saveToken(event)" class="flex items-center gap-3">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Request Token</span>
+                        <input type="text" id="tokenInput" required placeholder="Paste token here"
+                               class="px-3 py-1.5 border border-gray-200 rounded-md text-xs font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 w-72" />
+                        <button type="submit"
+                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Save
+                        </button>
+                    </form>
+                    <div id="tokenMsg" style="display:none;"></div>
+                    <!-- Test connection row -->
+                    <div class="flex items-center gap-3 pt-1 border-t border-gray-100">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Test Auth</span>
+                        <button onclick="testKiteConnection()"
+                                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-900 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Test Connection
+                        </button>
+                        <div id="kiteTestResult" style="display:none;" class="message text-xs font-mono flex-1"></div>
+                    </div>
                 </div>
             </div>
+        </section>
 
-            <form method="post" th:action="@{/symbol/save}">
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                    <div class="symbol-badge this-week" style="margin: 0; min-width: 80px; text-align: center;">This Week</div>
-                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                        <i>📊</i>
-                        <input type="text"
-                               id="thisWeekSymbolInput"
-                               name="thisWeekSymbol"
-                               required
-                               placeholder="This Week Symbol"
-                               th:value="${symbols?.thisWeekSymbol}"
-                               th:disabled="${!noSymbols}"
-                               class="readonly"
-                               style="max-width: none;" />
+        <!-- ===== SYMBOLS ===== -->
+        <section id="symbols" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Symbols</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden"
+                 th:classappend="${noSymbols} ? ' needs-attention' : ''"
+                 th:attr="data-no-symbols=${noSymbols}">
+                <div class="px-5 py-4 border-b border-gray-100">
+                    <div class="text-sm font-semibold text-gray-900 sec-title">Save Symbols</div>
+                    <div class="text-xs text-gray-400 mt-0.5">This week &amp; rollover contract symbols</div>
+                </div>
+                <div class="px-5 py-4">
+                    <form id="symbolsForm" onsubmit="saveSymbols(event)" class="flex items-center gap-4 flex-wrap">
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-blue-600 uppercase tracking-wide shrink-0">This Week</label>
+                            <input type="text" id="thisWeekSymbolInput" name="thisWeekSymbol" required placeholder="18MAR25" maxlength="7"
+                                   th:value="${symbols?.thisWeekSymbol}"
+                                   th:disabled="${!noSymbols}"
+                                   class="readonly px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-24 disabled:bg-gray-50 disabled:text-gray-400" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-violet-600 uppercase tracking-wide shrink-0">Rollover</label>
+                            <input type="text" id="rolloverSymbolInput" name="rolloverSymbol" required placeholder="25MAR25" maxlength="7"
+                                   th:value="${symbols?.rolloverSymbol}"
+                                   th:disabled="${!noSymbols}"
+                                   class="readonly px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-24 disabled:bg-gray-50 disabled:text-gray-400" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-orange-600 uppercase tracking-wide shrink-0">Rollover Day</label>
+                            <input type="date" id="rolloverDayInput" name="rolloverDay"
+                                   th:value="${symbols?.rolloverDay}"
+                                   th:disabled="${!noSymbols}"
+                                   onkeydown="return false;"
+                                   class="readonly px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-36 disabled:bg-gray-50 disabled:text-gray-400 cursor-pointer" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide shrink-0">Rollover Complete?</label>
+                            <input type="text" readonly
+                                   th:value="${symbols?.rolloverComplete == true ? 'YES' : 'NO'}"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-center w-14
+                                          bg-gray-50 cursor-not-allowed
+                                          [[${symbols?.rolloverComplete == true ? 'text-green-600 font-semibold' : 'text-gray-400'}]]" />
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <button type="button" id="editSymbolsBtn" onclick="enableSymbolEdit()"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-md border-0 cursor-pointer">Edit</button>
+                            <button type="button" id="cancelSymbolsBtn" onclick="cancelSymbolEdit()" style="display:none;"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-md border-0 cursor-pointer">Cancel</button>
+                            <button type="submit" id="saveSymbolsBtn"
+                                    th:disabled="${!noSymbols}"
+                                    th:classappend="${!noSymbols} ? ' btn-secondary' : ''"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Save</button>
+                        </div>
+                    </form>
+                    <div id="symbolsMsg" style="display:none;" class="mt-3"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== OPERATIONS ===== -->
+        <section class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Operations</div>
+            <div class="grid grid-cols-3 gap-5">
+
+                <!-- Trigger Rollover -->
+                <div id="rollover" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <div class="text-sm font-semibold text-gray-900">Trigger Rollover</div>
+                        <div class="text-xs text-gray-400 mt-0.5">POST to /api/rollover</div>
+                    </div>
+                    <div class="p-5 space-y-3">
+                        <div class="flex gap-2">
+                            <input type="text" id="signalPriceInput" placeholder="5-digit price" maxlength="5"
+                                   oninput="validateSignalPrice(this)"
+                                   class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 min-w-0" />
+                            <button onclick="triggerRollover()"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded-lg border-0 cursor-pointer whitespace-nowrap">
+                                Rollover
+                            </button>
+                        </div>
+                        <div id="rolloverMsg" style="display:none;"></div>
                     </div>
                 </div>
 
-                <div style="display: flex; align-items: center; gap: 10px; margin-bottom: 12px;">
-                    <div class="symbol-badge rollover" style="margin: 0; min-width: 80px; text-align: center;">Rollover</div>
-                    <div class="form-group" style="flex: 1; margin-bottom: 0;">
-                        <i>🔁</i>
-                        <input type="text"
-                               id="rolloverSymbolInput"
-                               name="rolloverSymbol"
-                               required
-                               placeholder="Rollover Symbol"
-                               th:value="${symbols?.rolloverSymbol}"
-                               th:disabled="${!noSymbols}"
-                               class="readonly"
-                               style="max-width: none;" />
+                <!-- Cache -->
+                <div id="cache" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <div class="text-sm font-semibold text-gray-900">Signal Cache</div>
+                        <div class="text-xs text-gray-400 mt-0.5">View and clear signal state</div>
+                    </div>
+                    <div class="p-5 space-y-3">
+                        <div class="flex gap-2">
+                            <button onclick="viewCacheStatus()"
+                                    class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[13px] font-medium rounded-lg border-0 cursor-pointer">View</button>
+                            <button onclick="clearCache()"
+                                    class="flex-1 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-[13px] font-medium rounded-lg border border-red-200 cursor-pointer">Clear</button>
+                        </div>
+                        <div id="cacheStatusDisplay" style="display:none;"
+                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
                     </div>
                 </div>
 
-                <div class="form-actions">
-                    <button type="button" class="action-btn btn-secondary" id="editSymbolsBtn" onclick="enableSymbolEdit()">Edit</button>
-                    <button type="button" class="action-btn btn-secondary" id="cancelSymbolsBtn" style="display:none;" onclick="cancelSymbolEdit()">Cancel</button>
-                    <button type="submit" class="action-btn" id="saveSymbolsBtn"
-                            th:disabled="${!noSymbols}"
-                            th:classappend="${!noSymbols} ? ' btn-secondary' : ''">
-                        Save
-                    </button>
-                </div>
-            </form>
-
-            <div class="message success"
-                 th:if="${success != null} and (${source} != null and ${source} == 'symbols')"
-                 th:text="${success}"></div>
-            <div class="message error"
-                 th:if="${error != null} and (${source} != null and ${source} == 'symbols')"
-                 th:text="${error}"></div>
-        </div>
-
-        <!-- Trigger Rollover -->
-        <div class="section-card">
-            <div class="section-header">
-                <div class="section-icon">⚡</div>
-                <div>
-                    <div class="section-title">Trigger Rollover</div>
-                    <div class="section-subtitle">Call /api/rollover</div>
+                <!-- Nifty Instruments -->
+                <div id="instruments" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-900">Nifty Instruments</div>
+                            <div class="text-xs text-gray-400 mt-0.5">Available NIFTY contracts</div>
+                        </div>
+                        <div class="flex gap-1.5">
+                            <button onclick="fetchNiftyInstruments()"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Get</button>
+                            <button onclick="clearNiftyInstruments()"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">Clear</button>
+                        </div>
+                    </div>
+                    <div class="p-5">
+                        <div id="niftyInstrumentsStatus" style="display:none;"></div>
+                        <div id="niftyInstrumentsBox" style="display:none;"
+                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
+                    </div>
                 </div>
             </div>
-            <div style="display: flex; gap: 8px; align-items: center;">
-                <div class="form-group" style="margin-bottom: 0;">
-                    <i>💹</i>
-                    <input type="text" id="signalPriceInput"
-                           placeholder="5-digit Signal Price"
-                           maxlength="5"
-                           oninput="validateSignalPrice(this)" />
-                </div>
-                <button class="action-btn" onclick="triggerRollover()" style="margin: 0;">Rollover</button>
-            </div>
-            <div id="rolloverMsg" class="message" style="display:none;"></div>
-        </div>
+        </section>
 
-        <!-- Cache -->
-        <div class="section-card">
-            <div class="section-header">
-                <div class="section-icon">🧠</div>
-                <div>
-                    <div class="section-title">Cache</div>
-                    <div class="section-subtitle">View signal status</div>
-                </div>
-            </div>
-            <div style="display:flex; gap:8px;">
-                <button class="action-btn btn-secondary" onclick="viewCacheStatus()" style="width:50%;">View</button>
-                <button class="action-btn btn-danger" onclick="clearCache()" style="width:50%;">Clear</button>
-            </div>
-            <div id="cacheStatusDisplay"></div>
-        </div>
-
-        <!-- Nifty Instruments -->
-        <div class="section-card">
-            <div class="section-header" style="justify-content:space-between; align-items:center;">
-                <div style="display:flex; gap:12px; align-items:center;">
-                    <div class="section-icon">📜</div>
+        <!-- ===== POSITION SIZE ===== -->
+        <section id="position-size" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Leg Templates</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
                     <div>
-                        <div class="section-title">Nifty Instruments</div>
-                        <div class="section-subtitle">View NIFTY instruments</div>
+                        <div class="text-sm font-semibold text-gray-900">Position Manifestation</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Legs that fire on each LONG / SHORT signal. Strike = ATM + offset (pts).</div>
+                    </div>
+                    <button id="legTemplatesToggleBtn" onclick="toggleLegTemplates()"
+                            class="text-blue-600 text-lg leading-none px-3 py-1 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded-lg">▼</button>
+                </div>
+                <div id="legTemplatesBody" style="display:none;">
+                    <div class="p-5">
+                        <div class="max-w-3xl mx-auto space-y-6">
+                            <!-- LONG legs -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
+                                    <button onclick="showAddLegRow('LONG')"
+                                            class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                </div>
+                                <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                            <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="longLegsBody" class="text-xs"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <!-- SHORT legs -->
+                            <div>
+                                <div class="flex items-center justify-between mb-2">
+                                    <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
+                                    <button onclick="showAddLegRow('SHORT')"
+                                            class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                </div>
+                                <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                    <table class="w-full text-sm">
+                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                            <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                            </tr>
+                                        </thead>
+                                        <tbody id="shortLegsBody" class="text-xs"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                            <div id="legTemplatesMsg" style="display:none;"></div>
+                        </div>
                     </div>
                 </div>
-                <div style="display:flex; gap:8px;">
-                    <button class="action-btn" onclick="fetchNiftyInstruments()" style="width:auto; padding:10px 14px; font-size:13px;">Get</button>
-                    <button class="action-btn btn-secondary" onclick="clearNiftyInstruments()" style="width:auto; padding:10px 14px; font-size:13px;">Close</button>
+            </div>
+        </section>
+
+        <!-- ===== EQUITY CURVE ===== -->
+        <section id="equity" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Analytics</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">Equity Curve</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Portfolio performance over time</div>
+                    </div>
+                    <button onclick="refreshEquityCurve()"
+                            class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">↺ Refresh</button>
+                </div>
+                <div class="p-5">
+
+                    <!-- Capital Management (collapsible) -->
+                    <div class="mb-5 border border-gray-100 rounded-lg overflow-hidden">
+                        <div class="flex items-center justify-between px-4 py-3 bg-gray-50">
+                            <span class="text-[13px] font-medium text-gray-700">Capital Management</span>
+                            <button id="capitalToggleBtn" onclick="toggleCapital()"
+                                    class="text-blue-600 text-base leading-none px-2 py-0.5 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded">▼</button>
+                        </div>
+                        <div id="capitalBody" style="display:none;" class="p-4">
+                            <form id="capitalForm" onsubmit="saveCapital(event)">
+                                <input type="hidden" name="id" value="1" />
+                                <!-- Row 1: editable capital fields, 5 equal-weighted columns -->
+                                <div class="grid grid-cols-5 gap-4 mb-4">
+                                    <div>
+                                        <label class="block text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Current Capital</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                                            <input type="text" id="currentCapitalInput" name="currentCapital" placeholder="0"
+                                                   th:value="${tradeCapital?.currentCapital}" disabled
+                                                   class="readonly w-full pl-6 pr-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-900 bg-white outline-none focus:border-blue-500"
+                                                   oninput="formatCurrencyInput(this)" onblur="formatCurrencyOnBlur(this)" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Add. Capital</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                                            <input type="text" id="additionalCapitalInput" name="additionalCapital" placeholder="0"
+                                                   disabled class="readonly w-full pl-6 pr-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-900 bg-white outline-none focus:border-blue-500"
+                                                   oninput="formatCurrencyInput(this)" onblur="formatCurrencyOnBlur(this)" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Ceiling to Hit</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                                            <input type="text" id="ceilingToHitInput" name="ceilingToHit" placeholder="0"
+                                                   th:value="${tradeCapital?.ceilingToHit}" disabled
+                                                   class="readonly w-full pl-6 pr-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-900 bg-white outline-none focus:border-blue-500"
+                                                   oninput="formatCurrencyInput(this)" onblur="formatCurrencyOnBlur(this)" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Defined Risk/Lot</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                                            <input type="text" id="definedRiskPerLotInput" name="definedRiskPerLot" placeholder="0"
+                                                   th:value="${tradeCapital?.definedRiskPerLot}" disabled
+                                                   class="readonly w-full pl-6 pr-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-900 bg-white outline-none focus:border-blue-500"
+                                                   oninput="formatCurrencyInput(this)" onblur="formatCurrencyOnBlur(this)" />
+                                        </div>
+                                    </div>
+                                    <div>
+                                        <label class="block text-[10px] text-gray-400 mb-1.5 font-medium uppercase tracking-wider">Current Risk/Lot</label>
+                                        <div class="relative">
+                                            <span class="absolute left-2.5 top-1/2 -translate-y-1/2 text-gray-400 text-xs">₹</span>
+                                            <input type="text" id="currentRiskPerLotInput" name="currentRiskPerLot" placeholder="0"
+                                                   th:value="${tradeCapital?.currentRiskPerLot}" disabled
+                                                   class="readonly w-full pl-6 pr-2 py-2 border border-gray-200 rounded-lg text-xs text-gray-900 bg-white outline-none focus:border-blue-500"
+                                                   oninput="formatCurrencyInput(this)" onblur="formatCurrencyOnBlur(this)" />
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Row 2: read-only derived stats — visually distinct from editable row -->
+                                <div class="border-t border-gray-100 pt-4 mb-4">
+                                    <div class="flex items-baseline justify-between mb-2.5">
+                                        <span class="text-[10px] text-gray-400 font-medium uppercase tracking-wider">NRML Cost / Lot</span>
+                                        <span class="text-[10px] text-gray-300 font-normal">last 30 days</span>
+                                    </div>
+                                    <div class="grid grid-cols-3 gap-3">
+                                        <div class="px-3.5 py-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Highest</div>
+                                            <div class="text-sm text-gray-900 font-semibold" id="highestNrmlCostPerLotDisplay">—</div>
+                                        </div>
+                                        <div class="px-3.5 py-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Average</div>
+                                            <div class="text-sm text-gray-900 font-semibold" id="averageNrmlCostPerLotDisplay">—</div>
+                                        </div>
+                                        <div class="px-3.5 py-2.5 bg-gray-50 rounded-lg border border-gray-100">
+                                            <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Lowest</div>
+                                            <div class="text-sm text-gray-900 font-semibold" id="lowestNrmlCostPerLotDisplay">—</div>
+                                        </div>
+                                    </div>
+                                </div>
+
+                                <!-- Buttons -->
+                                <div class="flex justify-end gap-2 pt-3 border-t border-gray-100">
+                                    <button type="button" id="editCapitalBtn" onclick="enableCapitalEdit()"
+                                            class="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg border-0 cursor-pointer">Edit</button>
+                                    <button type="button" id="cancelCapitalBtn" onclick="cancelCapitalEdit()" style="display:none;"
+                                            class="px-4 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-lg border-0 cursor-pointer">Cancel</button>
+                                    <button type="submit" id="saveCapitalBtn" disabled
+                                            class="btn-secondary px-4 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-lg border-0 cursor-pointer">Save</button>
+                                </div>
+                            </form>
+                            <div id="capitalSuccessMsg" style="display:none;" class="message success"></div>
+                            <div id="capitalErrorMsg"   style="display:none;" class="message error"></div>
+                        </div>
+                    </div>
+
+                    <!-- Period Filters -->
+                    <div id="equityFilters" style="display:none;"
+                         class="mb-4 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg flex flex-wrap items-center gap-x-4 gap-y-2">
+                        <div class="flex gap-1.5">
+                            <button class="period-btn active" onclick="selectPeriod('1W', this)">1W</button>
+                            <button class="period-btn" onclick="selectPeriod('1M', this)">1M</button>
+                            <button class="period-btn" onclick="selectPeriod('3M', this)">3M</button>
+                            <button class="period-btn" onclick="selectPeriod('6M', this)">6M</button>
+                            <button class="period-btn" onclick="selectPeriod('1Y', this)">1Y</button>
+                            <button class="period-btn" onclick="selectPeriod('ALL', this)">ALL</button>
+                        </div>
+                        <div class="w-px h-5 bg-gray-200"></div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-500 font-medium">Strategy</label>
+                            <select id="strategyFilter" onchange="filterByStrategy(this.value)"
+                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
+                                <option value="All">All Strategies</option>
+                            </select>
+                        </div>
+                        <div class="w-px h-5 bg-gray-200"></div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-500 font-medium">Custom</label>
+                            <input type="date" id="equityStartDate"
+                                   class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white outline-none">
+                            <span class="text-gray-300 text-xs">to</span>
+                            <input type="date" id="equityEndDate"
+                                   class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white outline-none">
+                            <button onclick="applyCustomDateRange()"
+                                    class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Apply</button>
+                        </div>
+                    </div>
+
+                    <!-- Chart -->
+                    <div id="equityCurveContainer" style="display:none;" class="relative">
+                        <div class="loading-overlay"><div class="spinner"></div></div>
+                        <canvas id="equityCurveChart" style="max-height:380px;"></canvas>
+                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 text-center text-xs">
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Starting Equity</div>
+                                <div id="startingEquity" class="font-semibold text-gray-900 font-mono">₹0</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Current Equity</div>
+                                <div id="currentEquity" class="font-semibold text-gray-900 font-mono">₹0</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Total P&amp;L</div>
+                                <div id="totalPnl" class="font-semibold font-mono">₹0</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Return %</div>
+                                <div id="returnPercent" class="font-semibold font-mono">0%</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Win Rate</div>
+                                <div id="winRate" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">No of Trades</div>
+                                <div id="tradeCount" class="font-semibold text-gray-900 font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Win</div>
+                                <div id="avgWinSize" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Loss</div>
+                                <div id="avgLossSize" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Win Points</div>
+                                <div id="winPoints" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Loss Points</div>
+                                <div id="lossPoints" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Net Points</div>
+                                <div id="pointsCaptured" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Avg Pts/Trade</div>
+                                <div id="avgPointsPerTrade" class="font-semibold font-mono">-</div>
+                            </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Charges</div>
+                                <div id="totalBrokerage" class="font-semibold font-mono">-</div>
+                            </div>
+                        </div>
+                    </div>
+                    <div id="equityCurveStatus" style="display:none;"></div>
                 </div>
             </div>
-            <div id="niftyInstrumentsStatus" class="message" style="display:none;"></div>
-            <div id="niftyInstrumentsBox"></div>
-        </div>
+        </section>
 
-		<!-- Position Size Matrix -->
-		<div class="section-card" style="grid-column: 1 / -1;">
-		    <div class="section-header" style="justify-content:space-between; align-items:center;">
-		        <div style="display:flex; gap:12px; align-items:center;">
-		            <div class="section-icon">📋</div>
-		            <div>
-		                <div class="section-title">Position Size Matrix</div>
-		                <div class="section-subtitle">View / Edit matrix</div>
-		            </div>
-		        </div>
-		        <button id="psmToggleBtn" onclick="togglePsm()"
-		                style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:20px; padding:6px 12px; line-height: 1;">
-		            ▼
-		        </button>
-		    </div>
+        <!-- ===== CALENDAR ===== -->
+        <section id="calendar" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">NSE Holiday Calendar</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">NSE Holiday Calendar 2026</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Holidays, weekends and rollover days</div>
+                    </div>
+                    <button id="calendarToggleBtn" onclick="toggleCalendar()"
+                            class="text-blue-600 text-lg leading-none px-3 py-1 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded-lg">▼</button>
+                </div>
+                <div id="calendarContainer" style="display:none;" class="px-5 pb-5">
+                    <!-- Nav row -->
+                    <div class="flex items-center justify-between mb-4">
+                        <div class="flex items-center gap-1">
+                            <button onclick="prevMonth()"
+                                    class="w-8 h-8 flex items-center justify-center bg-transparent border-0 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer text-sm">‹</button>
+                            <button onclick="nextMonth()"
+                                    class="w-8 h-8 flex items-center justify-center bg-transparent border-0 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer text-sm">›</button>
+                        </div>
+                        <div id="calendarMonthYear" class="text-sm font-semibold text-gray-900 absolute left-1/2 -translate-x-1/2" style="position:relative;left:0;transform:none;">March 2026</div>
+                        <button onclick="goToToday()"
+                                class="px-3 py-1 bg-gray-100 hover:bg-gray-200 border-0 rounded-md text-xs font-medium text-gray-600 cursor-pointer">Today</button>
+                    </div>
+                    <!-- Grid -->
+                    <div class="calendar-grid" id="calendarGrid"></div>
+                    <!-- Legend -->
+                    <div class="mt-4 calendar-legend">
+                        <div class="legend-item"><div class="legend-dot" style="background:#2563eb;"></div><span>Today</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#7c3aed;"></div><span>Rollover (Mon)</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#be123c;"></div><span>NSE Holiday</span></div>
+                        <div class="legend-item"><div class="legend-dot" style="background:#d1d5db;"></div><span>Weekend</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
 
-		    <div id="psmBody" style="display:none; overflow-x:auto;">
-		        <form method="post" th:action="@{/position-matrix/save}">
-		            <table class="psm-table">
-		                <thead>
-		                <tr>
-		                    <th>ID</th>
-		                    <th>Side</th>
-		                    <th>Action</th>
-		                    <th>Option</th>
-		                    <th>ATM</th>
-		                    <th>ATM +150</th>
-		                    <th>ATM +200</th>
-		                    <th>ATM +250</th>
-		                    <th>ATM -150</th>
-		                    <th>ATM -200</th>
-		                    <th>ATM -250</th>
-		                </tr>
-		                </thead>
-		                <tbody>
-		                <tr th:each="row, st : ${positionMatrix}" 
-		                    th:classappend="${row.id <= 2} ? 'psm-long-row' : 'psm-short-row'">
-		                    <td class="psm-id-cell">
-		                        <input type="hidden" th:name="${'matrix[' + st.index + '].id'}" th:value="${row.id}" />
-		                        <span th:text="${row.id}"></span>
-		                    </td>
-		                    <td>
-		                        <span class="psm-readonly" th:text="${row.positionSide}"></span>
-		                        <input type="hidden" th:name="${'matrix[' + st.index + '].positionSide'}" th:value="${row.positionSide}" />
-		                    </td>
-		                    <td>
-		                        <span class="psm-readonly" th:text="${row.actionType}"></span>
-		                        <input type="hidden" th:name="${'matrix[' + st.index + '].actionType'}" th:value="${row.actionType}" />
-		                    </td>
-		                    <td>
-		                        <span class="psm-readonly" th:text="${row.optionType}"></span>
-		                        <input type="hidden" th:name="${'matrix[' + st.index + '].optionType'}" th:value="${row.optionType}" />
-		                    </td>
-		                    
-		                    <!-- ATM - always disabled -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input readonly" 
-		                               th:name="${'matrix[' + st.index + '].atm'}" 
-		                               th:value="${row.atm}"
-		                               disabled />
-		                    </td>
-		                    
-		                    <!-- ATM +150: enabled only for PE (PUT), disabled for CE (CALL) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmPlus150'}" 
-		                               th:value="${row.atmPlus150}"
-		                               th:disabled="${row.optionType == 'CE'}"
-		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
-		                    </td>
-		                    
-		                    <!-- ATM +200: enabled only for PE (PUT), disabled for CE (CALL) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmPlus200'}" 
-		                               th:value="${row.atmPlus200}"
-		                               th:disabled="${row.optionType == 'CE'}"
-		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
-		                    </td>
-		                    
-		                    <!-- ATM +250: enabled only for PE (PUT), disabled for CE (CALL) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmPlus250'}" 
-		                               th:value="${row.atmPlus250}"
-		                               th:disabled="${row.optionType == 'CE'}"
-		                               th:classappend="${row.optionType == 'CE'} ? 'readonly' : ''" />
-		                    </td>
-		                    
-		                    <!-- ATM -150: enabled only for CE (CALL), disabled for PE (PUT) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmMinus150'}" 
-		                               th:value="${row.atmMinus150}"
-		                               th:disabled="${row.optionType == 'PE'}"
-		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
-		                    </td>
-		                    
-		                    <!-- ATM -200: enabled only for CE (CALL), disabled for PE (PUT) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmMinus200'}" 
-		                               th:value="${row.atmMinus200}"
-		                               th:disabled="${row.optionType == 'PE'}"
-		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
-		                    </td>
-		                    
-		                    <!-- ATM -250: enabled only for CE (CALL), disabled for PE (PUT) -->
-		                    <td>
-		                        <input type="number" min="0" class="psm-input" 
-		                               th:name="${'matrix[' + st.index + '].atmMinus250'}" 
-		                               th:value="${row.atmMinus250}"
-		                               th:disabled="${row.optionType == 'PE'}"
-		                               th:classappend="${row.optionType == 'PE'} ? 'readonly' : ''" />
-		                    </td>
-		                </tr>
-		                </tbody>
-		            </table>
-		            <div style="margin-top:16px; text-align:right;">
-		                <button type="submit" class="action-btn" style="width:160px;">Save Matrix</button>
-		            </div>
-		        </form>
-		        <div class="message success" style="margin-top:12px;" th:if="${matrixSuccess != null}" th:text="${matrixSuccess}"></div>
-		        <div class="message error" style="margin-top:12px;" th:if="${matrixError != null}" th:text="${matrixError}"></div>
-		    </div>
-		</div>
-
-		<!-- Equity Curve -->
-		<div class="section-card" style="grid-column: 1 / -1;">
-		    <div class="section-header" style="justify-content:space-between; align-items:center;">
-		        <div style="display:flex; gap:12px; align-items:center;">
-		            <div class="section-icon">📊</div>
-		            <div>
-		                <div class="section-title">Equity Curve</div>
-		                <div class="section-subtitle">Track portfolio performance</div>
-		            </div>
-		        </div>
-		        <div style="display:flex; gap:8px;">
-		            <button class="action-btn" onclick="loadEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px;">Load Chart</button>
-		            <button class="action-btn btn-secondary" onclick="refreshEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px;">Refresh</button>
-		            <button class="action-btn" onclick="showMockEquityCurve()" style="width:auto; padding:10px 16px; font-size:13px; background:#8b5cf6;">Demo</button>
-		        </div>
-		    </div>
-		    
-		    <!-- Capital Management -->
-		    <div style="border-bottom: 1px solid #e5e7eb; padding-bottom: 16px; margin-bottom: 16px;">
-		        <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:12px;">
-		            <div style="display:flex; gap:8px; align-items:center;">
-		                <span style="font-size:14px; font-weight:500; color:#374151;">💰 Capital Management</span>
-		            </div>
-		            <button id="capitalToggleBtn" onclick="toggleCapital()"
-		                    style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:18px; padding:4px 8px; line-height: 1;">
-		                ▼
-		            </button>
-		        </div>
-		        
-		        <div id="capitalBody" style="display:none;">
-					<form id="capitalForm" onsubmit="saveCapital(event)">
-					    <input type="hidden" name="id" value="1" />
-					    
-					    <div style="display:grid; grid-template-columns: repeat(6, 1fr); gap:12px; margin-bottom:12px;">
-					        <div>
-					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Current Capital</label>
-					            <div class="form-group" style="margin-bottom:0;">
-					                <i style="left:8px; font-size:12px;">₹</i>
-					                <input type="text" 
-					                       id="currentCapitalInput"
-					                       name="currentCapital"
-					                       placeholder="0"
-					                       th:value="${tradeCapital?.currentCapital}"
-					                       disabled
-					                       class="capital-input readonly"
-					                       oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-					            </div>
-					        </div>
-					        
-					        <div>
-					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Additional Capital</label>
-					            <div class="form-group" style="margin-bottom:0;">
-					                <i style="left:8px; font-size:12px;">₹</i>
-					                <input type="text" 
-					                       id="additionalCapitalInput"
-					                       name="additionalCapital"
-					                       placeholder="0"
-					                       disabled
-					                       class="capital-input readonly"
-					                       oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-					            </div>
-					        </div>
-					        
-					        <div>
-					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Ceiling to Hit</label>
-					            <div class="form-group" style="margin-bottom:0;">
-					                <i style="left:8px; font-size:12px;">₹</i>
-					                <input type="text" 
-					                       id="ceilingToHitInput"
-					                       name="ceilingToHit"
-					                       placeholder="0"
-					                       th:value="${tradeCapital?.ceilingToHit}"
-					                       disabled
-					                       class="capital-input readonly"
-					                       oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-					            </div>
-					        </div>
-					        
-					        <div>
-					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">NRML Cost/Lot</label>
-					            <div class="form-group" style="margin-bottom:0;">
-					                <i style="left:8px; font-size:12px;">₹</i>
-					                <input type="text" 
-					                       id="nrmlCostPerLotInput"
-					                       name="nrmlCostPerLot"
-					                       placeholder="0"
-					                       th:value="${tradeCapital?.nrmlCostPerLot}"
-					                       disabled
-					                       class="capital-input readonly"
-					                       oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-					            </div>
-					        </div>
-					        
-					        <div>
-					            <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Defined Risk Per Lot</label>
-					            <div class="form-group" style="margin-bottom:0;">
-					                <i style="left:8px; font-size:12px;">₹</i>
-					                <input type="text" 
-					                       id="definedRiskPerLotInput"
-					                       name="definedRiskPerLot"
-					                       placeholder="0"
-					                       th:value="${tradeCapital?.definedRiskPerLot}"
-					                       disabled
-					                       class="capital-input readonly"
-					                       oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-					                       style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-					            </div>
-					        </div>
-							
-							<div>
-							    <label style="display:block; font-size:11px; color:#6b7280; margin-bottom:4px; font-weight:500; text-transform:uppercase;">Current Risk Per Lot</label>
-							    <div class="form-group" style="margin-bottom:0;">
-							        <i style="left:8px; font-size:12px;">₹</i>
-							        <input type="text" 
-							               id="currentRiskPerLotInput"
-							               name="currentRiskPerLot"
-							               placeholder="0"
-							               th:value="${tradeCapital?.currentRiskPerLot}"
-							               disabled
-							               class="capital-input readonly"
-							               oninput="formatCurrencyInput(this)"
-										   onblur="formatCurrencyOnBlur(this)"
-							               style="max-width:none; padding:8px 8px 8px 24px; font-size:13px;" />
-							    </div>
-							</div>
-							
-					    </div>
-					    
-					    <div style="display:flex; justify-content:flex-end; gap:8px;">
-					        <button type="button" class="action-btn btn-secondary" id="editCapitalBtn" onclick="enableCapitalEdit()" style="width:auto; padding:8px 16px; margin:0;">Edit</button>
-					        <button type="button" class="action-btn btn-secondary" id="cancelCapitalBtn" style="display:none; width:auto; padding:8px 16px; margin:0;" onclick="cancelCapitalEdit()">Cancel</button>
-					        <button type="submit" class="action-btn btn-secondary" id="saveCapitalBtn" disabled style="width:auto; padding:8px 16px; margin:0;">Save</button>
-					    </div>
-					</form>
-
-					<div class="message success" style="margin-top:12px; display:none;" id="capitalSuccessMsg"></div>
-					<div class="message error" style="margin-top:12px; display:none;" id="capitalErrorMsg"></div>
-		        </div>
-		    </div>
-		    
-		    <!-- Time Period Filters -->
-		    <div id="equityFilters" style="display:none; margin-top:8px; padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px;">
-		        <div style="display:flex; gap:12px; align-items:center; flex-wrap:wrap;">
-		            <div style="display:flex; gap:6px;">
-		                <button class="period-btn active" onclick="selectPeriod('1W', this)">1W</button>
-		                <button class="period-btn" onclick="selectPeriod('1M', this)">1M</button>
-		                <button class="period-btn" onclick="selectPeriod('3M', this)">3M</button>
-		                <button class="period-btn" onclick="selectPeriod('6M', this)">6M</button>
-		                <button class="period-btn" onclick="selectPeriod('1Y', this)">1Y</button>
-		                <button class="period-btn" onclick="selectPeriod('ALL', this)">ALL</button>
-		            </div>
-		            <div style="height:20px; width:1px; background:#d1d5db;"></div>
-		            <div style="display:flex; gap:8px; align-items:center;">
-		                <label style="font-size:13px; color:#6b7280; font-weight:500;">Strategy:</label>
-		                <select id="strategyFilter" onchange="filterByStrategy(this.value)" style="padding:6px 10px; border:1px solid #d1d5db; border-radius:4px; font-size:13px; background:white; cursor:pointer; font-family:inherit;">
-		                    <option value="All">All Strategies</option>
-		                </select>
-		            </div>
-		            <div style="height:20px; width:1px; background:#d1d5db;"></div>
-		            <div style="display:flex; gap:8px; align-items:center;">
-		                <label style="font-size:13px; color:#6b7280; font-weight:500;">Custom:</label>
-		                <input type="date" id="equityStartDate" style="padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-		                <span style="color:#9ca3af;">to</span>
-		                <input type="date" id="equityEndDate" style="padding:6px 8px; border:1px solid #d1d5db; border-radius:4px; font-size:12px;">
-		                <button class="action-btn" onclick="applyCustomDateRange()" style="width:auto; padding:6px 14px; font-size:13px; margin:0;">Apply</button>
-		            </div>
-		        </div>
-		    </div>
-
-		    <div id="equityCurveContainer" style="display:none; margin-top:16px; position:relative;">
-		        <div class="loading-overlay">
-		            <div class="spinner"></div>
-		        </div>
-		        <canvas id="equityCurveChart" style="max-height: 400px;"></canvas>
-		        <div style="margin-top:12px; padding:12px; background:#f9fafb; border:1px solid #e5e7eb; border-radius:6px; display:flex; justify-content:space-around; font-size:13px;">
-		            <div style="text-align:center;">
-		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Starting Equity</div>
-		                <div id="startingEquity" style="font-weight:600; color:#111827;">₹0</div>
-		            </div>
-		            <div style="text-align:center;">
-		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Current Equity</div>
-		                <div id="currentEquity" style="font-weight:600; color:#111827;">₹0</div>
-		            </div>
-		            <div style="text-align:center;">
-		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Total P&L</div>
-		                <div id="totalPnl" style="font-weight:600;">₹0</div>
-		            </div>
-		            <div style="text-align:center;">
-		                <div style="color:#6b7280; font-size:11px; text-transform:uppercase; margin-bottom:4px;">Return %</div>
-		                <div id="returnPercent" style="font-weight:600;">0%</div>
-		            </div>
-		        </div>
-		    </div>
-		    <div id="equityCurveStatus" class="message" style="display:none;"></div>
-		</div>
-
-		<!-- NSE Holiday Calendar -->
-		<div class="section-card" style="grid-column: 1 / -1;">
-		    <div class="section-header" style="justify-content:space-between; align-items:center;">
-		        <div style="display:flex; gap:12px; align-items:center;">
-		            <div class="section-icon">📅</div>
-		            <div>
-		                <div class="section-title">NSE Holiday Calendar 2026</div>
-		                <div class="section-subtitle">Track market holidays and weekends</div>
-		            </div>
-		        </div>
-		        <button id="calendarToggleBtn" onclick="toggleCalendar()"
-		                style="background:none; border:none; color:#3b82f6; cursor:pointer; font-size:20px; padding:6px 12px; line-height: 1;">
-		            ▼
-		        </button>
-		    </div>
-		    
-		    <div id="calendarContainer" class="calendar-container">
-		        <div class="calendar-header">
-		            <div class="calendar-nav">
-		                <button onclick="prevMonth()">◀ Prev</button>
-		                <button onclick="goToToday()">Today</button>
-		                <button onclick="nextMonth()">Next ▶</button>
-		            </div>
-		            <div class="calendar-month-year" id="calendarMonthYear">January 2026</div>
-		        </div>
-		        
-		        <div class="calendar-grid" id="calendarGrid"></div>
-		        
-				<div class="calendar-legend">
-				    <div class="legend-item">
-				        <div class="legend-box today"></div>
-				        <span>Today</span>
-				    </div>
-				    <div class="legend-item">
-				        <div class="legend-box rollover" style="background: #ede9fe; border-left: 3px solid #8b5cf6;"></div>
-				        <span>Rollover Day</span>
-				    </div>
-				    <div class="legend-item">
-				        <div class="legend-box holiday"></div>
-				        <span>NSE Holiday</span>
-				    </div>
-				    <div class="legend-item">
-				        <div class="legend-box weekend"></div>
-				        <span>Weekend</span>
-				    </div>
-				</div>
-		    </div>
-		</div>
-
-    </div>
+    </main>
 </div>
+
 </body>
 </html>

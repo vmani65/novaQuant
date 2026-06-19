@@ -1,6 +1,8 @@
 # Build artifacts
 target/
+bin/
 *.jar
+*.war
 *.class
 
 # Log files
@@ -15,12 +17,29 @@ maven-status/
 .idea/
 *.iml
 .vscode/
+.eclipse/
+.project
+.classpath
+.settings/
+*.launch
+
+# JVM crash dumps
+hs_err_pid*.log
+hs_err_pid*.mdmp
+replay_pid*.log
 
 # OS
 .DS_Store
 Thumbs.db
 
-# Application properties (if contains sensitive data)
-# Uncomment if needed
-# application.properties
-# application.yml
+# SQLite database files (environment-specific, must not be committed)
+*.db
+*.db-shm
+*.db-wal
+data/
+
+# Credentials file contains Kite API keys — never commit
+src/main/resources/application-credentials.properties
+
+# Local Claude Code settings (machine-specific)
+.claude/settings.local.json
