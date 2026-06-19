@@ -4,7 +4,7 @@ nqCore E2E harness — 10 realistic NIFTY weekly option scenarios.
 
 Prerequisites:
   1. nqCore (mock):   mvn spring-boot:run -Dspring-boot.run.profiles=mock
-  2. nq-ticker stub:     python test/nq_ticker_stub.py    (trade 9 only)
+  2. nQTicker stub:     python test/nq_ticker_stub.py    (trade 9 only)
   3. pip install requests
 
 Signal prices reflect a realistic intraday NIFTY range (24350–24850).
@@ -119,7 +119,7 @@ def trade_8(s):
     short_exit(s,  24200); pause("afterClose",   POST_CLOSE)
 
 def trade_9(s):
-    """Long CE → 9:15 longExit → execute-close via nq-ticker stub"""
+    """Long CE → 9:15 longExit → execute-close via nQTicker stub"""
     long_entry(s, 24530);             pause("afterOpen",  POST_OPEN)
     long_exit(s,  24530, t="09:15"); pause("stub->execute-close", STUB_WAIT)
 

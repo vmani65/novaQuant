@@ -98,7 +98,7 @@ public class SignalService {
 	}
 
 	/**
-	 * Close handler. 9:15 AM longExit is delegated to nQ-ticker's open buffer (which calls
+	 * Close handler. 9:15 AM longExit is delegated to nQTicker's open buffer (which calls
 	 * back via /api/execute-close once the open-window target or deadline hits); other
 	 * close paths run inline. Rollover-symbol promotion runs before afterClose to avoid
 	 * SQLite BUSY from concurrent writes.
@@ -108,11 +108,11 @@ public class SignalService {
 
 	   if ("longExit".equals(signal.action) && isOpenBufferTime()) {
 	       if (armNqTickerBuffer(signalPrice)) {
-	           log.info("9:15 AM long exit delegated to nQ-ticker open buffer | openPrice={} | {}ms",
+	           log.info("9:15 AM long exit delegated to nQTicker open buffer | openPrice={} | {}ms",
 	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
 	           return true;
 	       }
-	       log.warn("nQ-ticker arm-buffer call failed — falling back to immediate close");
+	       log.warn("nQTicker arm-buffer call failed — falling back to immediate close");
 	   }
 
 	   Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
@@ -122,7 +122,7 @@ public class SignalService {
 	   return true;
 	}
 
-	/** Called by /api/execute-close — nQ-ticker open-buffer callback. Closes directly, no re-check. */
+	/** Called by /api/execute-close — nQTicker open-buffer callback. Closes directly, no re-check. */
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
 	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
