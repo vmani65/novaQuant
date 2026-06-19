@@ -73,7 +73,7 @@ public class RollOverTriggerController {
     }
 
     /**
-     * Called by nQ-ticker ProfitRecenterConsumer when NIFTY profit >= 500 points.
+     * Called by nQTicker ProfitRecenterConsumer when NIFTY profit >= 500 points.
      * Closes the current live legs and re-opens at the new ATM. Position stays LIVE.
      *
      * Example: GET /api/realize-profits?currentPrice=24500.0
@@ -81,25 +81,25 @@ public class RollOverTriggerController {
     @GetMapping("/realize-profits")
     public void handleRealizeProfits(@RequestParam String currentPrice) {
         String sanitisedPrice = currentPrice.replace(",", "").trim();
-        log.info("Realize-profits trigger received from nQ-ticker | currentPrice={}", sanitisedPrice);
+        log.info("Realize-profits trigger received from nQTicker | currentPrice={}", sanitisedPrice);
         profitRecenterService.realizeProfits(sanitisedPrice);
         log.info("Realize-profits completed");
     }
 
     /**
-     * Called by nQ-ticker OpenBufferConsumer when the 9:15 AM open buffer fires.
-     * Closes the trade directly — no 9:15 AM check, no re-delegation to nQ-ticker.
+     * Called by nQTicker OpenBufferConsumer when the 9:15 AM open buffer fires.
+     * Closes the trade directly — no 9:15 AM check, no re-delegation to nQTicker.
      *
      * This is the second leg of the open buffer flow:
-     *   AFL longExit → nqCore detects 9:15 → arms nQ-ticker buffer
-     *   → nQ-ticker fires this endpoint when target hit or 09:28:59 deadline reached
+     *   AFL longExit → nqCore detects 9:15 → arms nQTicker buffer
+     *   → nQTicker fires this endpoint when target hit or 09:28:59 deadline reached
      *
      * Example: GET /api/execute-close?currentPrice=22463.5
      */
     @GetMapping("/execute-close")
     public void handleExecuteClose(@RequestParam String currentPrice) {
         String sanitisedPrice = currentPrice.replace(",", "").trim();
-        log.info("execute-close received from nQ-ticker open buffer | currentPrice={}", sanitisedPrice);
+        log.info("execute-close received from nQTicker open buffer | currentPrice={}", sanitisedPrice);
         signalService.executeCloseImmediate(sanitisedPrice);
         log.info("execute-close completed");
     }

@@ -1,9 +1,9 @@
 #!/usr/bin/env python3
 """
-Minimal nq-ticker stub for E2E testing.
-Runs on port 9192, simulates the two callbacks nqCore expects from nq-ticker:
+Minimal nQTicker stub for E2E testing.
+Runs on port 9192, simulates the two callbacks nqCore expects from nQTicker:
   - GET /arm-buffer?openPrice=N  -> waits 2s, fires GET /api/execute-close?currentPrice=N
-  - GET /realize-profits/*       -> not needed here (nqCore calls this, nq-ticker doesn't)
+  - GET /realize-profits/*       -> not needed here (nqCore calls this, nQTicker doesn't)
 
 Usage:
   python nq_ticker_stub.py
@@ -51,5 +51,5 @@ class StubHandler(BaseHTTPRequestHandler):
 
 
 if __name__ == "__main__":
-    print("[nq-ticker stub] listening on port 9192")
+    print("[nQTicker stub] listening on port 9192")
     HTTPServer(("", 9192), StubHandler).serve_forever()
