@@ -574,6 +574,17 @@ public class PositionUtil {
      * Expected wall-clock: ≤ 2.5s before MARKET fallback. Real-world benefit: 30-50% less
      * slippage vs pure MARKET on typical ATM NIFTY weekly options (mid is reachable on ~half
      * the orders; the rest walk a tick or two before crossing).
+     *
+     * Walk-exhausted path (over-fill safety): when the walk ends without a full fill, the LIMIT
+     * is cancelled and its TRUE settled fill is re-read via confirmTerminalFill BEFORE the MARKET
+     * top-up is sized. A Kite cancel is asynchronous and NOT atomic with matching: a LIMIT the
+     * walk repriced to cross the spread keeps filling between the cancel request and the exchange
+     * acting on it. Sizing the top-up from the pre-cancel snapshot double-counts those in-flight
+     * fills — the LIMIT settles more than the snapshot shows AND the MARKET adds the stale
+     * remainder on top. That was the 2026-06-19 over-fill: snapshot 195 → MARKET 455, but the
+     * LIMIT actually settled 520, so the real position was 520+455=975 against an intended 650.
+     * Sizing from the confirmed post-cancel fill (no further fills possible once dead) closes it;
+     * a residual combined > qty is logged as OVERFILL for manual review.
      */
     private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
         if (q == null || q.depth == null
@@ -668,15 +679,33 @@ public class PositionUtil {
         }
         if (orderStream != null) orderStream.cancel(resp.orderId);
         kiteGateway.cancelOrder(resp.orderId, Constants.VARIETY_REGULAR);
-        int filledByLimit  = finalAr.filledQty();
-        double limitAvg    = filledByLimit > 0 ? finalAr.avgFillPrice() : 0.0;
-        int remaining      = qty - filledByLimit;
-        log.warn("LIMIT walk exhausted, MARKET for remaining qty={}", remaining);
-        if (remaining <= 0) {
-            trace.record("FILLED %d/%d avg=%s via partial LIMIT fills (walk exhausted)", filledByLimit, qty, limitAvg);
-            return new ExecResult(resp.orderId, filledByLimit, qty, limitAvg, true, ORDER_COMPLETE);
+
+        AttemptResult confirmed = confirmTerminalFill(resp.orderId);
+        int filledByLimit  = confirmed.filledQty();
+        double limitAvg    = filledByLimit > 0 ? confirmed.avgFillPrice() : 0.0;
+        if (!isTerminal(confirmed.status())) {
+            log.error("LIMIT {} not confirmed terminal after cancel (status={}, filled={}/{}) — sizing "
+                    + "top-up from last-known fill; residual over-fill risk", resp.orderId,
+                    confirmed.status(), filledByLimit, qty);
+            trace.record("cancel NOT confirmed terminal (status=%s) — top-up sized from filled=%d (over-fill risk)",
+                    confirmed.status(), filledByLimit);
         }
-        trace.record("walk exhausted -> cancel LIMIT, MARKET for remaining %d", remaining);
+
+        int remaining = Math.max(0, qty - filledByLimit);
+        log.warn("LIMIT walk exhausted, cancelled with confirmed fill {}/{} — MARKET for remaining qty={}",
+                filledByLimit, qty, remaining);
+        if (remaining == 0) {
+            if (filledByLimit > qty) {
+                log.error("OVER-FILL: LIMIT {} settled {}/{} (exceeds requested) — no top-up placed; position "
+                        + "oversized by {}, manual review required", resp.orderId, filledByLimit, qty, filledByLimit - qty);
+                trace.record("OVER-FILL filled=%d > requested=%d -> no top-up", filledByLimit, qty);
+            } else {
+                trace.record("FILLED %d/%d avg=%s via LIMIT (walk exhausted, confirmed after cancel)", filledByLimit, qty, limitAvg);
+            }
+            return new ExecResult(resp.orderId, filledByLimit, qty, limitAvg, filledByLimit >= qty,
+                    filledByLimit > qty ? "OVERFILL" : ORDER_COMPLETE);
+        }
+        trace.record("walk exhausted -> cancelled LIMIT (confirmed filled=%d), MARKET for remaining %d", filledByLimit, remaining);
         ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel, trace);
 
         int combined  = filledByLimit + mkt.totalFilled();
@@ -684,9 +713,40 @@ public class PositionUtil {
                 ? (filledByLimit * limitAvg + mkt.totalFilled() * mkt.weightedAvgFillPrice()) / combined
                 : 0.0;
         String ids    = filledByLimit > 0 ? resp.orderId + ", " + mkt.aggregateOrderIds() : mkt.aggregateOrderIds();
-        boolean full  = combined == qty;
+        if (combined > qty) {
+            log.error("OVER-FILL: {} settled {}/{} (LIMIT {} + MARKET {}) — position oversized by {}, "
+                    + "manual review/unwind required", ins, combined, qty, filledByLimit, mkt.totalFilled(), combined - qty);
+            trace.record("OVER-FILL combined=%d > requested=%d (limit=%d market=%d)", combined, qty, filledByLimit, mkt.totalFilled());
+        }
+        boolean full  = combined >= qty;
         return new ExecResult(ids, combined, qty, avg, full,
-                full ? ORDER_COMPLETE : (combined > 0 ? "PARTIAL" : "FAILED"));
+                combined > qty ? "OVERFILL" : (full ? ORDER_COMPLETE : (combined > 0 ? "PARTIAL" : "FAILED")));
+    }
+
+    // ─── Cancel-confirmation (closes the cancel-vs-fill over-fill race) ─────────────
+    /** Max polls of getOrderHistory waiting for a cancelled order to reach a terminal state. */
+    private static final int  CANCEL_CONFIRM_POLLS   = 6;
+    /** Gap between cancel-confirmation polls (ms). 6 × 150ms ≈ 0.9s worst case on the rare walk-exhausted path. */
+    private static final long CANCEL_CONFIRM_GAP_MS  = 150L;
+
+    /**
+     * After a cancel request, polls the order until it reaches a terminal state and returns its
+     * TRUE settled fill. A Kite cancel is asynchronous and not atomic with matching, so a
+     * marketable LIMIT can keep filling between the cancel request and the exchange acting on it.
+     * Reading filledQuantity only once the order is CANCELLED/COMPLETE/REJECTED is what makes the
+     * subsequent MARKET top-up correctly sized — sizing it from a pre-cancel snapshot double-buys
+     * the in-flight fills (the 650-intended-vs-975-filled over-fill).
+     *
+     * If the order never confirms terminal within the budget, returns the last read (non-terminal)
+     * state; the caller logs the residual over-fill risk and proceeds conservatively.
+     */
+    private AttemptResult confirmTerminalFill(String orderId) {
+        AttemptResult ar = peekOrderState(orderId);
+        for (int i = 0; i < CANCEL_CONFIRM_POLLS && !isTerminal(ar.status()); i++) {
+            sleepMillis(CANCEL_CONFIRM_GAP_MS);
+            ar = peekOrderState(orderId);
+        }
+        return ar;
     }
 
     /** Pure MARKET path (extracted from old placeAggressiveOrder). Reused as the safety fallback. */
