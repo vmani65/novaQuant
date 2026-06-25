@@ -187,6 +187,43 @@ class PositionUtilOverfillTest {
         assertThat(res.totalFilled()).isEqualTo(QTY);
     }
 
+    /**
+     * Walk-chase regression (2026-06-25): the LIMIT walk must re-anchor to the LIVE book each step,
+     * not reprice within the stale snapshot it was handed. Here the passed-in quote is 113.75/113.95
+     * but the market has run away to 119.90/120.10 by walk time. Every walk modify must target the
+     * fresh ~120 book (chasing the move), never the stale ~113.95 ask — otherwise the LIMIT sits
+     * unfilled and only MARKET catches it, paying the very slippage the walk exists to avoid.
+     */
+    @Test
+    @DisplayName("walk re-anchors each step to the fresh book, not the stale passed-in quote")
+    void walkChasesFreshQuoteNotStaleSnapshot() {
+        // Live book has moved well above the stale snapshot handed to the walk.
+        when(gw.getQuote(any())).thenReturn(java.util.Map.of("NFO:NIFTY2662324050CE", quote(119.90, 120.10)));
+
+        // LIMIT never fills (it's chasing); walk exhausts → cancel → MARKET completes the leg.
+        when(gw.getOrderHistory("LIMIT1")).thenReturn(
+                List.of(order(OPEN, 0, 0.0)),
+                List.of(order(OPEN, 0, 0.0)),
+                List.of(order(OPEN, 0, 0.0)),
+                List.of(order(OPEN, 0, 0.0)),
+                List.of(order(Constants.ORDER_CANCELLED, 0, 0.0)));
+        when(gw.getOrderHistory("MARKET1")).thenReturn(
+                List.of(order(Constants.ORDER_COMPLETE, QTY, 120.35)));
+
+        ExecResult res = util.placeAggressiveOrder(
+                quote(113.75, 113.95), "NIFTY2662324050CE", Constants.TRANSACTION_TYPE_BUY, QTY, "ENTRY");
+
+        // Every walk reprice must target the fresh book (~120), never the stale snapshot ask (113.95).
+        ArgumentCaptor<Double> px = ArgumentCaptor.forClass(Double.class);
+        verify(gw, times(3)).modifyOrder(anyString(), px.capture(), anyInt(), anyString());
+        assertThat(px.getAllValues())
+                .as("walk must chase the fresh ~120 book, not reprice within the stale ~113.95 spread")
+                .allSatisfy(p -> assertThat(p).isGreaterThan(118.0));
+
+        assertThat(res.totalFilled()).isEqualTo(QTY);
+        assertThat(res.fullyFilled()).isTrue();
+    }
+
     // ─── helpers ────────────────────────────────────────────────────────────────────────────
 
     private static Order order(String status, int filled, double avgPrice) {

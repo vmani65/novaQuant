@@ -575,6 +575,14 @@ public class PositionUtil {
      * slippage vs pure MARKET on typical ATM NIFTY weekly options (mid is reachable on ~half
      * the orders; the rest walk a tick or two before crossing).
      *
+     * Quote freshness: a flip pre-fetches the entry quote while the close orders execute, so by
+     * walk time it can be seconds stale. The walk refreshes the quote at the start (anchoring the
+     * initial LIMIT to the live book) and re-anchors mid/half-spread to the current book at every
+     * step, so a trending market is chased rather than repriced inside a now-dead spread — the
+     * 2026-06-25 ~6pt run-away, where every step sat in the stale spread and only MARKET filled.
+     * A failed/unusable refresh keeps the last-known reference; only when neither the fresh nor the
+     * passed-in quote has usable depth does it fall back to MARKET.
+     *
      * Walk-exhausted path (over-fill safety): when the walk ends without a full fill, the LIMIT
      * is cancelled and its TRUE settled fill is re-read via confirmTerminalFill BEFORE the MARKET
      * top-up is sized. A Kite cancel is asynchronous and NOT atomic with matching: a LIMIT the
@@ -587,26 +595,19 @@ public class PositionUtil {
      * a residual combined > qty is logged as OVERFILL for manual review.
      */
     private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
-        if (q == null || q.depth == null
-            || q.depth.buy == null || q.depth.buy.isEmpty()
-            || q.depth.sell == null || q.depth.sell.isEmpty()) {
-            log.warn("no quote/depth — MARKET fallback");
-            trace.record("no quote/depth -> MARKET fallback");
-            return placeMarketCore(ins, txn, qty, contextLabel, trace);
-        }
-        double bid = q.depth.buy.get(0).getPrice();
-        double ask = q.depth.sell.get(0).getPrice();
-        if (bid <= 0 || ask <= 0 || ask < bid || (ask - bid) > (ask + bid) * 0.05) {
-            log.warn("unusable spread bid={} ask={} — MARKET fallback", bid, ask);
-            trace.record("unusable spread bid=%s ask=%s -> MARKET fallback", bid, ask);
-            return placeMarketCore(ins, txn, qty, contextLabel, trace);
-        }
-        double mid    = (bid + ask) / 2.0;
-        double halfSp = (ask - bid) / 2.0;
-        double spreadDisp = Math.round((ask - bid) * 100.0) / 100.0;
-        double midDisp    = Math.round(mid * 1000.0) / 1000.0;
         boolean isBuy = BUY.equals(txn);
-        trace.quote("bid=%s ask=%s ltp=%s mid=%s spread=%s", bid, ask, q.lastPrice, midDisp, spreadDisp);
+        Quote fresh = refreshQuote(ins);
+        double[] bk = midHalfSpread(fresh);
+        Quote ref = fresh;
+        if (bk == null) { bk = midHalfSpread(q); ref = q; }
+        if (bk == null) {
+            log.warn("no usable quote/depth — MARKET fallback");
+            trace.record("no usable quote/depth -> MARKET fallback");
+            return placeMarketCore(ins, txn, qty, contextLabel, trace);
+        }
+        double mid = bk[0], halfSp = bk[1];
+        trace.quote("bid=%s ask=%s ltp=%s mid=%s spread=%s", bk[2], bk[3], ref.lastPrice,
+                Math.round(mid * 1000.0) / 1000.0, Math.round((bk[3] - bk[2]) * 100.0) / 100.0);
 
         OrderParams params = buildAggressiveOrderParams();
         params.orderType       = Constants.ORDER_TYPE_LIMIT;
@@ -660,6 +661,8 @@ public class PositionUtil {
                 if (orderStream != null) orderStream.cancel(resp.orderId);
                 return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
             }
+            double[] cur = midHalfSpread(refreshQuote(ins));
+            if (cur != null) { mid = cur[0]; halfSp = cur[1]; }
             double newPx = roundToTick(isBuy
                     ? mid + halfSp * WALK_AGGRESSION[step]
                     : mid - halfSp * WALK_AGGRESSION[step], NIFTY_OPT_TICK);
@@ -767,12 +770,109 @@ public class PositionUtil {
         log.info("MARKET protection=1 placed: orderId={}", resp.orderId);
         trace.record("MARKET placed orderId=%s", resp.orderId);
 
-        AttemptResult ar = verifyAttempt(resp.orderId, ins, contextLabel);
-        boolean full = ar.filledQty() == qty;
+        AttemptResult ar = confirmMarketFill(resp.orderId, qty, ins, trace);
+        boolean full = ar.filledQty() >= qty;
         String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
         String ids   = ar.filledQty() > 0 ? resp.orderId : "";
         trace.record("MARKET %s %d/%d avg=%s", term, ar.filledQty(), qty, ar.avgFillPrice());
         return new ExecResult(ids, ar.filledQty(), qty, ar.avgFillPrice(), full, term);
+    }
+
+    // ─── MARKET fill confirmation (closes the under-report-as-FAILED gap) ────────────
+    /**
+     * Confirmation budget for a MARKET order. Deliberately longer than verifyAttempt's
+     * because a MARKET fill plus Kite's order-state / tradebook propagation can lag a
+     * second or two. 10 × 250ms ≈ 2.5s worst case, paid only while the order has not yet
+     * confirmed COMPLETE.
+     */
+    private static final int  MARKET_CONFIRM_POLLS  = 10;
+    private static final long MARKET_CONFIRM_GAP_MS = 250L;
+
+    /**
+     * Confirms a MARKET order's TRUE settled state before the caller may treat it as failed.
+     * verifyAttempt reads only getOrderHistory and gives up after ~600ms; on 2026-06-25 the
+     * order-history snapshot still showed OPEN/0 after that window while the broker had already
+     * filled 650, so the leg was declared FAILED even though the short executed. This method
+     * (1) polls to a terminal state with a longer budget and (2) reconciles against the
+     * tradebook (getOrderTrades) — the authoritative record of what actually executed at the
+     * broker — trusting it over the order-history snapshot whenever the two disagree. A MARKET
+     * DAY order placed in-session virtually always fills, so an empty tradebook here is the rare
+     * genuine reject, not the default assumption.
+     *
+     * If the order reaches a terminal state short of full, the filled portion is taken from the
+     * tradebook (genuine partial/reject). If the poll budget is exhausted with no terminal state,
+     * the tradebook is still trusted over the lagging snapshot; only a truly empty tradebook is
+     * reported unconfirmed, with an error so a possibly-live leg is reconciled before re-entry.
+     */
+    private AttemptResult confirmMarketFill(String orderId, int qty, String ins, ExecTrace trace) {
+        AttemptResult lastHist = new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
+        for (int i = 0; i < MARKET_CONFIRM_POLLS; i++) {
+            AttemptResult hist = peekOrderState(orderId);
+            if (hist.status() != null && !"UNKNOWN".equals(hist.status())) lastHist = hist;
+
+            List<com.zerodhatech.models.Trade> trades = kiteGateway.getOrderTrades(orderId);
+            int traded = tradedQty(trades);
+            if (traded >= qty) {
+                double vwap = weightedAvgFillPrice(trades);
+                trace.record("MARKET reconciled via tradebook: filled %d/%d avg=%s (hist=%s)", traded, qty, vwap, lastHist.status());
+                return new AttemptResult(orderId, traded, vwap, ORDER_COMPLETE);
+            }
+            if (isTerminal(lastHist.status())) {
+                if (traded > 0) return new AttemptResult(orderId, traded, weightedAvgFillPrice(trades), lastHist.status());
+                return lastHist;
+            }
+            sleepMillis(MARKET_CONFIRM_GAP_MS);
+        }
+        List<com.zerodhatech.models.Trade> trades = kiteGateway.getOrderTrades(orderId);
+        int traded = tradedQty(trades);
+        if (traded > 0) {
+            double vwap = weightedAvgFillPrice(trades);
+            log.warn("MARKET orderId={} not terminal after {} polls — tradebook shows {}/{} avg={}, trusting tradebook over hist status={}",
+                    orderId, MARKET_CONFIRM_POLLS, traded, qty, vwap, lastHist.status());
+            trace.record("MARKET budget exhausted; tradebook %d/%d avg=%s trusted over hist=%s", traded, qty, vwap, lastHist.status());
+            return new AttemptResult(orderId, traded, vwap, traded >= qty ? ORDER_COMPLETE : lastHist.status());
+        }
+        log.error("MARKET orderId={} UNCONFIRMED after {} polls — hist status={} filled={}, tradebook empty; "
+                + "leg may still be live at broker — reconcile before re-entry", orderId, MARKET_CONFIRM_POLLS, lastHist.status(), lastHist.filledQty());
+        trace.record("MARKET UNCONFIRMED after %d polls (hist=%s, tradebook empty)", MARKET_CONFIRM_POLLS, lastHist.status());
+        return lastHist;
+    }
+
+    /** Σ tradedQuantity across an order's tradebook — authoritative executed qty. */
+    private static int tradedQty(List<com.zerodhatech.models.Trade> trades) {
+        if (trades == null) return 0;
+        int sum = 0;
+        for (com.zerodhatech.models.Trade t : trades) {
+            if (t == null || t.quantity == null) continue;
+            try { sum += (int) Math.round(Double.parseDouble(t.quantity.trim())); }
+            catch (NumberFormatException e) { /* skip malformed */ }
+        }
+        return sum;
+    }
+
+    /** Top-of-book {mid, halfSpread, bid, ask} from a quote, or null if depth is missing/unusable. */
+    private static double[] midHalfSpread(Quote q) {
+        if (q == null || q.depth == null
+            || q.depth.buy == null || q.depth.buy.isEmpty()
+            || q.depth.sell == null || q.depth.sell.isEmpty()) return null;
+        double bid = q.depth.buy.get(0).getPrice();
+        double ask = q.depth.sell.get(0).getPrice();
+        if (bid <= 0 || ask <= 0 || ask < bid || (ask - bid) > (ask + bid) * 0.05) return null;
+        return new double[]{ (bid + ask) / 2.0, (ask - bid) / 2.0, bid, ask };
+    }
+
+    /** Fresh top-of-book quote for the walk chase; null on any failure so the caller keeps its last-known reference. */
+    private Quote refreshQuote(String ins) {
+        String key = Constants.EXCHANGE_NFO + ":" + ins;
+        try {
+            Map<String, Quote> m = kiteGateway.getQuote(new String[]{key});
+            if (m == null || m.isEmpty()) return null;
+            Quote qq = m.get(key);
+            return qq != null ? qq : m.values().iterator().next();
+        } catch (Exception e) {
+            log.warn("walk: quote refresh failed for {} — keeping last-known reference: {}", ins, e.getMessage());
+            return null;
+        }
     }
 
     /** Single-shot status read (no retry loop) — used inside the LIMIT walk where the loop itself is the retry. */
