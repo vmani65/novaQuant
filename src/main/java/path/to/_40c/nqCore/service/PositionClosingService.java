@@ -35,6 +35,11 @@ public class PositionClosingService {
         this.computeUtil = computeUtil;
     }
 
+    /**
+     * Closes the live position at signalPrice. exitSpot is the literal final-exit spot: the current
+     * open segment (baselineSpot -> exitSpot) is the last contribution to pointsPnl, while all prior
+     * re-strike segments are already accumulated in bankedPoints.
+     */
     public Position closeTrade(String signalPrice, Signal signal, boolean updateApiAction) {
         Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks();
         if(tradeToClose == null) {
@@ -42,7 +47,7 @@ public class PositionClosingService {
             return null;
         }
         double closePrice = Double.parseDouble(signalPrice);
-        tradeToClose.setExitSpot(Math.round(((tradeToClose.getExitSpot() != null ? tradeToClose.getExitSpot() : 0.0) + closePrice) * 100.0) / 100.0);
+        tradeToClose.setExitSpot(Math.round(closePrice * 100.0) / 100.0);
         log.info("Live Position being closed is: {}", tradeToClose);
         String[] liveIns = tradeToClose.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(liveIns);

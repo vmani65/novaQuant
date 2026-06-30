@@ -51,6 +51,7 @@ public class PositionOpeningService {
      */
     public OpenPrep prepareOpen(String signalPrice, String type, Position trade) {
         trade.setEntrySpot(Double.valueOf(signalPrice));
+        trade.setBaselineSpot(Double.valueOf(signalPrice));
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
         List<LegOrder> pojos = computeUtil.buildInstrument(signalPrice, trade, false);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
@@ -63,6 +64,7 @@ public class PositionOpeningService {
      */
     public Position openTrade(String signalPrice, String type, Position trade) {
     	trade.setEntrySpot(Double.valueOf(signalPrice));
+    	trade.setBaselineSpot(Double.valueOf(signalPrice));
     	trade.setDirection(CE.equals(type) ? LONG : SHORT);
     	List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, trade, false);
     	String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
@@ -77,6 +79,7 @@ public class PositionOpeningService {
      */
     public Position openTrade(String signalPrice, String type, Position trade, OpenPrep prep) {
         trade.setEntrySpot(Double.valueOf(signalPrice));
+        trade.setBaselineSpot(Double.valueOf(signalPrice));
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
         return placeAndSave(trade, prep.pojos(), prep.quotes());
     }

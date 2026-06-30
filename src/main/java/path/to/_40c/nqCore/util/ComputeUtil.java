@@ -92,24 +92,28 @@ public class ComputeUtil {
     }
 
 	/**
-	 * Sets pointsPnl = realizedPoints (from prior recenter segments) + current segment's
-	 * (exit-entry) for LONG, (entry-exit) for SHORT. Sets result WIN/LOSS by sign.
+	 * Sets pointsPnl = bankedPoints (from all prior recenter + rollover segments) + the current
+	 * (final) segment's points: (exit - baseline) for LONG, (baseline - exit) for SHORT, where
+	 * baseline is the strike-center of the legs being closed. Sets result WIN/LOSS by sign.
+	 * Falls back to entrySpot if baselineSpot is absent (legacy rows pre-dating the baseline split).
 	 */
 	public void calcTradeOutcome(Position trade) {
 		if(trade != null) {
-			BigDecimal entryPrice = BigDecimal.valueOf(trade.getEntrySpot());
+			double baseline = trade.getBaselineSpot() != null ? trade.getBaselineSpot()
+					: (trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0);
+			BigDecimal basePrice = BigDecimal.valueOf(baseline);
 			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSpot());
 			Double segmentPoints = 0.0d;
 			if(LONG.equals(trade.getDirection())){
-				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
-					segmentPoints = exitPrice.subtract(entryPrice).doubleValue();
+				if(basePrice.compareTo(exitPrice) < 0 || basePrice.compareTo(exitPrice) > 0)
+					segmentPoints = exitPrice.subtract(basePrice).doubleValue();
 			}
 			if(SHORT.equals(trade.getDirection())){
-				if(entryPrice.compareTo(exitPrice) < 0 || entryPrice.compareTo(exitPrice) > 0)
-					segmentPoints = entryPrice.subtract(exitPrice).doubleValue();
+				if(basePrice.compareTo(exitPrice) < 0 || basePrice.compareTo(exitPrice) > 0)
+					segmentPoints = basePrice.subtract(exitPrice).doubleValue();
 			}
-			double realized = trade.getRealizedPoints() != null ? trade.getRealizedPoints() : 0.0;
-			double totalPoints = realized + segmentPoints;
+			double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
+			double totalPoints = banked + segmentPoints;
 			trade.setPointsPnl(totalPoints);
 			trade.setResult(totalPoints > 0 ? WIN : LOSS);
 		}

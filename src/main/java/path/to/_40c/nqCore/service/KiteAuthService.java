@@ -57,7 +57,7 @@ public class KiteAuthService {
         auth.setApiKey(apiKey);
         auth.setApiSecret(apiSecret);
         kiteRepository.saveAndFlush(auth);
-        kiteRepository.deleteByAuthDateBefore(LocalDate.now(ZoneId.of(ZONE_ID)).minusDays(30));
+        kiteRepository.deleteByAuthDateBefore(LocalDate.now(ZoneId.of(ZONE_ID)).minusDays(7));
         kiteGateway.invalidateCache();
         events.publishEvent(new KiteAuthChangedEvent(this));
         return "SUCCESS";
