@@ -53,6 +53,8 @@ public class PositionLogController {
         m.put("totalCharges", t.getTotalCharges());
         m.put("pnlCapturePct", t.getPnlCapturePct());
         m.put("lots", t.getLots());
+        m.put("baselineSpot", t.getBaselineSpot());
+        m.put("bankedPoints", t.getBankedPoints());
         m.put("realizedPoints", t.getRealizedPoints());
         m.put("strategyName", t.getStrategyName());
         m.put("startingCapital", t.getStartingCapital());

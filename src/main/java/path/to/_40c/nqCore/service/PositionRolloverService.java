@@ -47,6 +47,10 @@ public class PositionRolloverService {
      * 1. Close the Live Position first.
      * 2. Proceed with opening new trades only if all closes succeeded.
      * 3. Open live trades. Create a childOrderBook and add to the Parent and Save
+     *
+     * Re-strike accounting is identical to a recenter: bank the closed segment's points into
+     * bankedPoints and reset baselineSpot to the rollover spot. entrySpot/exitSpot are left
+     * untouched — they remain the immutable original-entry / final-exit reference for reporting.
      */
     public void rollOver(String signalPrice) {
         Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks();
@@ -104,8 +108,13 @@ public class PositionRolloverService {
             Instant openStart = Instant.now();
             List<WeeklyLeg> childOrderBook = new ArrayList<WeeklyLeg>();
             double rolloverPrice = signalPrice != null ? Double.valueOf(signalPrice) : 0.0;
-            tradeToRollOver.setEntrySpot(Math.round(((tradeToRollOver.getEntrySpot() != null ? tradeToRollOver.getEntrySpot() : 0.0) + rolloverPrice) * 100.0) / 100.0);
-            tradeToRollOver.setExitSpot( Math.round(((tradeToRollOver.getExitSpot()  != null ? tradeToRollOver.getExitSpot()  : 0.0) + rolloverPrice) * 100.0) / 100.0);
+            double base = tradeToRollOver.getBaselineSpot() != null ? tradeToRollOver.getBaselineSpot() : rolloverPrice;
+            double segment = SHORT.equals(tradeToRollOver.getDirection()) ? base - rolloverPrice : rolloverPrice - base;
+            double banked = tradeToRollOver.getBankedPoints() != null ? tradeToRollOver.getBankedPoints() : 0.0;
+            tradeToRollOver.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
+            tradeToRollOver.setBaselineSpot(rolloverPrice);
+            log.info("rollover re-strike | segment={}pts bankedPoints={} newBaseline={}",
+                Math.round(segment * 100.0) / 100.0, tradeToRollOver.getBankedPoints(), rolloverPrice);
             List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);
             String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
             log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));

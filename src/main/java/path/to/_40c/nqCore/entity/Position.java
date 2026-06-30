@@ -37,11 +37,30 @@ public class Position extends BaseEntity {
     @Column(name = "ACCOUNT")
     private String account = "ZERODHAVINOTH";
 
+    /** Immutable spot at original entry. Set once on open/flip; never mutated by recenter/rollover. Reporting + signal-dedup only. */
     @Column(name = "ENTRY_SPOT")
     private Double entrySpot;
 
+    /** Immutable spot at final close. Set once by PositionClosingService. Reporting only. */
     @Column(name = "EXIT_SPOT")
     private Double exitSpot;
+
+    /**
+     * Live baseline: the spot at which the CURRENT live legs were struck. Set = entrySpot on open,
+     * then reset to the re-strike price on every recenter and rollover. This is the single source of
+     * truth for "how far has spot moved from where the current legs sit" — read by nQTicker's profit
+     * gate and used by ProfitRecenterService/calcTradeOutcome to compute the current segment's points.
+     */
+    @Column(name = "BASELINE_SPOT")
+    private Double baselineSpot;
+
+    /**
+     * Cumulative points banked from all CLOSED segments before the current one — every recenter and
+     * every rollover adds its segment (baselineSpot→re-strikePrice) here. Replaces the old
+     * realizedPoints accounting. calcTradeOutcome: pointsPnl = bankedPoints + current segment.
+     */
+    @Column(name = "BANKED_POINTS")
+    private Double bankedPoints = 0.0;
 
     @Column(name = "DIRECTION")
     private String direction;
@@ -98,9 +117,8 @@ public class Position extends BaseEntity {
     private String message;
 
     /**
-     * Cumulative points captured from all profit-recenter segments before the current one.
-     * Updated by ProfitRecenterService on each recenter. Zero for positions with no recenters.
-     * Used by calcTradeOutcome: totalPoints = realizedPoints + (exit - entry of current segment).
+     * LEGACY — superseded by {@link #bankedPoints}. Retained for historical CLOSED rows written
+     * before the baseline/banked split. No longer read or written by the live accounting path.
      */
     @Column(name = "REALIZED_POINTS")
     private Double realizedPoints = 0.0;

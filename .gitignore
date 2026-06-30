@@ -43,3 +43,4 @@ src/main/resources/application-credentials.properties
 
 # Local Claude Code settings (machine-specific)
 .claude/settings.local.json
+db/migration/2026-06-30_baseline_spot_split.sql

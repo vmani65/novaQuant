@@ -27,16 +27,25 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 /**
  * Re-centres a live trade at the new ATM when profit >= 500 points: closes current LIVE legs,
- * accumulates realized points, opens new legs at the new ATM (using rolloverSymbol if the
- * weekly rollover already happened today, else thisWeekSymbol). Position stays LIVE.
+ * banks the closed segment's points into bankedPoints and resets baselineSpot to the new strike,
+ * opens new legs at the new ATM (using rolloverSymbol if the weekly rollover already happened
+ * today, else thisWeekSymbol). Position stays LIVE. entrySpot is never mutated here.
  *
  * Per-segment close/open prices are accumulated independently so calcPnL can sum across
- * recenters; calcTradeOutcome adds realizedPoints to the current segment's (exit - entry).
+ * recenters; calcTradeOutcome adds bankedPoints to the current segment's (baseline - exit).
  */
 @Service
 public class ProfitRecenterService {
 
     private static final Logger log = LoggerFactory.getLogger(ProfitRecenterService.class);
+
+    /**
+     * Server-side backstop: ignore a recenter trigger whose effective profit (measured from the
+     * current baselineSpot) is below this floor. Matches nQTicker's Gate-1 hysteresis close (450pts)
+     * so genuine liquidity-driven recenters still pass, while a stale or corrupt trigger can never
+     * churn the position again.
+     */
+    private static final double RECENTER_MIN_PROFIT = 450.0;
 
     private final PositionRepository  positionRepository;
     private final PositionUtil        positionUtil;
@@ -54,14 +63,31 @@ public class ProfitRecenterService {
         this.postTradeService = postTradeService;
     }
 
+    /**
+     * Re-centres the live trade at the new ATM. Aborts (no orders) if the effective profit from the
+     * current baselineSpot is below RECENTER_MIN_PROFIT — a backstop against a corrupt/stale baseline,
+     * bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked here.
+     * On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
+     * resets baselineSpot to currentPrice, then closes the old legs and opens new ones at the new ATM.
+     */
     public void realizeProfits(String currentPrice) {
         Position trade = positionUtil.findLiveTradesWithLiveOrderBooks();
         if (trade == null) {
             log.info("realizeProfits: no live trade — skipping.");
             return;
         }
-        log.info("realizeProfits start | tradeId={} direction={} entryPrice={} currentPrice={}",
-                trade.getId(), trade.getDirection(), trade.getEntrySpot(), currentPrice);
+        double newPrice = Double.parseDouble(currentPrice);
+        double base = trade.getBaselineSpot() != null ? trade.getBaselineSpot()
+                : (trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0);
+        double effectiveProfit = SHORT.equals(trade.getDirection()) ? base - newPrice : newPrice - base;
+        log.info("realizeProfits start | tradeId={} direction={} baseline={} currentPrice={} effectiveProfit={}pts",
+                trade.getId(), trade.getDirection(), base, currentPrice, Math.round(effectiveProfit * 100.0) / 100.0);
+
+        if (effectiveProfit < RECENTER_MIN_PROFIT) {
+            log.warn("realizeProfits ABORTED — effectiveProfit {}pts < {}pts floor. Ignoring trigger (no orders placed).",
+                    Math.round(effectiveProfit * 100.0) / 100.0, RECENTER_MIN_PROFIT);
+            return;
+        }
 
         Instant closeStart = Instant.now();
         String[] liveSymbols = trade.getLegs().stream()
@@ -118,16 +144,12 @@ public class ProfitRecenterService {
 
         accumulateExecPrices(legsBeingClosed, true);
 
-        double newPrice = Double.parseDouble(currentPrice);
-        double entry    = trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0;
-        double segment  = LONG.equals(trade.getDirection())
-                ? newPrice - entry
-                : entry - newPrice;
-        double realized = trade.getRealizedPoints() != null ? trade.getRealizedPoints() : 0.0;
-        trade.setRealizedPoints(Math.round((realized + segment) * 100.0) / 100.0);
-        trade.setEntrySpot(newPrice);
-        log.info("realizeProfits: segment={}pts totalRealized={}pts newBaseline={}",
-                segment, trade.getRealizedPoints(), newPrice);
+        double segment = LONG.equals(trade.getDirection()) ? newPrice - base : base - newPrice;
+        double banked  = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
+        trade.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
+        trade.setBaselineSpot(newPrice);
+        log.info("realizeProfits: segment={}pts bankedPoints={} newBaseline={}",
+                Math.round(segment * 100.0) / 100.0, trade.getBankedPoints(), newPrice);
 
         Instant openStart = Instant.now();
         weeklySymbolService.checkAndPromoteRolloverSymbol();
@@ -195,8 +217,8 @@ public class ProfitRecenterService {
         accumulateExecPrices(newChildren, false);
 
         Position saved = positionRepository.save(trade);
-        log.info("realizeProfits complete | tradeId={} realizedPoints={} newEntryPrice={}",
-                saved.getId(), saved.getRealizedPoints(), saved.getEntrySpot());
+        log.info("realizeProfits complete | tradeId={} bankedPoints={} newBaseline={}",
+                saved.getId(), saved.getBankedPoints(), saved.getBaselineSpot());
 
         postTradeService.afterOpen(saved);
     }
