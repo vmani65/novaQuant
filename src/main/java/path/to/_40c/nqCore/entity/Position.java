@@ -23,6 +23,23 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.ParamDef;
 
+/**
+ * A trade position: the parent row plus its WeeklyLeg children across all segments (open,
+ * recenters, rollovers, close).
+ *
+ * Spot/points accounting (the baseline/banked scheme):
+ * entrySpot and exitSpot are immutable — the spot at original entry (set once on open/flip,
+ * never mutated by recenter/rollover; reporting + signal-dedup only) and the spot at final
+ * close (set once by PositionClosingService; reporting only). baselineSpot is the live
+ * baseline: the spot at which the CURRENT live legs were struck — set = entrySpot on open,
+ * then reset to the re-strike price on every recenter and rollover. It is the single source
+ * of truth for "how far has spot moved from where the current legs sit", read by nQTicker's
+ * profit gate and by ProfitRecenterService/calcTradeOutcome. bankedPoints accumulates the
+ * points from all CLOSED segments before the current one — every recenter and rollover adds
+ * its segment (baselineSpot → re-strike price); calcTradeOutcome computes
+ * pointsPnl = bankedPoints + current segment. peakMargin is the running max of
+ * Σ(LIVE legs.marginRequired) across the position's lifetime.
+ */
 @FilterDef(name = "liveOrderBooks", parameters = @ParamDef(name = "status", type = String.class))
 @Entity
 @Table(name = "POSITION")
@@ -37,28 +54,15 @@ public class Position extends BaseEntity {
     @Column(name = "ACCOUNT")
     private String account = "ZERODHAVINOTH";
 
-    /** Immutable spot at original entry. Set once on open/flip; never mutated by recenter/rollover. Reporting + signal-dedup only. */
     @Column(name = "ENTRY_SPOT")
     private Double entrySpot;
 
-    /** Immutable spot at final close. Set once by PositionClosingService. Reporting only. */
     @Column(name = "EXIT_SPOT")
     private Double exitSpot;
 
-    /**
-     * Live baseline: the spot at which the CURRENT live legs were struck. Set = entrySpot on open,
-     * then reset to the re-strike price on every recenter and rollover. This is the single source of
-     * truth for "how far has spot moved from where the current legs sit" — read by nQTicker's profit
-     * gate and used by ProfitRecenterService/calcTradeOutcome to compute the current segment's points.
-     */
     @Column(name = "BASELINE_SPOT")
     private Double baselineSpot;
 
-    /**
-     * Cumulative points banked from all CLOSED segments before the current one — every recenter and
-     * every rollover adds its segment (baselineSpot→re-strikePrice) here. Replaces the old
-     * realizedPoints accounting. calcTradeOutcome: pointsPnl = bankedPoints + current segment.
-     */
     @Column(name = "BANKED_POINTS")
     private Double bankedPoints = 0.0;
 
@@ -116,14 +120,6 @@ public class Position extends BaseEntity {
     @Column(name = "MESSAGE")
     private String message;
 
-    /**
-     * LEGACY — superseded by {@link #bankedPoints}. Retained for historical CLOSED rows written
-     * before the baseline/banked split. No longer read or written by the live accounting path.
-     */
-    @Column(name = "REALIZED_POINTS")
-    private Double realizedPoints = 0.0;
-
-    /** Running max of Σ(LIVE legs.marginRequired) across the position's lifetime. */
     @Column(name = "PEAK_MARGIN")
     private Double peakMargin;
 

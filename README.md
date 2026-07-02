@@ -122,11 +122,11 @@ Two trigger paths:
 1. **`RollOverTriggerController`** — nqTicker's `RolloverTriggerConsumer` calls `/api/rollover-trigger?currentPrice=<close>` at 14:47 IST. Server-side guards: (a) `rolloverDay` configured, (b) today's IST date equals it, (c) `rolloverComplete = false`. If all pass: invokes `SignalService.handleRollOver(price)` → `WeeklySymbolService.markRolloverComplete()`.
 2. **Synchronous promotion on next close** — `WeeklySymbolService.checkAndPromoteRolloverSymbol()` runs after every `closeTrade()`. If today is rollover day AND `rolloverComplete = false`, copies `rolloverSymbol → thisWeekSymbol` before the next open. Guarantees subsequent opens use the new week's symbol even if the 14:47 trigger missed.
 
-Positions held across rollover accumulate `entrySpot` and `exitSpot` (each new week's spot is ADDED to the existing values). See test 5.6 in `test_runner.py`.
+Positions held across rollover bank the closed segment's points (`baseline_spot` → rollover spot) into `banked_points` and reset `baseline_spot` to the rollover spot; `entrySpot`/`exitSpot` stay untouched as the original-entry / final-exit reference. See test 5.6 in `test_runner.py`.
 
 ### Profit recenter (liquidity-aware exit)
 
-`ProfitRecenterService.realizeProfits` (triggered by nqTicker's `ProfitRecenterConsumer` after Gate 1 + Gate 2 conditions): closes all live legs at current LTP, accumulates `realized_points`, then opens new ATM legs at the new spot. See `EXECUTION_IMPROVEMENT_PLAN.md` in `../nqTicker/` for the gate logic.
+`ProfitRecenterService.realizeProfits` (triggered by nqTicker's `ProfitRecenterConsumer` after Gate 1 + Gate 2 conditions): closes all live legs at current LTP, banks the closed segment's points into `banked_points` and resets `baseline_spot`, then opens new ATM legs at the new spot. See `EXECUTION_IMPROVEMENT_PLAN.md` in `../nqTicker/` for the gate logic.
 
 ### Async post-trade hooks
 
