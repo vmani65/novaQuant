@@ -12,16 +12,13 @@ import java.util.List;
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.repo.PositionRepository;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 @Service
+@Slf4j
 public class TradeCapitalService {
-
-    private static final Logger log = LoggerFactory.getLogger(TradeCapitalService.class);
-
     private final TradeCapitalRepository tradeCapitalRepository;
     private final PositionRepository positionRepository;
 

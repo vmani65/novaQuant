@@ -10,8 +10,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
@@ -35,10 +34,8 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  * recenters; calcTradeOutcome adds bankedPoints to the current segment's (baseline - exit).
  */
 @Service
+@Slf4j
 public class ProfitRecenterService {
-
-    private static final Logger log = LoggerFactory.getLogger(ProfitRecenterService.class);
-
     /**
      * Server-side backstop: ignore a recenter trigger whose effective profit (measured from the
      * current baselineSpot) is below this floor. Matches nQTicker's Gate-1 hysteresis close (450pts)

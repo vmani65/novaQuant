@@ -7,8 +7,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Component;
 
@@ -29,10 +28,8 @@ import jakarta.annotation.PreDestroy;
  */
 @Component
 @Profile("mock")
+@Slf4j
 public class MockKiteOrderStream implements KiteOrderStream {
-
-    private static final Logger log = LoggerFactory.getLogger(MockKiteOrderStream.class);
-
     private final ConcurrentHashMap<String, CompletableFuture<Order>> awaiters = new ConcurrentHashMap<>();
     private final ConcurrentHashMap<String, Order> cachedEvents = new ConcurrentHashMap<>();
 

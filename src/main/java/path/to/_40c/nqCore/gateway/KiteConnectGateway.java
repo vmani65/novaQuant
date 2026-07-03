@@ -10,8 +10,7 @@ import java.util.Map;
 import java.util.Optional;
 
 import org.json.JSONException;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
@@ -43,10 +42,8 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
  */
 @Service
 @Profile("live")
+@Slf4j
 public class KiteConnectGateway implements KiteGateway {
-
-    private static final Logger log = LoggerFactory.getLogger(KiteConnectGateway.class);
-
     private final String apiKey;
     private final String userId;
     private final KiteAuthDetailsRepository repository;

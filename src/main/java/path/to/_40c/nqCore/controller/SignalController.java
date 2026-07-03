@@ -9,8 +9,7 @@ import path.to._40c.nqCore.util.ComputeUtil;
 
 import org.springframework.http.ResponseEntity;
 import org.springframework.scheduling.annotation.Scheduled;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashMap;
 import java.util.Map;
@@ -23,10 +22,8 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 @RestController
 @RequestMapping("/api")
+@Slf4j
 public class SignalController {
-
-    private static final Logger log = LoggerFactory.getLogger(SignalController.class);
-
     private final Map<String, Instant> signalCache = new ConcurrentHashMap<>();
     private final Map<String, Integer> duplicateCount = new ConcurrentHashMap<>();
     private static final Duration CACHE_TTL = Duration.ofDays(60);

@@ -10,8 +10,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LONG;
@@ -40,10 +39,8 @@ import path.to._40c.nqCore.service.LegTemplateCache;
 
 @Controller
 @RequestMapping
+@Slf4j
 public class KiteAuthController {
-
-    private static final Logger log = LoggerFactory.getLogger(KiteAuthController.class);
-
     private final KiteAuthDetailsRepository repository;
     private final KiteAuthService kiteAuthService;
     private final WeeklySymbolService weeklySymbolService;

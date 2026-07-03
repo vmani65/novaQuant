@@ -11,8 +11,7 @@ import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Profile;
 import org.springframework.context.event.EventListener;
@@ -48,10 +47,8 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
  */
 @Component
 @Profile("live")
+@Slf4j
 public class KiteTickerOrderStream implements KiteOrderStream {
-
-    private static final Logger log = LoggerFactory.getLogger(KiteTickerOrderStream.class);
-
     private static final String STATUS_COMPLETE  = "COMPLETE";
     private static final String STATUS_REJECTED  = "REJECTED";
     private static final String STATUS_CANCELLED = "CANCELLED";

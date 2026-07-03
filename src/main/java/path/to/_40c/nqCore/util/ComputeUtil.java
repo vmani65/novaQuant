@@ -1,7 +1,6 @@
 package path.to._40c.nqCore.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.entity.LegTemplate;
@@ -35,10 +34,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class ComputeUtil {
-
-	private static final Logger log = LoggerFactory.getLogger(ComputeUtil.class);
-
     private final WeeklySymbolCache symbolCache;
     private final LegTemplateCache templateCache;
     private final TradeCapitalRepository tradeCapital;

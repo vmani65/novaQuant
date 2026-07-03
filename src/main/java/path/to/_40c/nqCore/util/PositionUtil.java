@@ -29,8 +29,7 @@ import java.util.concurrent.CompletableFuture;
 import java.util.stream.Collectors;
 
 import org.hibernate.Session;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.slf4j.MDC;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -55,10 +54,8 @@ import path.to._40c.nqCore.gateway.KiteOrderStream;
 import path.to._40c.nqCore.repo.PositionRepository;
 
 @Service
+@Slf4j
 public class PositionUtil {
-
-	private static final Logger log = LoggerFactory.getLogger(PositionUtil.class);
-
     /**
      * Shared virtual-thread executor for parallel leg operations across services.
      * Used by PositionOpeningService, PositionClosingService, PositionRolloverService,
@@ -535,15 +532,17 @@ public class PositionUtil {
         ExecTrace trace = new ExecTrace();
         ExecResult result = null;
         try {
-            if (qty >= MAX_SIZE_PER_ORDER) {
-                log.warn("qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", qty);
-                trace.record("qty %d >= MAX_SIZE_PER_ORDER -> auto-slice MARKET", qty);
-                result = autoSliceFallback(ins, txn, qty, contextLabel, trace);
-            } else if (useLimitWalk) {
-                result = placeGraduatedLimit(q, ins, txn, qty, contextLabel, trace);
-            } else {
-                result = placeMarketCore(ins, txn, qty, contextLabel, trace);
-            }
+            result = ScopedValue.where(EXEC_TRACE, trace).call(() -> {
+                if (qty >= MAX_SIZE_PER_ORDER) {
+                    log.warn("qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", qty);
+                    trace.record("qty %d >= MAX_SIZE_PER_ORDER -> auto-slice MARKET", qty);
+                    return autoSliceFallback(ins, txn, qty, contextLabel);
+                } else if (useLimitWalk) {
+                    return placeGraduatedLimit(q, ins, txn, qty, contextLabel);
+                } else {
+                    return placeMarketCore(ins, txn, qty, contextLabel);
+                }
+            });
             return result;
         } finally {
             if (result != null) {
@@ -594,7 +593,8 @@ public class PositionUtil {
      * Sizing from the confirmed post-cancel fill (no further fills possible once dead) closes it;
      * a residual combined > qty is logged as OVERFILL for manual review.
      */
-    private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
+    private ExecResult placeGraduatedLimit(Quote q, String ins, String txn, int qty, String contextLabel) {
+        ExecTrace trace = EXEC_TRACE.get();
         boolean isBuy = BUY.equals(txn);
         Quote fresh = refreshQuote(ins);
         double[] bk = midHalfSpread(fresh);
@@ -603,7 +603,7 @@ public class PositionUtil {
         if (bk == null) {
             log.warn("no usable quote/depth — MARKET fallback");
             trace.record("no usable quote/depth -> MARKET fallback");
-            return placeMarketCore(ins, txn, qty, contextLabel, trace);
+            return placeMarketCore(ins, txn, qty, contextLabel);
         }
         double mid = bk[0], halfSp = bk[1];
         trace.quote("bid=%s ask=%s ltp=%s mid=%s spread=%s", bk[2], bk[3], ref.lastPrice,
@@ -621,7 +621,7 @@ public class PositionUtil {
         if (resp == null || resp.orderId == null) {
             log.error("LIMIT placeOrder null — MARKET fallback");
             trace.record("LIMIT placeOrder returned null -> MARKET fallback");
-            return placeMarketCore(ins, txn, qty, contextLabel, trace);
+            return placeMarketCore(ins, txn, qty, contextLabel);
         }
         log.info("LIMIT @ {} placed orderId={}", params.price, resp.orderId);
         trace.record("LIMIT @ %s placed orderId=%s", params.price, resp.orderId);
@@ -709,7 +709,7 @@ public class PositionUtil {
                     filledByLimit > qty ? "OVERFILL" : ORDER_COMPLETE);
         }
         trace.record("walk exhausted -> cancelled LIMIT (confirmed filled=%d), MARKET for remaining %d", filledByLimit, remaining);
-        ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel, trace);
+        ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel);
 
         int combined  = filledByLimit + mkt.totalFilled();
         double avg    = combined > 0
@@ -753,7 +753,8 @@ public class PositionUtil {
     }
 
     /** Pure MARKET path (extracted from old placeAggressiveOrder). Reused as the safety fallback. */
-    private ExecResult placeMarketCore(String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
+    private ExecResult placeMarketCore(String ins, String txn, int qty, String contextLabel) {
+        ExecTrace trace = EXEC_TRACE.get();
         OrderParams params = buildAggressiveOrderParams();
         params.orderType        = Constants.ORDER_TYPE_MARKET;
         params.validity         = Constants.VALIDITY_DAY;
@@ -770,7 +771,7 @@ public class PositionUtil {
         log.info("MARKET protection=1 placed: orderId={}", resp.orderId);
         trace.record("MARKET placed orderId=%s", resp.orderId);
 
-        AttemptResult ar = confirmMarketFill(resp.orderId, qty, ins, trace);
+        AttemptResult ar = confirmMarketFill(resp.orderId, qty, ins);
         boolean full = ar.filledQty() >= qty;
         String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
         String ids   = ar.filledQty() > 0 ? resp.orderId : "";
@@ -804,7 +805,8 @@ public class PositionUtil {
      * the tradebook is still trusted over the lagging snapshot; only a truly empty tradebook is
      * reported unconfirmed, with an error so a possibly-live leg is reconciled before re-entry.
      */
-    private AttemptResult confirmMarketFill(String orderId, int qty, String ins, ExecTrace trace) {
+    private AttemptResult confirmMarketFill(String orderId, int qty, String ins) {
+        ExecTrace trace = EXEC_TRACE.get();
         AttemptResult lastHist = new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
         for (int i = 0; i < MARKET_CONFIRM_POLLS; i++) {
             AttemptResult hist = peekOrderState(orderId);
@@ -893,7 +895,8 @@ public class PositionUtil {
     }
 
     /** Fallback for qty >= MAX_SIZE_PER_ORDER — Kite broker-side auto-slice using MARKET orders. */
-    private ExecResult autoSliceFallback(String ins, String txn, int qty, String contextLabel, ExecTrace trace) {
+    private ExecResult autoSliceFallback(String ins, String txn, int qty, String contextLabel) {
+        ExecTrace trace = EXEC_TRACE.get();
         List<BulkOrderResponse> bulk = placeAutoSliceOrder(ins, 0.0, txn, qty);
         if (bulk == null || bulk.isEmpty()) {
             trace.record("auto-slice returned no orders -> FAILED");
@@ -986,10 +989,20 @@ public class PositionUtil {
     private static final String MDC_LEG_KEY = "leg";
 
     /**
+     * Per-leg ExecTrace, bound by placeAggressiveOrder for the duration of one leg's execution so
+     * the private pipeline methods (LIMIT walk, MARKET core, auto-slice, fill confirms) append to
+     * the same trace without it being threaded through every signature. Legs execute on separate
+     * virtual threads, so bindings never overlap; reading outside a binding throws
+     * NoSuchElementException, which flags a call path that bypassed placeAggressiveOrder.
+     */
+    private static final ScopedValue<ExecTrace> EXEC_TRACE = ScopedValue.newInstance();
+
+    /**
      * Per-leg execution trace: accumulates step lines with +ms offsets during one
      * placeAggressiveOrder call and renders them as a single multi-line block, so the
      * complete story of each leg appears contiguously in the log even when several legs
-     * execute in parallel. Confined to the leg's own thread — not thread-safe by design.
+     * execute in parallel. Reaches the pipeline methods via the EXEC_TRACE scoped value.
+     * Confined to the leg's own thread — not thread-safe by design.
      */
     private static final class ExecTrace {
         private final long t0 = System.currentTimeMillis();

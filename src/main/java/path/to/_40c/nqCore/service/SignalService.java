@@ -13,8 +13,7 @@ import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.concurrent.CompletableFuture;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
@@ -23,10 +22,8 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.repo.PositionRepository;
 
 @Service
+@Slf4j
 public class SignalService {
-
-	private static final Logger log = LoggerFactory.getLogger(SignalService.class);
-
 	private final PositionOpeningService openingService;
 	private final PositionClosingService closingService;
 	private final PositionRolloverService rollOverService;
