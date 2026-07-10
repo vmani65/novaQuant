@@ -48,6 +48,8 @@ public class PositionRolloverService {
      * Re-strike accounting is identical to a recenter: bank the closed segment's points into
      * bankedPoints and reset baselineSpot to the rollover spot. entrySpot/exitSpot are left
      * untouched — they remain the immutable original-entry / final-exit reference for reporting.
+     * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
+     * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
     public void rollOver(String signalPrice) {
         Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks();
@@ -110,6 +112,7 @@ public class PositionRolloverService {
             double banked = tradeToRollOver.getBankedPoints() != null ? tradeToRollOver.getBankedPoints() : 0.0;
             tradeToRollOver.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
             tradeToRollOver.setBaselineSpot(rolloverPrice);
+            tradeToRollOver.getLegs().forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * segment)));
             log.info("rollover re-strike | segment={}pts bankedPoints={} newBaseline={}",
                 Math.round(segment * 100.0) / 100.0, tradeToRollOver.getBankedPoints(), rolloverPrice);
             List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);

@@ -25,9 +25,4 @@ public class WeeklyLeg extends BaseLegEntity {
 
     @OneToMany(mappedBy = "weeklyLeg", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.LAZY)
     private List<LegFill> fills = new ArrayList<>();
-
-    public WeeklyLeg() {
-        expectedPnl = 0.0d;
-        actualPnl   = 0.0d;
-    }
 }
