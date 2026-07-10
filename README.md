@@ -110,10 +110,14 @@ Large orders above `MAX_SIZE_PER_ORDER` (Kite's freeze-quantity ceiling) are aut
 | Field | Where | Formula |
 |---|---|---|
 | `weekly_leg.actual_pnl` | per leg | `quantity × (sell_fill_price − buy_fill_price)` |
-| `weekly_leg.expected_pnl` | per leg | `quantity × (sell_intended_price − buy_intended_price)` |
-| `weekly_leg.pnl_capture_pct` | per leg | `actual_pnl / expected_pnl × 100`, or `"N/A"` when expected = 0 |
+| `weekly_leg.expected_pnl` | per leg | `quantity × segment spot points` — the full spot move available to the leg's own segment (stamped by recenter/rollover at segment close; `calcPnL` stamps the final segment as `pointsPnl − bankedPoints`) |
+| `weekly_leg.pnl_capture_pct` | per leg | `actual_pnl / expected_pnl × 100` — the leg's share of its segment's spot move; the CE+PE legs of a pair sum to ≈100% minus slippage. `"N/A"` when \|expected\| < ₹100 |
 | `position.actual_pnl` | trade | `Σ(leg.actual_pnl) − total_charges` |
-| `position.expected_pnl` | trade | `qty × position.pointsPnl` (NIFTY-spot based — see [UPGRADE_PLAN.md](UPGRADE_PLAN.md) for the deferred sum-of-legs reconciliation) |
+| `position.expected_pnl` | trade | `qty × position.pointsPnl` (NIFTY-spot based, counted once per CE+PE pair — each *leg's* expected is the same full-move denominator, so leg expecteds intentionally sum to 2× the pair's) |
+
+`buy_intended_price` / `sell_intended_price` (quote LTP snapshotted when each order is placed) are still recorded on every leg for slippage reference, but no longer feed `expected_pnl`.
+
+**Historical backfill (done):** rows written under the pre-2026-07 intended-price semantics were re-baselined in prod on 2026-07-10 via a one-off `GET /api/backfill-leg-pnl` (since removed) — closed single-segment positions restamped via `calcPnL`, multi-segment legs nulled to N/A (per-segment attribution is not reconstructable retroactively), the LIVE position's current-segment legs nulled for stamping at segment close. DB backup: `signals.db.bak-20260710-211603-prelegpnlbackfill`.
 
 ### Rollover (weekly Tuesday expiry)
 
@@ -122,11 +126,11 @@ Two trigger paths:
 1. **`RollOverTriggerController`** — nqTicker's `RolloverTriggerConsumer` calls `/api/rollover-trigger?currentPrice=<close>` at 14:47 IST. Server-side guards: (a) `rolloverDay` configured, (b) today's IST date equals it, (c) `rolloverComplete = false`. If all pass: invokes `SignalService.handleRollOver(price)` → `WeeklySymbolService.markRolloverComplete()`.
 2. **Synchronous promotion on next close** — `WeeklySymbolService.checkAndPromoteRolloverSymbol()` runs after every `closeTrade()`. If today is rollover day AND `rolloverComplete = false`, copies `rolloverSymbol → thisWeekSymbol` before the next open. Guarantees subsequent opens use the new week's symbol even if the 14:47 trigger missed.
 
-Positions held across rollover accumulate `entrySpot` and `exitSpot` (each new week's spot is ADDED to the existing values). See test 5.6 in `test_runner.py`.
+Positions held across rollover bank the closed segment's points (`baseline_spot` → rollover spot) into `banked_points` and reset `baseline_spot` to the rollover spot; `entrySpot`/`exitSpot` stay untouched as the original-entry / final-exit reference. See test 5.6 in `test_runner.py`.
 
 ### Profit recenter (liquidity-aware exit)
 
-`ProfitRecenterService.realizeProfits` (triggered by nqTicker's `ProfitRecenterConsumer` after Gate 1 + Gate 2 conditions): closes all live legs at current LTP, accumulates `realized_points`, then opens new ATM legs at the new spot. See `EXECUTION_IMPROVEMENT_PLAN.md` in `../nqTicker/` for the gate logic.
+`ProfitRecenterService.realizeProfits` (triggered by nqTicker's `ProfitRecenterConsumer` after Gate 1 + Gate 2 conditions): closes all live legs at current LTP, banks the closed segment's points into `banked_points` and resets `baseline_spot`, then opens new ATM legs at the new spot. See `EXECUTION_IMPROVEMENT_PLAN.md` in `../nqTicker/` for the gate logic.
 
 ### Async post-trade hooks
 
@@ -287,7 +291,6 @@ src/main/resources/
   application-test.properties                — test-profile overrides (signals_test.db)
   logback-spring.xml                         — async appender, daily rolling file
 
-UPGRADE_PLAN.md                              — history of Java 21 + virtual threads + Spring Boot 4 upgrade
 afl/rollOverTrigger.afl                      — AmiBroker AFL: fires GET /api/rollover-trigger at 14:47 IST
 ```
 

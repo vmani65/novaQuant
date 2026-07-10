@@ -15,8 +15,7 @@ import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.SELL;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.context.annotation.Profile;
 import org.springframework.stereotype.Service;
 
@@ -45,10 +44,8 @@ import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_COMPLETE;
  */
 @Service
 @Profile("mock")
+@Slf4j
 public class MockKiteGateway implements KiteGateway {
-
-    private static final Logger log = LoggerFactory.getLogger(MockKiteGateway.class);
-
     /** Parses trailing strike+option-type from instrument symbols: e.g. NIFTY24D1922500CE → 22500/CE. */
     private static final Pattern STRIKE_PATTERN = Pattern.compile("(\\d{4,6})(CE|PE)$");
 

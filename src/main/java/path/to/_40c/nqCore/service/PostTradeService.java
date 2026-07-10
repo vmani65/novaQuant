@@ -1,8 +1,7 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.LIVE;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -13,10 +12,8 @@ import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.PositionUtil;
 
 @Service
+@Slf4j
 public class PostTradeService {
-
-    private static final Logger log = LoggerFactory.getLogger(PostTradeService.class);
-
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
     private final PositionRepository positionRepository;

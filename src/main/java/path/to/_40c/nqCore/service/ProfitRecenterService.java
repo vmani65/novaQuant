@@ -10,8 +10,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
@@ -35,10 +34,8 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  * recenters; calcTradeOutcome adds bankedPoints to the current segment's (baseline - exit).
  */
 @Service
+@Slf4j
 public class ProfitRecenterService {
-
-    private static final Logger log = LoggerFactory.getLogger(ProfitRecenterService.class);
-
     /**
      * Server-side backstop: ignore a recenter trigger whose effective profit (measured from the
      * current baselineSpot) is below this floor. Matches nQTicker's Gate-1 hysteresis close (450pts)
@@ -69,6 +66,8 @@ public class ProfitRecenterService {
      * bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked here.
      * On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
      * resets baselineSpot to currentPrice, then closes the old legs and opens new ones at the new ATM.
+     * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
+     * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
     public void realizeProfits(String currentPrice) {
         Position trade = positionUtil.findLiveTradesWithLiveOrderBooks();
@@ -148,6 +147,7 @@ public class ProfitRecenterService {
         double banked  = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
         trade.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
         trade.setBaselineSpot(newPrice);
+        legsBeingClosed.forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * segment)));
         log.info("realizeProfits: segment={}pts bankedPoints={} newBaseline={}",
                 Math.round(segment * 100.0) / 100.0, trade.getBankedPoints(), newPrice);
 

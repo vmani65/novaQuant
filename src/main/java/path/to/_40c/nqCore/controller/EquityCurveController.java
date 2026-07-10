@@ -4,8 +4,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PostMapping;
@@ -22,10 +21,8 @@ import path.to._40c.nqCore.service.TradeCapitalService;
 
 @RestController
 @RequestMapping("/api")
+@Slf4j
 public class EquityCurveController {
-
-    private static final Logger log = LoggerFactory.getLogger(EquityCurveController.class);
-
     private final EquityCurveService equityCurveService;
     private final TradeCapitalService tradeCapitalService;
 

@@ -11,8 +11,7 @@ import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
@@ -26,10 +25,8 @@ import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 @Service
+@Slf4j
 public class PositionRolloverService {
-
-	private static final Logger log = LoggerFactory.getLogger(PositionRolloverService.class);
-
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
@@ -51,6 +48,8 @@ public class PositionRolloverService {
      * Re-strike accounting is identical to a recenter: bank the closed segment's points into
      * bankedPoints and reset baselineSpot to the rollover spot. entrySpot/exitSpot are left
      * untouched — they remain the immutable original-entry / final-exit reference for reporting.
+     * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
+     * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
     public void rollOver(String signalPrice) {
         Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks();
@@ -113,6 +112,7 @@ public class PositionRolloverService {
             double banked = tradeToRollOver.getBankedPoints() != null ? tradeToRollOver.getBankedPoints() : 0.0;
             tradeToRollOver.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
             tradeToRollOver.setBaselineSpot(rolloverPrice);
+            tradeToRollOver.getLegs().forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * segment)));
             log.info("rollover re-strike | segment={}pts bankedPoints={} newBaseline={}",
                 Math.round(segment * 100.0) / 100.0, tradeToRollOver.getBankedPoints(), rolloverPrice);
             List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);

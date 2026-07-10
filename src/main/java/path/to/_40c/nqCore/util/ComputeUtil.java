@@ -1,7 +1,6 @@
 package path.to._40c.nqCore.util;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.entity.LegTemplate;
@@ -35,10 +34,8 @@ import java.util.Map;
 import java.util.stream.Collectors;
 
 @Service
+@Slf4j
 public class ComputeUtil {
-
-	private static final Logger log = LoggerFactory.getLogger(ComputeUtil.class);
-
     private final WeeklySymbolCache symbolCache;
     private final LegTemplateCache templateCache;
     private final TradeCapitalRepository tradeCapital;
@@ -125,14 +122,22 @@ public class ComputeUtil {
 	 * actual/expected PnL and brokerage, then sets trade-level brokerage, expectedPnl,
 	 * actualPnl (= total actual − brokerage), pnlCapturePct, and lots.
 	 *
-	 * Pair-level expectedPnl uses the first leg's quantity since CE qty == PE qty by design
-	 * and synthetic delta ≈ 1. Skips any pair group with missing prices or brokerage.
+	 * Per-leg expectedPnl = qty × the spot points of the leg's own segment — the full move
+	 * available to its CE+PE pair (synthetic delta ≈ 1). Recenter/rollover stamp it when they
+	 * close a segment; legs still null here belong to the final segment and get
+	 * qty × (pointsPnl − bankedPoints). Per-leg pnlCapturePct = actual/expected is therefore
+	 * the leg's share of its segment's move, and the two legs of a pair sum to ≈100% minus
+	 * slippage. Pair-level expectedPnl uses the first leg's quantity since CE qty == PE qty
+	 * by design. Skips any pair group with missing prices or brokerage.
 	 */
 	public void calcPnL(Position trade) {
 		if (trade == null || trade.getPointsPnl() == null) return;
 
 		Map<String, List<WeeklyLeg>> pairs = trade.getLegs().stream()
 				.collect(Collectors.groupingBy(WeeklyLeg::getMoneyness));
+
+		double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
+		double finalSegmentPoints = trade.getPointsPnl() - banked;
 
 		double totalBrokerage  = 0.0;
 		double totalExpectedPnL = 0.0;
@@ -149,11 +154,10 @@ public class ComputeUtil {
 			pairLegs.forEach(w -> {
 				double actualLegPnL = rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()));
 				w.setActualPnl(actualLegPnL);
-				if (w.getBuyIntendedPrice() != null && w.getSellIntendedPrice() != null) {
-					double expectedLegPnL = rnd(w.getQuantity() * (w.getSellIntendedPrice() - w.getBuyIntendedPrice()));
-					w.setExpectedPnl(expectedLegPnL);
-					w.setPnlCapturePct(formatPnLPercent(actualLegPnL, expectedLegPnL));
+				if (w.getExpectedPnl() == null) {
+					w.setExpectedPnl(rnd(w.getQuantity() * finalSegmentPoints));
 				}
+				w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
 			});
 
 			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
@@ -174,10 +178,17 @@ public class ComputeUtil {
 		trade.setLots(totalLots);
 	}
 
+	/**
+	 * Below this |expected| (₹) a capture ratio is denominator noise — a near-scratch segment
+	 * (~1.3 spot points at 1 lot) turns any slippage into a huge meaningless percentage,
+	 * so N/A is rendered instead.
+	 */
+	private static final double MIN_EXPECTED_FOR_PCT = 100.0;
+
 	public static String formatPnLPercent(Double actual, Double expected) {
         if (actual == null || expected == null) return NA;
         if (!Double.isFinite(actual) || !Double.isFinite(expected)) return NA;
-        if (Math.abs(expected) < 1e-9) return NA;
+        if (Math.abs(expected) < MIN_EXPECTED_FOR_PCT) return NA;
         double pct = (actual / expected) * 100.0;
         return format1dpPercent(pct);
     }

@@ -6,8 +6,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
 
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
+import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
@@ -21,10 +20,8 @@ import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 @Service
+@Slf4j
 public class PositionClosingService {
-
-	private static final Logger log = LoggerFactory.getLogger(PositionClosingService.class);
-
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;

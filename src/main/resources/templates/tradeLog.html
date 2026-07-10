@@ -267,7 +267,7 @@
 
         const legRows = legs.map(c => {
             const diffVal = c.pnlCapturePct != null ? parseFloat(c.pnlCapturePct) : null;
-            const diffClass = diffVal != null
+            const diffClass = diffVal != null && !isNaN(diffVal)
                 ? (diffVal >= 0 ? 'text-emerald-600 font-semibold' : 'text-rose-500 font-semibold')
                 : 'text-gray-400';
             return `
