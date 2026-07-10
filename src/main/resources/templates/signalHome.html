@@ -68,36 +68,49 @@
         #niftyInstrumentsBox li:hover { background: #f3f4f6; }
 
         /* NSE Calendar */
-        .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); border: 1px solid #e5e7eb; border-radius: 10px; overflow: hidden; }
-        .calendar-day-header { padding: 10px 4px; text-align: center; font-weight: 600; font-size: 11px; color: #6b7280; text-transform: uppercase; letter-spacing: .06em; border-right: 1px solid #e5e7eb; border-bottom: 2px solid #e5e7eb; }
-        .calendar-day-header:last-child { border-right: none; }
-        .calendar-day { min-height: 64px; padding: 6px 8px; position: relative; border-radius: 0; cursor: default; transition: background .1s; border-right: 1px solid #f1f5f9; border-bottom: 1px solid #f1f5f9; }
-        .calendar-day:nth-child(7n) { border-right: none; }
-        .calendar-day.other-month { opacity: .3; }
-        .calendar-day:not(.other-month):hover { background: #f3f4f6; }
-        .calendar-day.weekend .calendar-day-number { color: #9ca3af; }
+        .calendar-grid { display: grid; grid-template-columns: repeat(7,1fr); gap: 6px; }
+        .calendar-day-header { padding: 4px 0 8px; text-align: center; font-weight: 600; font-size: 10px; color: #9ca3af; text-transform: uppercase; letter-spacing: .08em; }
+        .calendar-day { min-height: 76px; padding: 8px; border-radius: 10px; background: #f8fafc; border: 1.5px solid transparent; cursor: default; transition: background .12s, border-color .12s; }
+        .calendar-day:not(.other-month):hover { background: #f1f5f9; }
+        .calendar-day.other-month { background: transparent; }
+        .calendar-day.other-month .calendar-day-number { color: #e5e7eb; font-weight: 400; }
+        .calendar-day.weekend .calendar-day-number { color: #b0b7c3; }
         .calendar-day.holiday { background: #fff1f2; }
         .calendar-day.holiday:hover { background: #ffe4e6; }
         .calendar-day.rollover { background: #f5f3ff; }
         .calendar-day.rollover:hover { background: #ede9fe; }
-        .calendar-day.today .calendar-day-number {
-            background: #2563eb; color: #fff; width: 24px; height: 24px;
-            border-radius: 50%; display: inline-flex; align-items: center; justify-content: center;
-        }
-        .calendar-day.today.holiday .calendar-day-number { background: #dc2626; }
+        .calendar-day.today { border-color: #3b82f6; background: #eff6ff; }
+        .calendar-day.today.holiday { border-color: #f43f5e; }
+        .calendar-day.today.rollover { border-color: #8b5cf6; }
+        .calendar-day-number { font-weight: 600; font-size: 12px; color: #374151; line-height: 1; margin-bottom: 4px; display: inline-flex; align-items: center; justify-content: center; width: 22px; height: 22px; border-radius: 50%; }
+        .calendar-day.today .calendar-day-number { background: #2563eb; color: #fff; }
+        .calendar-day.today.holiday .calendar-day-number { background: #e11d48; }
         .calendar-day.today.rollover .calendar-day-number { background: #7c3aed; }
-        .calendar-day-number { font-weight: 500; font-size: 13px; color: #111827; line-height: 1; margin-bottom: 4px; display: block; }
         .calendar-day.holiday .calendar-day-number { color: #be123c; }
         .calendar-day.rollover .calendar-day-number { color: #6d28d9; }
-        .calendar-day.other-month .calendar-day-number { color: #9ca3af; font-weight: 400; }
-        .holiday-name { font-size: 10px; color: #be123c; font-weight: 500; line-height: 1.3; margin-top: 3px; }
-        .rollover-badge { font-size: 10px; color: #7c3aed; font-weight: 600; line-height: 1.3; margin-top: 3px; }
-        .calendar-legend { display: flex; gap: 16px; flex-wrap: wrap; font-size: 12px; }
+        .holiday-name { font-size: 10px; color: #be123c; font-weight: 600; line-height: 1.3; display: -webkit-box; -webkit-line-clamp: 2; -webkit-box-orient: vertical; overflow: hidden; }
+        .rollover-badge { display: inline-block; font-size: 9px; color: #6d28d9; background: #ede9fe; font-weight: 700; line-height: 1; padding: 3px 7px; border-radius: 999px; text-transform: uppercase; letter-spacing: .05em; }
+        .calendar-legend { display: flex; gap: 14px; flex-wrap: wrap; font-size: 11px; }
         .legend-item { display: flex; align-items: center; gap: 6px; color: #6b7280; }
         .legend-dot { width: 8px; height: 8px; border-radius: 50%; flex-shrink: 0; }
+        .upcoming-chip { display: inline-flex; align-items: center; gap: 5px; padding: 4px 10px; border-radius: 999px; font-size: 11px; font-weight: 500; white-space: nowrap; }
 
         /* Sidebar active link */
         .sidebar-link.active { background: #eff6ff; color: #2563eb; border-left-color: #2563eb; font-weight: 500; }
+
+        /* Live position pulse */
+        @keyframes pulse-dot { 0%,100% { opacity: 1; } 50% { opacity: .35; } }
+        .pulse-dot { animation: pulse-dot 1.6s ease-in-out infinite; }
+
+        /* Auth traffic signal + ping button (topbar) */
+        .signal-box { display: flex; flex-direction: column; justify-content: center; gap: 3px; background: #111827; border-radius: 0 6px 6px 0; padding: 4px 5px; line-height: 0; }
+        .signal-light { width: 10px; height: 10px; border-radius: 50%; background: #4b5563; transition: background .2s, box-shadow .2s; }
+        .signal-light.red-on   { background: #ef4444; box-shadow: 0 0 6px 1px rgba(239,68,68,.75); }
+        .signal-light.green-on { background: #22c55e; box-shadow: 0 0 6px 1px rgba(34,197,94,.75); }
+        .signal-box.checking .signal-light { animation: pulse-dot 1s ease-in-out infinite; }
+        .ping-btn { display: flex; align-items: center; gap: 6px; padding: 0 10px; background: #1f2937; color: #e5e7eb; font-size: 11px; font-weight: 600; font-family: inherit; border: 0; border-radius: 6px 0 0 6px; cursor: pointer; }
+        .ping-btn:hover { background: #374151; }
+        .ping-btn:disabled { opacity: .6; cursor: wait; }
     </style>
 
     <script>
@@ -154,28 +167,113 @@
             }
         };
 
-        // ==================== TEST KITE CONNECTION ====================
-        function testKiteConnection() {
-            const resultDiv = document.getElementById('kiteTestResult');
-            resultDiv.style.display = '';
-            resultDiv.className = 'message text-xs font-mono flex-1';
-            resultDiv.textContent = 'Testing…';
+        // ==================== LIVE POSITIONS ====================
+        const LivePositions = {
+            load() {
+                fetch('/api/trades')
+                    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(trades => this.render(trades.filter(t => t.status === 'LIVE')))
+                    .catch(e => {
+                        document.getElementById('livePositionsBox').innerHTML =
+                            `<div class="px-5 py-4"><div class="message error">Failed to load positions: ${e.message}</div></div>`;
+                    });
+            },
+
+            fmtNum(v) {
+                if (v == null) return '—';
+                return Number(v).toLocaleString('en-IN', { maximumFractionDigits: 2 });
+            },
+
+            chip(label, value, cls) {
+                return `<div class="px-3 py-2 bg-gray-50 rounded-lg border border-gray-100">
+                    <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-0.5">${label}</div>
+                    <div class="text-[13px] font-semibold font-mono ${cls || 'text-gray-900'}">${value}</div>
+                </div>`;
+            },
+
+            render(live) {
+                const box = document.getElementById('livePositionsBox');
+                if (live.length === 0) {
+                    box.innerHTML = '<div class="px-5 py-6 text-center text-xs text-gray-400 italic">No open positions</div>';
+                    return;
+                }
+                box.innerHTML = live.map(t => {
+                    const liveLegs = (t.legs || []).filter(l => l.status === 'LIVE');
+                    const margin   = liveLegs.reduce((s, l) => s + (l.marginRequired || 0), 0);
+                    const isLong   = t.direction === 'LONG';
+                    const banked   = t.bankedPoints || 0;
+                    const legRows = liveLegs.map(l => `
+                        <tr class="border-t border-gray-100">
+                            <td class="px-3 py-1.5 font-mono text-[11px] text-gray-800">${l.exchangeSymbol || '—'}</td>
+                            <td class="px-3 py-1.5 text-center text-[11px] font-semibold ${l.side === 'BUY' ? 'text-emerald-600' : 'text-rose-600'}">${l.side || '—'}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-600">${l.quantity != null ? l.quantity : '—'}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-700">${this.fmtNum(l.side === 'BUY' ? l.buyFillPrice : l.sellFillPrice)}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-700">${this.fmtNum(l.ltp)}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-500">${l.marginRequired != null ? '₹' + this.fmtNum(l.marginRequired) : '—'}</td>
+                        </tr>`).join('');
+                    return `
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <div class="flex items-center gap-3 flex-wrap mb-3">
+                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-200">
+                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 pulse-dot"></span> Live
+                            </span>
+                            <span class="font-mono text-[11px] text-gray-400">#${t.id}</span>
+                            <span class="text-xs font-semibold ${isLong ? 'text-emerald-600' : 'text-rose-600'}">${isLong ? '▲' : '▼'} ${t.direction}</span>
+                            <span class="text-xs text-gray-500">${t.strategyName || ''}</span>
+                            <span class="text-[11px] text-gray-400 font-mono ml-auto">since ${t.openedAt || '—'}</span>
+                        </div>
+                        <div class="grid grid-cols-3 md:grid-cols-6 gap-3 mb-3">
+                            ${this.chip('Entry Spot', this.fmtNum(t.entrySpot))}
+                            ${this.chip('Baseline Spot', this.fmtNum(t.baselineSpot))}
+                            ${this.chip('Banked Points', this.fmtNum(banked), banked > 0 ? 'text-emerald-600' : 'text-gray-900')}
+                            ${this.chip('Lots', t.lots != null ? t.lots : '—')}
+                            ${this.chip('Margin Used', margin > 0 ? '₹' + this.fmtNum(margin) : '—')}
+                            ${this.chip('Expected P&L', t.expectedPnl != null ? '₹' + this.fmtNum(t.expectedPnl) : '—', (t.expectedPnl || 0) >= 0 ? 'text-emerald-600' : 'text-rose-600')}
+                        </div>
+                        <div class="border border-gray-100 rounded-lg overflow-hidden">
+                            <table class="w-full text-xs">
+                                <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
+                                    <tr>
+                                        <th class="px-3 py-1.5 text-left font-semibold">Symbol</th>
+                                        <th class="px-3 py-1.5 text-center font-semibold">Side</th>
+                                        <th class="px-3 py-1.5 text-right font-semibold">Qty</th>
+                                        <th class="px-3 py-1.5 text-right font-semibold">Entry Fill</th>
+                                        <th class="px-3 py-1.5 text-right font-semibold">LTP</th>
+                                        <th class="px-3 py-1.5 text-right font-semibold">Margin</th>
+                                    </tr>
+                                </thead>
+                                <tbody>${legRows || '<tr><td colspan="6" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No live legs</td></tr>'}</tbody>
+                            </table>
+                        </div>
+                    </div>`;
+                }).join('');
+            }
+        };
+
+        // ==================== TOPBAR AUTH TRAFFIC SIGNAL ====================
+        function checkConnection() {
+            const box   = document.getElementById('authSignal');
+            const red   = document.getElementById('lightRed');
+            const green = document.getElementById('lightGreen');
+            const btn   = document.getElementById('pingBtn');
+            const label = document.getElementById('pingBtnLabel');
+            red.classList.remove('red-on');
+            green.classList.remove('green-on');
+            box.classList.add('checking');
+            btn.disabled = true;
+            label.textContent = 'Pinging…';
+            const done = (isOk, title) => {
+                box.classList.remove('checking');
+                btn.disabled = false;
+                label.textContent = 'Ping Kite';
+                (isOk ? green : red).classList.add(isOk ? 'green-on' : 'red-on');
+                box.parentElement.title = title;
+            };
             fetch('/kite-auth/test-connection')
                 .then(r => r.json())
-                .then(data => {
-                    if (data.status === 'OK') {
-                        resultDiv.classList.add('success');
-                        resultDiv.textContent = '✓ ' + data.message;
-                    } else {
-                        resultDiv.classList.add('error');
-                        const code = data.code ? ' [code=' + data.code + ']' : '';
-                        resultDiv.textContent = '✗ ' + data.status + code + ' — ' + data.message;
-                    }
-                })
-                .catch(err => {
-                    resultDiv.classList.add('error');
-                    resultDiv.textContent = '✗ Request failed: ' + err.message;
-                });
+                .then(d => done(d.status === 'OK',
+                    d.status === 'OK' ? (d.message || 'Auth OK') : (d.status || 'ERROR') + ' — ' + (d.message || 'Auth not available')))
+                .catch(e => done(false, 'Check failed: ' + e.message));
         }
 
         // ==================== LOGIN URL ====================
@@ -597,9 +695,12 @@
             const card = document.querySelector('[data-no-symbols]');
             const noSymbols = card && card.getAttribute('data-no-symbols') === 'true';
             if (noSymbols) setSymbolsEditable(true);
+            checkConnection();
+            LivePositions.load();
             loadCapitalData();
             loadLegTemplates();
             EquityCurve.loadEquityCurve();
+            NSECalendar.renderUpcoming();
             // Set date in topbar
             document.getElementById('topbarDate').textContent =
                 new Date().toLocaleDateString('en-IN', { day:'2-digit', month:'short', year:'numeric' });
@@ -774,6 +875,9 @@
                     if (equityValues[i] > peak) peak = equityValues[i];
                     drawdowns.push(peak > 0 ? ((equityValues[i] - peak) / peak) * 100 : 0);
                 }
+                const maxDrawdown = drawdowns.length > 0 ? Math.min(...drawdowns) : 0;
+                document.getElementById('maxDrawdown').textContent = drawdowns.length > 0 ? maxDrawdown.toFixed(2) + '%' : '-';
+                document.getElementById('maxDrawdown').style.color = maxDrawdown < 0 ? '#dc2626' : '#059669';
                 if (AppState.equityCurveChart) AppState.equityCurveChart.destroy();
                 AppState.equityCurveChart = new Chart(
                     document.getElementById('equityCurveChart').getContext('2d'),
@@ -873,6 +977,37 @@
             nextMonth()  { if (++this.currentMonth > 11) { this.currentMonth = 0;  this.currentYear++; } this.renderCalendar(); },
             goToToday()  { const t = new Date(); this.currentMonth = t.getMonth(); this.currentYear = t.getFullYear(); this.renderCalendar(); },
 
+            upcoming() {
+                const today = new Date(); today.setHours(0,0,0,0);
+                const nextHoliday = this.holidays2026
+                    .map(h => ({ name: h.name, d: new Date(h.date + 'T00:00:00') }))
+                    .filter(h => h.d >= today)
+                    .sort((a, b) => a.d - b.d)[0] || null;
+                let nextRollover = null;
+                const probe = new Date(today);
+                for (let i = 0; i < 60; i++) {
+                    if (this.isRolloverDay(probe)) { nextRollover = new Date(probe); break; }
+                    probe.setDate(probe.getDate() + 1);
+                }
+                return { nextHoliday, nextRollover };
+            },
+
+            renderUpcoming() {
+                const el = document.getElementById('calendarUpcoming');
+                const { nextHoliday, nextRollover } = this.upcoming();
+                const today = new Date(); today.setHours(0,0,0,0);
+                const daysTo = d => Math.round((d - today) / 86400000);
+                const fmt = d => d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+                const inTxt = n => n === 0 ? 'today' : n === 1 ? 'tomorrow' : `in ${n}d`;
+                let html = '';
+                if (nextRollover) html += `<span class="upcoming-chip bg-violet-50 text-violet-700 border border-violet-100">Rollover · ${fmt(nextRollover)} · ${inTxt(daysTo(nextRollover))}</span>`;
+                if (nextHoliday) {
+                    const shortName = nextHoliday.name.length > 20 ? nextHoliday.name.slice(0, 20) + '…' : nextHoliday.name;
+                    html += `<span class="upcoming-chip bg-rose-50 text-rose-700 border border-rose-100" title="${nextHoliday.name}">Holiday · ${shortName} · ${fmt(nextHoliday.d)} · ${inTxt(daysTo(nextHoliday.d))}</span>`;
+                }
+                el.innerHTML = html;
+            },
+
             renderCalendar() {
                 const monthNames = ['January','February','March','April','May','June','July','August','September','October','November','December'];
                 const dayNames   = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
@@ -886,7 +1021,7 @@
                 let html = '';
                 dayNames.forEach(d => { html += `<div class="calendar-day-header">${d}</div>`; });
                 for (let i = firstDayOfWeek - 1; i >= 0; i--)
-                    html += `<div class="calendar-day other-month"><div class="calendar-day-number">${prevLastDate - i}</div></div>`;
+                    html += `<div class="calendar-day other-month"><span class="calendar-day-number">${prevLastDate - i}</span></div>`;
                 for (let day = 1; day <= lastDateOfMonth; day++) {
                     const date    = new Date(this.currentYear, this.currentMonth, day);
                     const dateStr = this.formatDate(date);
@@ -900,14 +1035,14 @@
                     else if (isRollover) classes += ' rollover';
                     else if (isWeekend)  classes += ' weekend';
                     html += `<div class="${classes}">
-                        <div class="calendar-day-number">${day}</div>
-                        ${holiday    ? `<div class="holiday-name">${holiday.name}</div>` : ''}
-                        ${isRollover ? `<div class="rollover-badge">Rollover</div>` : ''}
+                        <span class="calendar-day-number">${day}</span>
+                        ${holiday    ? `<div class="holiday-name" title="${holiday.name}">${holiday.name}</div>` : ''}
+                        ${isRollover ? `<span class="rollover-badge">Rollover</span>` : ''}
                     </div>`;
                 }
                 const remaining = 42 - (firstDayOfWeek + lastDateOfMonth);
                 for (let day = 1; day <= remaining; day++)
-                    html += `<div class="calendar-day other-month"><div class="calendar-day-number">${day}</div></div>`;
+                    html += `<div class="calendar-day other-month"><span class="calendar-day-number">${day}</span></div>`;
                 document.getElementById('calendarGrid').innerHTML = html;
             }
         };
@@ -927,9 +1062,18 @@
         <img src="/img/nc.png" alt="nQ" class="w-7 h-7 rounded-md">
         <span class="text-[15px] font-semibold tracking-tight text-gray-900">nqCore</span>
     </a>
-    <div class="flex items-center gap-2 text-xs text-gray-400">
-        <span class="w-1.5 h-1.5 rounded-full bg-green-500 inline-block"></span>
+    <div class="flex items-center gap-3 text-xs text-gray-400">
         <span id="topbarDate">Signals Desk</span>
+        <div class="flex items-stretch" title="Round-trip auth check: today's token + live Kite call">
+            <button id="pingBtn" onclick="checkConnection()" class="ping-btn">
+                <svg class="w-3.5 h-3.5" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,8 4,8 6,3 10,13 12,8 15,8"/></svg>
+                <span id="pingBtnLabel">Ping Kite</span>
+            </button>
+            <span id="authSignal" class="signal-box">
+                <span id="lightRed" class="signal-light"></span>
+                <span id="lightGreen" class="signal-light"></span>
+            </span>
+        </div>
     </div>
 </header>
 
@@ -940,42 +1084,26 @@
     <aside class="w-[220px] shrink-0 bg-white border-r border-gray-200 py-5 sticky top-14 overflow-y-auto" style="height: calc(100vh - 56px)">
 
         <div class="mb-5">
-            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Auth</div>
-            <a href="#auth" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
-                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="12" height="9" rx="1"/><path d="M5 5V4a3 3 0 0 1 6 0v1"/></svg>
-                Login &amp; Token
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Live</div>
+            <a href="#positions" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><circle cx="8" cy="8" r="6"/><circle cx="8" cy="8" r="2" fill="currentColor" stroke="none"/></svg>
+                Positions
             </a>
+        </div>
+
+        <div class="mb-5">
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Setup</div>
             <a href="#symbols" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
                 <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,12 5,7 9,9 15,4"/></svg>
                 Symbols
             </a>
-        </div>
-
-        <div class="mb-5">
-            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Operations</div>
-            <a href="#rollover" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
-                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 0 6-6"/><polyline points="5,2 2,2 2,5"/></svg>
-                Rollover
-            </a>
-            <a href="#cache" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
-                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="5" rx="5" ry="2.5"/><path d="M3 5v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V5"/><path d="M3 8v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V8"/></svg>
-                Cache
-            </a>
-            <a href="#instruments" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
-                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>
-                Instruments
-            </a>
-        </div>
-
-        <div class="mb-5">
-            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">System</div>
             <a href="#position-size" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
                 <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="currentColor"><rect x="1" y="8" width="3" height="7"/><rect x="6" y="5" width="3" height="10"/><rect x="11" y="2" width="3" height="13"/></svg>
                 Position Size
             </a>
         </div>
 
-        <div>
+        <div class="mb-5">
             <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Analytics</div>
             <a href="#equity" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
                 <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><polyline points="1,14 5,8 9,10 15,3"/></svg>
@@ -990,52 +1118,45 @@
                 Trade Log
             </a>
         </div>
+
+        <div>
+            <div class="px-5 mb-1 text-[10px] font-semibold text-gray-400 uppercase tracking-widest">Admin</div>
+            <a href="#auth" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="5" width="12" height="9" rx="1"/><path d="M5 5V4a3 3 0 0 1 6 0v1"/></svg>
+                Login &amp; Token
+            </a>
+            <a href="#rollover" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M2 8a6 6 0 1 0 6-6"/><polyline points="5,2 2,2 2,5"/></svg>
+                Rollover
+            </a>
+            <a href="#cache" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><ellipse cx="8" cy="5" rx="5" ry="2.5"/><path d="M3 5v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V5"/><path d="M3 8v3c0 1.38 2.24 2.5 5 2.5s5-1.12 5-2.5V8"/></svg>
+                Cache
+            </a>
+            <a href="#instruments" class="sidebar-link flex items-center gap-2.5 px-5 py-2 text-[13px] text-gray-500 hover:bg-gray-50 hover:text-gray-900 border-l-2 border-transparent no-underline cursor-pointer">
+                <svg class="w-4 h-4 shrink-0 opacity-60" viewBox="0 0 16 16" fill="none" stroke="currentColor" stroke-width="1.5"><rect x="2" y="3" width="12" height="10" rx="1"/><line x1="5" y1="7" x2="11" y2="7"/><line x1="5" y1="10" x2="8" y2="10"/></svg>
+                Instruments
+            </a>
+        </div>
     </aside>
 
     <!-- ===== MAIN ===== -->
     <main class="flex-1 min-w-0 p-8 space-y-8">
 
-        <!-- ===== AUTH ===== -->
-        <section id="auth" class="scroll-mt-20">
-            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Auth &amp; Tokens</div>
+        <!-- ===== LIVE POSITIONS ===== -->
+        <section id="positions" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Live</div>
             <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100">
-                    <div class="text-sm font-semibold text-gray-900">Kite Authentication</div>
-                    <div class="text-xs text-gray-400 mt-0.5">Login and save your daily request token</div>
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">Open Positions</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Live trade, legs, LTP and margin in use</div>
+                    </div>
+                    <button onclick="LivePositions.load()"
+                            class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">↺ Refresh</button>
                 </div>
-                <div class="px-5 py-4 space-y-4">
-                    <!-- Login URL row -->
-                    <div class="flex items-center gap-3">
-                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Login URL</span>
-                        <button onclick="fetchLoginUrl()"
-                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
-                            Open Kite Login ↗
-                        </button>
-                        <button id="copyUrlBtn" onclick="copyLoginUrl()" style="display:none;"
-                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">
-                            Copy URL
-                        </button>
-                    </div>
-                    <!-- Token row -->
-                    <form id="tokenForm" onsubmit="saveToken(event)" class="flex items-center gap-3">
-                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Request Token</span>
-                        <input type="text" id="tokenInput" required placeholder="Paste token here"
-                               class="px-3 py-1.5 border border-gray-200 rounded-md text-xs font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 w-72" />
-                        <button type="submit"
-                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
-                            Save
-                        </button>
-                    </form>
-                    <div id="tokenMsg" style="display:none;"></div>
-                    <!-- Test connection row -->
-                    <div class="flex items-center gap-3 pt-1 border-t border-gray-100">
-                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Test Auth</span>
-                        <button onclick="testKiteConnection()"
-                                class="px-3 py-1.5 bg-gray-700 hover:bg-gray-900 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
-                            Test Connection
-                        </button>
-                        <div id="kiteTestResult" style="display:none;" class="message text-xs font-mono flex-1"></div>
-                    </div>
+                <div id="livePositionsBox">
+                    <div class="px-5 py-6 text-center text-xs text-gray-400 italic">Loading…</div>
                 </div>
             </div>
         </section>
@@ -1094,72 +1215,6 @@
                         </div>
                     </form>
                     <div id="symbolsMsg" style="display:none;" class="mt-3"></div>
-                </div>
-            </div>
-        </section>
-
-        <!-- ===== OPERATIONS ===== -->
-        <section class="scroll-mt-20">
-            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Operations</div>
-            <div class="grid grid-cols-3 gap-5">
-
-                <!-- Trigger Rollover -->
-                <div id="rollover" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div class="px-5 py-4 border-b border-gray-100">
-                        <div class="text-sm font-semibold text-gray-900">Trigger Rollover</div>
-                        <div class="text-xs text-gray-400 mt-0.5">POST to /api/rollover</div>
-                    </div>
-                    <div class="p-5 space-y-3">
-                        <div class="flex gap-2">
-                            <input type="text" id="signalPriceInput" placeholder="5-digit price" maxlength="5"
-                                   oninput="validateSignalPrice(this)"
-                                   class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 min-w-0" />
-                            <button onclick="triggerRollover()"
-                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded-lg border-0 cursor-pointer whitespace-nowrap">
-                                Rollover
-                            </button>
-                        </div>
-                        <div id="rolloverMsg" style="display:none;"></div>
-                    </div>
-                </div>
-
-                <!-- Cache -->
-                <div id="cache" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div class="px-5 py-4 border-b border-gray-100">
-                        <div class="text-sm font-semibold text-gray-900">Signal Cache</div>
-                        <div class="text-xs text-gray-400 mt-0.5">View and clear signal state</div>
-                    </div>
-                    <div class="p-5 space-y-3">
-                        <div class="flex gap-2">
-                            <button onclick="viewCacheStatus()"
-                                    class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[13px] font-medium rounded-lg border-0 cursor-pointer">View</button>
-                            <button onclick="clearCache()"
-                                    class="flex-1 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-[13px] font-medium rounded-lg border border-red-200 cursor-pointer">Clear</button>
-                        </div>
-                        <div id="cacheStatusDisplay" style="display:none;"
-                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
-                    </div>
-                </div>
-
-                <!-- Nifty Instruments -->
-                <div id="instruments" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
-                        <div>
-                            <div class="text-sm font-semibold text-gray-900">Nifty Instruments</div>
-                            <div class="text-xs text-gray-400 mt-0.5">Available NIFTY contracts</div>
-                        </div>
-                        <div class="flex gap-1.5">
-                            <button onclick="fetchNiftyInstruments()"
-                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Get</button>
-                            <button onclick="clearNiftyInstruments()"
-                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">Clear</button>
-                        </div>
-                    </div>
-                    <div class="p-5">
-                        <div id="niftyInstrumentsStatus" style="display:none;"></div>
-                        <div id="niftyInstrumentsBox" style="display:none;"
-                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
-                    </div>
                 </div>
             </div>
         </section>
@@ -1380,7 +1435,7 @@
                     <div id="equityCurveContainer" style="display:none;" class="relative">
                         <div class="loading-overlay"><div class="spinner"></div></div>
                         <canvas id="equityCurveChart" style="max-height:380px;"></canvas>
-                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-[repeat(13,minmax(0,1fr))] gap-3 text-center text-xs">
+                        <div class="mt-3 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg grid grid-cols-4 lg:grid-cols-7 gap-3 text-center text-xs">
                             <div>
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Starting Equity</div>
                                 <div id="startingEquity" class="font-semibold text-gray-900 font-mono">₹0</div>
@@ -1433,6 +1488,10 @@
                                 <div class="text-gray-400 uppercase tracking-wide mb-1">Charges</div>
                                 <div id="totalBrokerage" class="font-semibold font-mono">-</div>
                             </div>
+                            <div>
+                                <div class="text-gray-400 uppercase tracking-wide mb-1">Max Drawdown</div>
+                                <div id="maxDrawdown" class="font-semibold font-mono">-</div>
+                            </div>
                         </div>
                     </div>
                     <div id="equityCurveStatus" style="display:none;"></div>
@@ -1444,26 +1503,29 @@
         <section id="calendar" class="scroll-mt-20">
             <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">NSE Holiday Calendar</div>
             <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
-                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between gap-3 flex-wrap">
                     <div>
                         <div class="text-sm font-semibold text-gray-900">NSE Holiday Calendar 2026</div>
                         <div class="text-xs text-gray-400 mt-0.5">Holidays, weekends and rollover days</div>
                     </div>
-                    <button id="calendarToggleBtn" onclick="toggleCalendar()"
-                            class="text-blue-600 text-lg leading-none px-3 py-1 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded-lg">▼</button>
+                    <div class="flex items-center gap-2 ml-auto">
+                        <div id="calendarUpcoming" class="flex items-center gap-2"></div>
+                        <button id="calendarToggleBtn" onclick="toggleCalendar()"
+                                class="text-blue-600 text-lg leading-none px-3 py-1 bg-transparent border-0 cursor-pointer hover:bg-blue-50 rounded-lg">▼</button>
+                    </div>
                 </div>
                 <div id="calendarContainer" style="display:none;" class="px-5 pb-5">
                     <!-- Nav row -->
-                    <div class="flex items-center justify-between mb-4">
-                        <div class="flex items-center gap-1">
+                    <div class="flex items-center justify-between mb-4 pt-4">
+                        <div id="calendarMonthYear" class="text-[15px] font-semibold text-gray-900">March 2026</div>
+                        <div class="flex items-center gap-0.5 bg-gray-100 rounded-lg p-1">
                             <button onclick="prevMonth()"
-                                    class="w-8 h-8 flex items-center justify-center bg-transparent border-0 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer text-sm">‹</button>
+                                    class="w-7 h-7 flex items-center justify-center bg-transparent border-0 rounded-md text-gray-500 hover:bg-white hover:shadow-sm cursor-pointer text-sm">‹</button>
+                            <button onclick="goToToday()"
+                                    class="px-2.5 h-7 bg-transparent border-0 rounded-md text-xs font-medium text-gray-600 hover:bg-white hover:shadow-sm cursor-pointer">Today</button>
                             <button onclick="nextMonth()"
-                                    class="w-8 h-8 flex items-center justify-center bg-transparent border-0 rounded-lg text-gray-400 hover:bg-gray-100 hover:text-gray-700 cursor-pointer text-sm">›</button>
+                                    class="w-7 h-7 flex items-center justify-center bg-transparent border-0 rounded-md text-gray-500 hover:bg-white hover:shadow-sm cursor-pointer text-sm">›</button>
                         </div>
-                        <div id="calendarMonthYear" class="text-sm font-semibold text-gray-900 absolute left-1/2 -translate-x-1/2" style="position:relative;left:0;transform:none;">March 2026</div>
-                        <button onclick="goToToday()"
-                                class="px-3 py-1 bg-gray-100 hover:bg-gray-200 border-0 rounded-md text-xs font-medium text-gray-600 cursor-pointer">Today</button>
                     </div>
                     <!-- Grid -->
                     <div class="calendar-grid" id="calendarGrid"></div>
@@ -1473,6 +1535,108 @@
                         <div class="legend-item"><div class="legend-dot" style="background:#7c3aed;"></div><span>Rollover (Mon)</span></div>
                         <div class="legend-item"><div class="legend-dot" style="background:#be123c;"></div><span>NSE Holiday</span></div>
                         <div class="legend-item"><div class="legend-dot" style="background:#d1d5db;"></div><span>Weekend</span></div>
+                    </div>
+                </div>
+            </div>
+        </section>
+
+    <!-- ===== AUTH ===== -->
+        <section id="auth" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Auth &amp; Tokens</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100">
+                    <div class="text-sm font-semibold text-gray-900">Kite Authentication</div>
+                    <div class="text-xs text-gray-400 mt-0.5">Login and save your daily request token</div>
+                </div>
+                <div class="px-5 py-4 space-y-4">
+                    <!-- Login URL row -->
+                    <div class="flex items-center gap-3">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Login URL</span>
+                        <button onclick="fetchLoginUrl()"
+                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Open Kite Login ↗
+                        </button>
+                        <button id="copyUrlBtn" onclick="copyLoginUrl()" style="display:none;"
+                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Copy URL
+                        </button>
+                    </div>
+                    <!-- Token row -->
+                    <form id="tokenForm" onsubmit="saveToken(event)" class="flex items-center gap-3">
+                        <span class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide w-32 shrink-0">Request Token</span>
+                        <input type="text" id="tokenInput" required placeholder="Paste token here"
+                               class="px-3 py-1.5 border border-gray-200 rounded-md text-xs font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 w-72" />
+                        <button type="submit"
+                                class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">
+                            Save
+                        </button>
+                    </form>
+                    <div id="tokenMsg" style="display:none;"></div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== OPERATIONS ===== -->
+        <section class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Operations</div>
+            <div class="grid grid-cols-3 gap-5">
+
+                <!-- Trigger Rollover -->
+                <div id="rollover" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <div class="text-sm font-semibold text-gray-900">Trigger Rollover</div>
+                        <div class="text-xs text-gray-400 mt-0.5">POST to /api/rollover</div>
+                    </div>
+                    <div class="p-5 space-y-3">
+                        <div class="flex gap-2">
+                            <input type="text" id="signalPriceInput" placeholder="5-digit price" maxlength="5"
+                                   oninput="validateSignalPrice(this)"
+                                   class="flex-1 px-3 py-2 border border-gray-200 rounded-lg text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 focus:ring-2 focus:ring-blue-100 placeholder-gray-300 min-w-0" />
+                            <button onclick="triggerRollover()"
+                                    class="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-[13px] font-medium rounded-lg border-0 cursor-pointer whitespace-nowrap">
+                                Rollover
+                            </button>
+                        </div>
+                        <div id="rolloverMsg" style="display:none;"></div>
+                    </div>
+                </div>
+
+                <!-- Cache -->
+                <div id="cache" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100">
+                        <div class="text-sm font-semibold text-gray-900">Signal Cache</div>
+                        <div class="text-xs text-gray-400 mt-0.5">View and clear signal state</div>
+                    </div>
+                    <div class="p-5 space-y-3">
+                        <div class="flex gap-2">
+                            <button onclick="viewCacheStatus()"
+                                    class="flex-1 px-3 py-2 bg-gray-100 hover:bg-gray-200 text-gray-700 text-[13px] font-medium rounded-lg border-0 cursor-pointer">View</button>
+                            <button onclick="clearCache()"
+                                    class="flex-1 px-3 py-2 bg-red-50 hover:bg-red-100 text-red-600 text-[13px] font-medium rounded-lg border border-red-200 cursor-pointer">Clear</button>
+                        </div>
+                        <div id="cacheStatusDisplay" style="display:none;"
+                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
+                    </div>
+                </div>
+
+                <!-- Nifty Instruments -->
+                <div id="instruments" class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                    <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                        <div>
+                            <div class="text-sm font-semibold text-gray-900">Nifty Instruments</div>
+                            <div class="text-xs text-gray-400 mt-0.5">Available NIFTY contracts</div>
+                        </div>
+                        <div class="flex gap-1.5">
+                            <button onclick="fetchNiftyInstruments()"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Get</button>
+                            <button onclick="clearNiftyInstruments()"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">Clear</button>
+                        </div>
+                    </div>
+                    <div class="p-5">
+                        <div id="niftyInstrumentsStatus" style="display:none;"></div>
+                        <div id="niftyInstrumentsBox" style="display:none;"
+                             class="text-xs bg-gray-50 border border-gray-100 rounded-lg p-3 max-h-60 overflow-y-auto"></div>
                     </div>
                 </div>
             </div>
