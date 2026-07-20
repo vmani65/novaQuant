@@ -33,6 +33,7 @@ public class LegOrder {
     private int lots;
     private String openOrderId;
     private Boolean openFullyFilled;
+    private int openFilledQty;
     private List<BulkOrderResponse> orderResponse;
 
     public LegOrder() {}

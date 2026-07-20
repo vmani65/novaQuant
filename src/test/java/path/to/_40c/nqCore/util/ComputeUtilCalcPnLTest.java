@@ -131,6 +131,35 @@ class ComputeUtilCalcPnLTest {
     }
 
     @Test
+    @DisplayName("orphan-origin trade: surviving leg computed alone, no expected/points, result from PnL sign")
+    void orphanOriginTradeComputesSurvivingLegOnly() {
+        WeeklyLeg pe = leg("ATM", "BUY", 199.445, 149.175);
+        pe.setQuantity(650);
+        pe.setLots(10);
+        WeeklyLeg ce = new WeeklyLeg();
+        ce.setMoneyness("ATM");
+        ce.setSide("SELL");
+        ce.setStatus(Constants.FAILED);
+        Position trade = new Position();
+        trade.setDirection(Constants.SHORT);
+        trade.setExitSpot(24218.0);
+        trade.setBaselineSpot(24149.0);
+        trade.setLegs(List.of(pe, ce));
+
+        computeUtil.calcTradeOutcome(trade);
+        computeUtil.calcPnL(trade);
+
+        assertThat(trade.getPointsPnl()).isNull();
+        assertThat(pe.getActualPnl()).isEqualTo(-32675.5);
+        assertThat(pe.getExpectedPnl()).isNull();
+        assertThat(trade.getExpectedPnl()).isNull();
+        assertThat(trade.getActualPnl()).isEqualTo(-32675.5 - 100.0);
+        assertThat(trade.getPnlCapturePct()).isEqualTo(NA);
+        assertThat(trade.getLots()).isEqualTo(10);
+        assertThat(trade.getResult()).isEqualTo(Constants.LOSS);
+    }
+
+    @Test
     @DisplayName("pair group with a missing fill is skipped entirely and leaves pct unset")
     void incompletePairGroupIsSkipped() {
         WeeklyLeg ce = leg("ATM", "BUY", 200.0, 380.0);

@@ -1,6 +1,7 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.PARTIAL;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -34,8 +35,8 @@ public class PostTradeService {
     @Async("postTradeExecutor")
     @Transactional
     public void afterOpen(Position liveTrade) {
-        if (liveTrade == null || !LIVE.equals(liveTrade.getStatus())) {
-            log.warn("afterOpen skipped - trade is not LIVE (status={})",
+        if (liveTrade == null || !(LIVE.equals(liveTrade.getStatus()) || PARTIAL.equals(liveTrade.getStatus()))) {
+            log.warn("afterOpen skipped - trade is not LIVE/PARTIAL (status={})",
                 liveTrade != null ? liveTrade.getStatus() : "null");
             return;
         }

@@ -105,6 +105,7 @@ public class PositionOpeningService {
     	            if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
     	                w.setOpenOrderId(er.aggregateOrderIds());
     	            }
+    	            w.setOpenFilledQty(er.totalFilled());
     	            if (!er.fullyFilled()) {
     	                log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
     	                    w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
@@ -126,9 +127,16 @@ public class PositionOpeningService {
     		b.setPosition(pojo.getParentPosition());
     		b.setMoneyness(pojo.getMoneyness());
     		b.setOpenOrderId(pojo.getOpenOrderId());
-    		b.setLots(pojo.getLots());
-    		b.setQuantity(pojo.getLots() * LOT_SIZE);
-    		b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
+    		int filledQty = pojo.getOpenFilledQty();
+    		if (filledQty > 0) {
+    			b.setLots(filledQty / LOT_SIZE);
+    			b.setQuantity(filledQty);
+    			b.setStatus(LIVE);
+    		} else {
+    			b.setLots(pojo.getLots());
+    			b.setQuantity(pojo.getLots() * LOT_SIZE);
+    			b.setStatus(FAILED);
+    		}
     		Quote q = quotes.get(pojo.getExchangeSymbol());
     		if (q != null) {
     			if (BUY.equals(pojo.getSide()))
@@ -139,11 +147,19 @@ public class PositionOpeningService {
     		childOrderBook.add(b);
     	});
     	trade.setLegs(childOrderBook);
-    	if (trade.getLegs().stream().allMatch(ob -> LIVE.equals(ob.getStatus()))) {
+    	boolean allFullyFilled = legOrder.stream().allMatch(p -> Boolean.TRUE.equals(p.getOpenFullyFilled()));
+    	boolean anyFilled = legOrder.stream().anyMatch(p -> p.getOpenFilledQty() > 0);
+    	if (allFullyFilled) {
     		trade.setStatus(LIVE);
+        } else if (anyFilled) {
+        	trade.setStatus(PARTIAL);
+            log.error("ORPHAN: position opened PARTIALLY - filled legs will be closed on next signal. Legs: {}",
+                trade.getLegs().stream()
+                    .map(l -> l.getInstrument() + " " + l.getSide() + " " + l.getStatus() + " qty=" + l.getQuantity())
+                    .collect(Collectors.joining(", ")));
         } else {
         	trade.setStatus(FAILED);
-            log.error("Position opening operation failed - not all legs fully filled");
+            log.error("Position opening operation failed - no legs filled");
         }
     	var liveTrade = positionRepository.save(trade);
     	log.info("Live Position Being Opened: {}", trade);

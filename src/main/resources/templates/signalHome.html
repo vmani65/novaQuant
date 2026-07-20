@@ -172,7 +172,7 @@
             load() {
                 fetch('/api/trades')
                     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-                    .then(trades => this.render(trades.filter(t => t.status === 'LIVE')))
+                    .then(trades => this.render(trades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL')))
                     .catch(e => {
                         document.getElementById('livePositionsBox').innerHTML =
                             `<div class="px-5 py-4"><div class="message error">Failed to load positions: ${e.message}</div></div>`;
@@ -214,9 +214,13 @@
                     return `
                     <div class="px-5 py-4 border-b border-gray-100">
                         <div class="flex items-center gap-3 flex-wrap mb-3">
-                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-200">
-                                <span class="w-1.5 h-1.5 rounded-full bg-blue-500 pulse-dot"></span> Live
-                            </span>
+                            ${t.status === 'PARTIAL'
+                                ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-300">
+                                       <span class="w-1.5 h-1.5 rounded-full bg-amber-500 pulse-dot"></span> Partial — orphan leg
+                                   </span>`
+                                : `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-200">
+                                       <span class="w-1.5 h-1.5 rounded-full bg-blue-500 pulse-dot"></span> Live
+                                   </span>`}
                             <span class="font-mono text-[11px] text-gray-400">#${t.id}</span>
                             <span class="text-xs font-semibold ${isLong ? 'text-emerald-600' : 'text-rose-600'}">${isLong ? '▲' : '▼'} ${t.direction}</span>
                             <span class="text-xs text-gray-500">${t.strategyName || ''}</span>
