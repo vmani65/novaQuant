@@ -41,12 +41,13 @@ public class EquityCurveService {
     private static final DateTimeFormatter PARSE_FMT = DateTimeFormatter.ofPattern(DATE_FORMAT);
 
     private EquityCurve buildEquityCurve(List<Position> trades) {
-        List<String> dates        = new ArrayList<>();
-        List<Double> equityValues = new ArrayList<>();
-        List<Integer> lotSizes    = new ArrayList<>();
-        List<String> outcomes     = new ArrayList<>();
-        List<Double> points       = new ArrayList<>();
-        List<Double> charges      = new ArrayList<>();
+        List<String> dates            = new ArrayList<>();
+        List<Double> equityValues     = new ArrayList<>();
+        List<Double> startingCapitals = new ArrayList<>();
+        List<Integer> lotSizes        = new ArrayList<>();
+        List<String> outcomes         = new ArrayList<>();
+        List<Double> points           = new ArrayList<>();
+        List<Double> charges          = new ArrayList<>();
 
         List<Position> sorted = trades.stream()
             .filter(t -> t.getEndingCapital() != null && t.getOpenedAt() != null)
@@ -65,6 +66,7 @@ public class EquityCurveService {
         for (Position trade : sorted) {
             dates.add(formatDate(trade.getOpenedAt()));
             equityValues.add(trade.getEndingCapital());
+            startingCapitals.add(trade.getStartingCapital() != null ? trade.getStartingCapital() : 0.0);
             lotSizes.add(trade.getLots() != null ? trade.getLots() : 0);
             outcomes.add(trade.getResult() != null ? trade.getResult() : "");
             points.add(trade.getPointsPnl() != null ? trade.getPointsPnl() : 0.0);
@@ -73,7 +75,7 @@ public class EquityCurveService {
 
         double currentEquity = equityValues.isEmpty() ? startingEquity
                 : equityValues.get(equityValues.size() - 1);
-        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, lotSizes, outcomes, points, charges);
+        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, startingCapitals, lotSizes, outcomes, points, charges);
     }
 
     private String formatDate(String dateStr) {

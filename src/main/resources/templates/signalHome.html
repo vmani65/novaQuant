@@ -747,7 +747,7 @@
                             container.style.display = 'none'; filters.style.display = 'none'; return;
                         }
                         AppState.fullEquityData = data;
-                        status.style.display = 'none'; container.style.display = 'block'; filters.style.display = 'block';
+                        status.style.display = 'none'; container.style.display = 'block'; filters.style.display = 'flex';
                         this.populateMonthFilter(data);
                         this.applyActiveEquityFilter();
                     })
@@ -817,11 +817,15 @@
                 if (filteredIndices.length === 0) { alert('No data found in the selected date range'); return data; }
                 const first = filteredIndices[0];
                 return {
-                    // equity[i] is post-trade equity, so the slice's baseline is the equity before its first trade
-                    startingEquity: first > 0 ? data.equity[first - 1] : data.startingEquity,
+                    // baseline = capital the first trade in the window started with; equity[first-1] would
+                    // wrongly count capital added between trades as P&L
+                    startingEquity: data.startingCapitals && data.startingCapitals[first] != null
+                        ? data.startingCapitals[first]
+                        : (first > 0 ? data.equity[first - 1] : data.startingEquity),
                     currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
                     dates:    filteredIndices.map(i => data.dates[i]),
                     equity:   filteredIndices.map(i => data.equity[i]),
+                    startingCapitals: data.startingCapitals ? filteredIndices.map(i => data.startingCapitals[i]) : [],
                     lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
                     outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
                     points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
@@ -836,7 +840,16 @@
                 if (!data || !data.equity || data.equity.length === 0) { alert('No equity data available'); return; }
                 const startingEquity = data.startingEquity || 0;
                 const currentEquity  = data.currentEquity  || 0;
-                const totalPnl       = currentEquity - startingEquity;
+                // P&L = sum of per-trade (post-trade equity − that trade's starting capital), so deposits
+                // and capital re-anchors between trades never count as profit; endpoint diff is the fallback
+                const caps = data.startingCapitals || [];
+                let totalPnl;
+                if (caps.length === data.equity.length && caps.every(c => c != null && c > 0)) {
+                    totalPnl = data.equity.reduce((sum, e, i) => sum + (e - caps[i]), 0);
+                    totalPnl = Math.round(totalPnl * 100) / 100;
+                } else {
+                    totalPnl = currentEquity - startingEquity;
+                }
                 const returnPercent  = startingEquity > 0 ? ((totalPnl / startingEquity) * 100).toFixed(2) : 0;
                 document.getElementById('startingEquity').textContent = '₹' + startingEquity.toLocaleString('en-IN');
                 document.getElementById('currentEquity').textContent  = '₹' + currentEquity.toLocaleString('en-IN');
@@ -1413,10 +1426,7 @@
                     <!-- Period Filters -->
                     <div id="equityFilters" style="display:none;"
                          class="mb-4 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg flex flex-wrap items-center gap-x-4 gap-y-2">
-                        <div class="flex gap-1.5">
-                            <button class="period-btn active" onclick="showAllEquity()">ALL</button>
-                        </div>
-                        <div class="w-px h-5 bg-gray-200"></div>
+                        <button class="period-btn active" onclick="showAllEquity()">ALL</button>
                         <div class="flex items-center gap-2">
                             <label class="text-xs text-gray-500 font-medium">Month</label>
                             <select id="equityMonthFilter" onchange="filterEquityByMonth(this.value)"
@@ -1424,15 +1434,6 @@
                                 <option value="">All</option>
                             </select>
                         </div>
-                        <div class="w-px h-5 bg-gray-200"></div>
-                        <div class="flex items-center gap-2">
-                            <label class="text-xs text-gray-500 font-medium">Strategy</label>
-                            <select id="strategyFilter" onchange="filterByStrategy(this.value)"
-                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
-                                <option value="All">All Strategies</option>
-                            </select>
-                        </div>
-                        <div class="w-px h-5 bg-gray-200"></div>
                         <div class="flex items-center gap-2">
                             <label class="text-xs text-gray-500 font-medium">Custom</label>
                             <input type="date" id="equityStartDate"
@@ -1442,6 +1443,14 @@
                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white outline-none">
                             <button onclick="applyCustomDateRange()"
                                     class="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Apply</button>
+                        </div>
+                        <div class="w-px h-5 bg-gray-200"></div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-500 font-medium">Strategy</label>
+                            <select id="strategyFilter" onchange="filterByStrategy(this.value)"
+                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
+                                <option value="All">All Strategies</option>
+                            </select>
                         </div>
                     </div>
 
