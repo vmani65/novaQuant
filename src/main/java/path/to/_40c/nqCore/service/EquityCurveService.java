@@ -83,7 +83,7 @@ public class EquityCurveService {
         try {
             DateTimeFormatter inputFormatter = DateTimeFormatter.ofPattern(DATE_FORMAT);
             LocalDateTime dateTime = LocalDateTime.parse(dateStr, inputFormatter);
-            DateTimeFormatter outputFormatter = DateTimeFormatter.ofPattern("dd MMM");
+            DateTimeFormatter outputFormatter = DateTimeFormatter.ofPattern("dd MMM yy");
             return dateTime.format(outputFormatter);
         } catch (Exception e) {
             return dateStr;

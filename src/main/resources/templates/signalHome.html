@@ -118,7 +118,6 @@
         const AppState = {
             equityCurveChart: null,
             fullEquityData: null,
-            currentPeriod: '1W',
             currentStrategy: 'All',
             availableStrategies: [],
             isLoading: false
@@ -749,7 +748,8 @@
                         }
                         AppState.fullEquityData = data;
                         status.style.display = 'none'; container.style.display = 'block'; filters.style.display = 'block';
-                        this.renderEquityCurve(this.filterDataByPeriod(data, AppState.currentPeriod));
+                        this.populateMonthFilter(data);
+                        this.applyActiveEquityFilter();
                     })
                     .catch(error => {
                         status.style.display = 'block'; status.className = 'message error';
@@ -758,11 +758,42 @@
                     });
             },
 
-            selectPeriod(period, button) {
-                document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
-                button.classList.add('active');
-                AppState.currentPeriod = period;
-                if (AppState.fullEquityData) this.renderEquityCurve(this.filterDataByPeriod(AppState.fullEquityData, period));
+            showAllEquity() {
+                document.querySelector('.period-btn').classList.add('active');
+                document.getElementById('equityMonthFilter').value = '';
+                if (AppState.fullEquityData) this.renderEquityCurve(AppState.fullEquityData);
+            },
+
+            filterEquityByMonth(monthKey) {
+                if (!monthKey) { this.showAllEquity(); return; }
+                document.querySelector('.period-btn').classList.remove('active');
+                const [year, month] = monthKey.split('-').map(Number);
+                const start = new Date(year, month, 1);
+                const end   = new Date(year, month + 1, 0, 23, 59, 59, 999);
+                if (AppState.fullEquityData) this.renderEquityCurve(this.sliceByDateWindow(AppState.fullEquityData, start, end));
+            },
+
+            populateMonthFilter(data) {
+                const select = document.getElementById('equityMonthFilter');
+                const previous = select.value;
+                const seen = new Set(), options = [];
+                (data.dates || []).forEach(dateStr => {
+                    const parsed = Utils.parseChartDate(dateStr);
+                    if (!parsed) return;
+                    const key = parsed.getFullYear() + '-' + parsed.getMonth();
+                    if (seen.has(key)) return;
+                    seen.add(key);
+                    options.push({ key, label: parsed.toLocaleString('en-IN', { month: 'short', year: 'numeric' }) });
+                });
+                select.innerHTML = '<option value="">All</option>' +
+                    options.map(o => `<option value="${o.key}">${o.label}</option>`).join('');
+                select.value = options.some(o => o.key === previous) ? previous : '';
+            },
+
+            applyActiveEquityFilter() {
+                const monthKey = document.getElementById('equityMonthFilter').value;
+                if (monthKey) this.filterEquityByMonth(monthKey);
+                else this.showAllEquity();
             },
 
             applyCustomDateRange() {
@@ -770,49 +801,24 @@
                 const endDate   = document.getElementById('equityEndDate').value;
                 if (!startDate || !endDate) { alert('Please select both start and end dates'); return; }
                 if (new Date(startDate) > new Date(endDate)) { alert('Start date must be before end date'); return; }
-                document.querySelectorAll('.period-btn').forEach(btn => btn.classList.remove('active'));
-                if (AppState.fullEquityData) this.renderEquityCurve(this.filterDataByDateRange(AppState.fullEquityData, startDate, endDate));
+                document.querySelector('.period-btn').classList.remove('active');
+                document.getElementById('equityMonthFilter').value = '';
+                const end = new Date(endDate); end.setHours(23, 59, 59, 999);
+                if (AppState.fullEquityData) this.renderEquityCurve(this.sliceByDateWindow(AppState.fullEquityData, new Date(startDate), end));
             },
 
-            filterDataByPeriod(data, period) {
-                if (period === 'ALL') return data;
+            sliceByDateWindow(data, startDate, endDate) {
                 if (!data || !data.dates || data.dates.length === 0) return data;
-                let daysToShow = 7;
-                if (period === '1M') daysToShow = 30;
-                if (period === '3M') daysToShow = 90;
-                if (period === '6M') daysToShow = 180;
-                if (period === '1Y') daysToShow = 365;
-                const cutoff = new Date(); cutoff.setDate(cutoff.getDate() - daysToShow); cutoff.setHours(0,0,0,0);
-                const filteredIndices = [];
-                for (let i = 0; i < data.dates.length; i++) {
-                    const parsedDate = Utils.parseChartDate(data.dates[i]);
-                    if (parsedDate && parsedDate >= cutoff) filteredIndices.push(i);
-                }
-                if (filteredIndices.length === 0) return data;
-                return {
-                    startingEquity: data.equity[filteredIndices[0]],
-                    currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
-                    dates:    filteredIndices.map(i => data.dates[i]),
-                    equity:   filteredIndices.map(i => data.equity[i]),
-                    lotSize:  data.lotSize  ? filteredIndices.map(i => data.lotSize[i])  : [],
-                    outcomes: data.outcomes ? filteredIndices.map(i => data.outcomes[i]) : [],
-                    points:   data.points   ? filteredIndices.map(i => data.points[i])   : [],
-                    charges:  data.charges  ? filteredIndices.map(i => data.charges[i])  : []
-                };
-            },
-
-            filterDataByDateRange(data, startDateStr, endDateStr) {
-                if (!data || !data.dates || data.dates.length === 0) return data;
-                const startDate = new Date(startDateStr);
-                const endDate   = new Date(endDateStr); endDate.setHours(23,59,59,999);
                 const filteredIndices = [];
                 for (let i = 0; i < data.dates.length; i++) {
                     const parsedDate = Utils.parseChartDate(data.dates[i]);
                     if (parsedDate && parsedDate >= startDate && parsedDate <= endDate) filteredIndices.push(i);
                 }
                 if (filteredIndices.length === 0) { alert('No data found in the selected date range'); return data; }
+                const first = filteredIndices[0];
                 return {
-                    startingEquity: data.equity[filteredIndices[0]],
+                    // equity[i] is post-trade equity, so the slice's baseline is the equity before its first trade
+                    startingEquity: first > 0 ? data.equity[first - 1] : data.startingEquity,
                     currentEquity:  data.equity[filteredIndices[filteredIndices.length - 1]],
                     dates:    filteredIndices.map(i => data.dates[i]),
                     equity:   filteredIndices.map(i => data.equity[i]),
@@ -931,7 +937,8 @@
         };
 
         function refreshEquityCurve() { EquityCurve.refreshEquityCurve(); }
-        function selectPeriod(period, button) { EquityCurve.selectPeriod(period, button); }
+        function showAllEquity() { EquityCurve.showAllEquity(); }
+        function filterEquityByMonth(value) { EquityCurve.filterEquityByMonth(value); }
         function applyCustomDateRange(){ EquityCurve.applyCustomDateRange(); }
         function filterByStrategy(strategy) { EquityCurve.filterByStrategy(strategy); }
 
@@ -1407,12 +1414,15 @@
                     <div id="equityFilters" style="display:none;"
                          class="mb-4 px-4 py-3 bg-gray-50 border border-gray-100 rounded-lg flex flex-wrap items-center gap-x-4 gap-y-2">
                         <div class="flex gap-1.5">
-                            <button class="period-btn active" onclick="selectPeriod('1W', this)">1W</button>
-                            <button class="period-btn" onclick="selectPeriod('1M', this)">1M</button>
-                            <button class="period-btn" onclick="selectPeriod('3M', this)">3M</button>
-                            <button class="period-btn" onclick="selectPeriod('6M', this)">6M</button>
-                            <button class="period-btn" onclick="selectPeriod('1Y', this)">1Y</button>
-                            <button class="period-btn" onclick="selectPeriod('ALL', this)">ALL</button>
+                            <button class="period-btn active" onclick="showAllEquity()">ALL</button>
+                        </div>
+                        <div class="w-px h-5 bg-gray-200"></div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-500 font-medium">Month</label>
+                            <select id="equityMonthFilter" onchange="filterEquityByMonth(this.value)"
+                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
+                                <option value="">All</option>
+                            </select>
                         </div>
                         <div class="w-px h-5 bg-gray-200"></div>
                         <div class="flex items-center gap-2">
