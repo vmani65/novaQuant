@@ -12,6 +12,7 @@ import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.NIFTY_OPT_TICK;
+import static path.to._40c.nqCore.util.Constants.PARTIAL;
 import static path.to._40c.nqCore.util.Constants.SELL;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
@@ -92,6 +93,7 @@ public class PositionUtil {
                 if (isPriceAlreadyCaptured(w)) return;
                 boolean isLive = LIVE.equals(w.getStatus());
                 String orderId = isLive ? w.getOpenOrderId() : w.getCloseOrderId();
+                if (orderId == null || orderId.isBlank()) return;
                 MDC.put(MDC_LEG_KEY, (isLive ? "ENTRY" : "EXIT") + ":" + w.getInstrument() + " | ");
                 try {
                     log.debug("Fetching executed prices for trade id={} orderId={}", t.getId(), orderId);
@@ -1063,6 +1065,20 @@ public class PositionUtil {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
         Position trades = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
+        session.disableFilter("liveOrderBooks");
+        return trades;
+    }
+
+    /**
+     * Finds the latest PARTIAL position (an open where only some legs filled) with only its
+     * still-LIVE orphan legs loaded, so the closing path can flatten exactly what is held
+     * at the broker.
+     */
+    @Transactional
+    public Position findPartialTradesWithLiveOrderBooks() {
+        Session session = entityManager.unwrap(Session.class);
+        session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
+        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(PARTIAL);
         session.disableFilter("liveOrderBooks");
         return trades;
     }

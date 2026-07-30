@@ -13,6 +13,7 @@ import path.to._40c.nqCore.service.LegTemplateCache;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LONG;
 import static path.to._40c.nqCore.util.Constants.LOSS;
 import static path.to._40c.nqCore.util.Constants.NFO_COLON;
@@ -93,9 +94,16 @@ public class ComputeUtil {
 	 * (final) segment's points: (exit - baseline) for LONG, (baseline - exit) for SHORT, where
 	 * baseline is the strike-center of the legs being closed. Sets result WIN/LOSS by sign.
 	 * Falls back to entrySpot if baselineSpot is absent (legacy rows pre-dating the baseline split).
+	 * Orphan-origin trades (a PARTIAL open whose surviving legs were later flattened) are skipped:
+	 * synthetic points assume a complete CE+PE pair, so pointsPnl stays null and calcPnL derives
+	 * the WIN/LOSS result from actual leg PnL instead.
 	 */
 	public void calcTradeOutcome(Position trade) {
 		if(trade != null) {
+			if (trade.getLegs().stream().anyMatch(ComputeUtil::neverTraded)) {
+				log.info("Orphan-origin trade id={} — synthetic points skipped; result derives from leg PnL in calcPnL", trade.getId());
+				return;
+			}
 			double baseline = trade.getBaselineSpot() != null ? trade.getBaselineSpot()
 					: (trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0);
 			BigDecimal basePrice = BigDecimal.valueOf(baseline);
@@ -129,53 +137,82 @@ public class ComputeUtil {
 	 * the leg's share of its segment's move, and the two legs of a pair sum to ≈100% minus
 	 * slippage. Pair-level expectedPnl uses the first leg's quantity since CE qty == PE qty
 	 * by design. Skips any pair group with missing prices or brokerage.
+	 *
+	 * Orphan-origin trades (a PARTIAL open — see neverTraded) are the exception to pair
+	 * completeness: legs that never existed at the broker are excluded from the group, actual
+	 * PnL and charges are computed from the surviving legs alone, expectedPnl/capture stay
+	 * null (a single leg has no full-move denominator), and WIN/LOSS falls back to the sign
+	 * of net actual PnL since calcTradeOutcome leaves result null for these trades.
 	 */
 	public void calcPnL(Position trade) {
-		if (trade == null || trade.getPointsPnl() == null) return;
+		if (trade == null) return;
+		boolean orphanOrigin = trade.getLegs().stream().anyMatch(ComputeUtil::neverTraded);
+		if (trade.getPointsPnl() == null && !orphanOrigin) return;
 
 		Map<String, List<WeeklyLeg>> pairs = trade.getLegs().stream()
 				.collect(Collectors.groupingBy(WeeklyLeg::getMoneyness));
 
 		double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
-		double finalSegmentPoints = trade.getPointsPnl() - banked;
+		Double finalSegmentPoints = trade.getPointsPnl() != null ? trade.getPointsPnl() - banked : null;
 
 		double totalBrokerage  = 0.0;
 		double totalExpectedPnL = 0.0;
 		double totalActualPnL  = 0.0;
 		int    totalLots       = 0;
+		boolean anyFullPair    = false;
+		boolean anyLegComputed = false;
 
 		for (List<WeeklyLeg> pairLegs : pairs.values()) {
-			boolean allPresent = pairLegs.stream().allMatch(w ->
+			List<WeeklyLeg> traded = pairLegs.stream().filter(w -> !neverTraded(w)).toList();
+			if (traded.isEmpty()) continue;
+			boolean allPresent = traded.stream().allMatch(w ->
 					w.getSellFillPrice() != null && w.getBuyFillPrice() != null &&
 					w.getQuantity()  != null && w.getLots()     != null &&
 					w.getOpenCharges()  != null && w.getCloseCharges() != null);
 			if (!allPresent) continue;
 
-			pairLegs.forEach(w -> {
+			boolean fullPair = traded.size() == pairLegs.size() && finalSegmentPoints != null;
+			traded.forEach(w -> {
 				double actualLegPnL = rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()));
 				w.setActualPnl(actualLegPnL);
-				if (w.getExpectedPnl() == null) {
-					w.setExpectedPnl(rnd(w.getQuantity() * finalSegmentPoints));
+				if (fullPair) {
+					if (w.getExpectedPnl() == null) {
+						w.setExpectedPnl(rnd(w.getQuantity() * finalSegmentPoints));
+					}
+					w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
 				}
-				w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
 			});
+			anyLegComputed = true;
 
-			double pairActualPnL  = pairLegs.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
-			double pairBrokerage  = pairLegs.stream()
+			totalActualPnL += traded.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
+			totalBrokerage += traded.stream()
 					.mapToDouble(w -> w.getOpenCharges() + w.getCloseCharges()).sum();
-			double pairExpectedPnL = rnd(pairLegs.get(0).getQuantity() * trade.getPointsPnl());
-
-			totalActualPnL  += pairActualPnL;
-			totalBrokerage  += pairBrokerage;
-			totalExpectedPnL += pairExpectedPnL;
-			totalLots       += pairLegs.get(0).getLots();
+			totalLots      += traded.get(0).getLots();
+			if (fullPair) {
+				totalExpectedPnL += rnd(traded.get(0).getQuantity() * trade.getPointsPnl());
+				anyFullPair = true;
+			}
 		}
 
 		trade.setTotalCharges(rnd(totalBrokerage));
-		trade.setExpectedPnl(rnd(totalExpectedPnL));
+		trade.setExpectedPnl(anyFullPair ? rnd(totalExpectedPnL) : null);
 		trade.setActualPnl(rnd(totalActualPnL - totalBrokerage));
 		trade.setPnlCapturePct(formatPnLPercent(trade.getActualPnl(), trade.getExpectedPnl()));
 		trade.setLots(totalLots);
+		if (trade.getResult() == null && anyLegComputed) {
+			trade.setResult(trade.getActualPnl() > 0 ? WIN : LOSS);
+		}
+	}
+
+	/**
+	 * A leg that never existed at the broker: FAILED at open with no order placed and no fills.
+	 * Its presence marks an orphan-origin (PARTIAL) trade. Distinct from a leg whose CLOSE
+	 * failed — that one has an open order id and an open-side fill price, and still represents
+	 * a real broker position.
+	 */
+	private static boolean neverTraded(WeeklyLeg w) {
+		return FAILED.equals(w.getStatus()) && w.getOpenOrderId() == null
+				&& w.getBuyFillPrice() == null && w.getSellFillPrice() == null;
 	}
 
 	/**

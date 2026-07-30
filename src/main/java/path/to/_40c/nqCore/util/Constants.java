@@ -9,6 +9,7 @@ public class Constants {
 	public static final String LIVE = "LIVE";
 	public static final String CLOSED = "CLOSED";
 	public static final String FAILED = "FAILED";
+	public static final String PARTIAL = "PARTIAL";
 	
 	public static final String BUY = "BUY";
 	public static final String SELL = "SELL";

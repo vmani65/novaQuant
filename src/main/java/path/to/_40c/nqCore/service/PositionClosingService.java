@@ -39,10 +39,34 @@ public class PositionClosingService {
      */
     public Position closeTrade(String signalPrice, Signal signal, boolean updateApiAction) {
         Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks();
+        if (tradeToClose == null) {
+            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks();
+            if (tradeToClose != null) {
+                log.warn("ORPHAN: no LIVE trade, but PARTIAL trade id={} has orphan legs — closing them now", tradeToClose.getId());
+            }
+        }
         if(tradeToClose == null) {
             log.info("No Live trades to close.");
             return null;
         }
+        return doClose(tradeToClose, signalPrice, signal, updateApiAction);
+    }
+
+    /**
+     * Flattens the orphan legs of a PARTIAL position (an open where only some legs filled),
+     * if one exists. Called by entry-signal handling before a new position is opened, so a
+     * fresh open never coexists with untracked broker positions from a failed earlier open.
+     */
+    public Position closeOrphanIfAny(String signalPrice, Signal signal) {
+        Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks();
+        if (partialTrade == null) {
+            return null;
+        }
+        log.warn("ORPHAN: PARTIAL trade id={} found before new open — closing its orphan legs first", partialTrade.getId());
+        return doClose(partialTrade, signalPrice, signal, false);
+    }
+
+    private Position doClose(Position tradeToClose, String signalPrice, Signal signal, boolean updateApiAction) {
         double closePrice = Double.parseDouble(signalPrice);
         tradeToClose.setExitSpot(Math.round(closePrice * 100.0) / 100.0);
         log.info("Live Position being closed is: {}", tradeToClose);
@@ -50,6 +74,10 @@ public class PositionClosingService {
         Map<String, Quote> quotes = positionUtil.getQuote(liveIns);
         if (quotes.isEmpty()) {
             log.error("Quote map is empty — aborting trade close (auth missing or Kite error)");
+            if (PARTIAL.equals(tradeToClose.getStatus())) {
+                log.warn("ORPHAN: trade id={} stays PARTIAL — orphan close will retry on the next signal", tradeToClose.getId());
+                return null;
+            }
             tradeToClose.setStatus(FAILED);
             positionRepository.save(tradeToClose);
             return null;

@@ -12,6 +12,7 @@ public class EquityCurve {
     private Double currentEquity;
     private List<String> dates;
     private List<Double> equity;
+    private List<Double> startingCapitals;
     private List<Integer> lotSize;
     private List<String> outcomes;
     private List<Double> points;

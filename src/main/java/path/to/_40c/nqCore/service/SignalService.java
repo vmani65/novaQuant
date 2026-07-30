@@ -85,12 +85,20 @@ public class SignalService {
 	   return true;
 	}
 
+	/**
+	 * Entry handler. Flattens any orphan legs left by an earlier PARTIAL open before the new
+	 * position is placed, so the fresh open never stacks on top of untracked broker positions.
+	 */
 	public boolean handleTradeOpen(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
+	   Position orphanClosed = closingService.closeOrphanIfAny(signalPrice, signal);
 	   Position trade = new Position(signal);
 	   Position liveTrade = openingService.openTrade(signalPrice, type, trade);
 	   log.info("[PERFORMANCE] open | exec={}ms", Duration.between(start, Instant.now()).toMillis());
 	   postTradeService.afterOpen(liveTrade);
+	   if (orphanClosed != null) {
+	       postTradeService.afterClose(orphanClosed);
+	   }
 	   return true;
 	}
 
