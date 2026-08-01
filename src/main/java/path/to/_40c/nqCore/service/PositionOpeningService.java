@@ -27,11 +27,14 @@ public class PositionOpeningService {
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
+    private final MarginPreCheckService marginPreCheck;
 
-    public PositionOpeningService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil) {
+    public PositionOpeningService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil,
+            MarginPreCheckService marginPreCheck) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
+        this.marginPreCheck = marginPreCheck;
     }
 
     /**
@@ -83,16 +86,18 @@ public class PositionOpeningService {
 
     private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
     	List<WeeklyLeg> childOrderBook = new ArrayList<>();
+    	MarginPreCheckService.MarginCheck marginCheck = marginPreCheck.check(legOrder);
+    	if (!marginCheck.allowed()) {
+    	    log.error("MARGIN BLOCKED — open aborted before any order was placed | strategy={} | {}",
+    	            trade.getStrategyName(), marginCheck.reason());
+    	    trade.setLegs(failedLegs(legOrder));
+    	    trade.setStatus(FAILED);
+    	    trade.setMessage(marginCheck.reason());
+    	    return positionRepository.save(trade);
+    	}
     	if (quotes.isEmpty()) {
     	    log.error("Quote map is empty — aborting trade open for all instruments");
-    	    trade.setLegs(legOrder.stream().map(pojo -> {
-    	        WeeklyLeg b = new WeeklyLeg();
-    	        b.setInstrument(pojo.getInstrument()); b.setExchangeSymbol(pojo.getExchangeSymbol());
-    	        b.setSide(pojo.getSide()); b.setPosition(pojo.getParentPosition());
-    	        b.setMoneyness(pojo.getMoneyness()); b.setLots(pojo.getLots());
-    	        b.setQuantity(pojo.getLots() * LOT_SIZE); b.setStatus(FAILED);
-    	        return b;
-    	    }).collect(Collectors.toList()));
+    	    trade.setLegs(failedLegs(legOrder));
     	    trade.setStatus(FAILED);
     	    return positionRepository.save(trade);
     	}
@@ -126,6 +131,7 @@ public class PositionOpeningService {
     		b.setSide(pojo.getSide());
     		b.setPosition(pojo.getParentPosition());
     		b.setMoneyness(pojo.getMoneyness());
+    		b.setStrike(pojo.getStrike());
     		b.setOpenOrderId(pojo.getOpenOrderId());
     		int filledQty = pojo.getOpenFilledQty();
     		if (filledQty > 0) {
@@ -164,5 +170,17 @@ public class PositionOpeningService {
     	var liveTrade = positionRepository.save(trade);
     	log.info("Live Position Being Opened: {}", trade);
     	return liveTrade;
+    }
+
+    /** Placeholder FAILED legs for an open aborted before any order reached the broker. */
+    private static List<WeeklyLeg> failedLegs(List<LegOrder> legOrder) {
+    	return legOrder.stream().map(pojo -> {
+    	    WeeklyLeg b = new WeeklyLeg();
+    	    b.setInstrument(pojo.getInstrument()); b.setExchangeSymbol(pojo.getExchangeSymbol());
+    	    b.setSide(pojo.getSide()); b.setPosition(pojo.getParentPosition());
+    	    b.setMoneyness(pojo.getMoneyness()); b.setStrike(pojo.getStrike()); b.setLots(pojo.getLots());
+    	    b.setQuantity(pojo.getLots() * LOT_SIZE); b.setStatus(FAILED);
+    	    return b;
+    	}).collect(Collectors.toList());
     }
 }

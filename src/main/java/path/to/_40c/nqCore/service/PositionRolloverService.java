@@ -31,19 +31,65 @@ public class PositionRolloverService {
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
     private final PostTradeService postTradeService;
+    private final WeeklySymbolCache symbolCache;
 
     public PositionRolloverService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil,
-                                PostTradeService postTradeService) {
+                                PostTradeService postTradeService, WeeklySymbolCache symbolCache) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
         this.postTradeService = postTradeService;
+        this.symbolCache = symbolCache;
     }
 
     /**
-     * 1. Close the Live Position first.
-     * 2. Proceed with opening new trades only if all closes succeeded.
-     * 3. Open live trades. Create a childOrderBook and add to the Parent and Save
+     * Rolls EVERY live position (all strategies' books) to the rollover symbol, one at a
+     * time. Positions whose live legs are already entirely on the rollover symbol are skipped
+     * as successes (re-rolling them would just churn close/open on the same expiry). Returns
+     * true only when every position rolled or was already rolled — the trigger uses this to
+     * decide whether to promote the symbol and mark rollover complete; on false the failed
+     * book stays on old expiry and the trigger leaves rolloverComplete unset so a manual
+     * retry still works.
+     */
+    public boolean rollOver(String signalPrice) {
+        List<Position> liveTrades = positionUtil.findAllLiveTradesWithLiveOrderBooks();
+        if (liveTrades.isEmpty()) {
+            log.info("No Live trades to rollover.");
+            return true;
+        }
+        String rolloverSymbol = symbolCache.get() != null ? symbolCache.get().getRolloverSymbol() : null;
+        boolean allSucceeded = true;
+        for (Position trade : liveTrades) {
+            if (alreadyOnRolloverSymbol(trade, rolloverSymbol)) {
+                log.info("Rollover skip — position id={} strategy={} already entirely on rollover symbol {}",
+                        trade.getId(), trade.getStrategyName(), rolloverSymbol);
+                continue;
+            }
+            try {
+                if (!rollOverSingle(trade, signalPrice)) {
+                    allSucceeded = false;
+                }
+            } catch (Exception e) {
+                log.error("Rollover FAILED for position id={} strategy={} — continuing with remaining positions",
+                        trade.getId(), trade.getStrategyName(), e);
+                allSucceeded = false;
+            }
+        }
+        return allSucceeded;
+    }
+
+    /** True when every live leg of the position already trades the rollover symbol. */
+    private boolean alreadyOnRolloverSymbol(Position trade, String rolloverSymbol) {
+        if (rolloverSymbol == null || rolloverSymbol.isBlank()) return false;
+        return !trade.getLegs().isEmpty() && trade.getLegs().stream()
+                .allMatch(l -> l.getInstrument() != null && l.getInstrument().startsWith(NIFTY + rolloverSymbol));
+    }
+
+    /**
+     * Rolls one position:
+     * 1. Close its live legs first.
+     * 2. Proceed with opening new legs only if all closes succeeded.
+     * 3. Open new legs on the rollover symbol, append to the parent and save.
      *
      * Re-strike accounting is identical to a recenter: bank the closed segment's points into
      * bankedPoints and reset baselineSpot to the rollover spot. entrySpot/exitSpot are left
@@ -51,17 +97,15 @@ public class PositionRolloverService {
      * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
      * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
-    public void rollOver(String signalPrice) {
-        Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks();
-        if (tradeToRollOver != null) log.info("Live Position being rolled over is: {}", tradeToRollOver);
-        else log.info("No Live trades to rollover.");
-        if (tradeToRollOver != null) {
+    private boolean rollOverSingle(Position tradeToRollOver, String signalPrice) {
+        log.info("Live Position being rolled over is: {}", tradeToRollOver);
+        {
             Instant closeStart = Instant.now();
             String[] liveIns = tradeToRollOver.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
             Map<String, Quote> quotesOfToCloseTrade = positionUtil.getQuote(liveIns);
             if (quotesOfToCloseTrade.isEmpty()) {
                 log.error("Quote map is empty for close leg — aborting rollover (auth missing or Kite error)");
-                return;
+                return false;
             }
             AtomicBoolean allClosesSucceeded = new AtomicBoolean(true);
 
@@ -101,7 +145,7 @@ public class PositionRolloverService {
             if (!allClosesSucceeded.get()) {
                 log.error("Rollover aborted - not all positions closed successfully");
                 log.info("[PERFORMANCE] rollover | close={}ms | open=0ms | total={}ms (aborted)", closeMs, closeMs);
-                return;
+                return false;
             }
             positionUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);
             Instant openStart = Instant.now();
@@ -123,7 +167,7 @@ public class PositionRolloverService {
                 log.error("Quote map is empty for open leg — aborting rollover open (close already executed, manual intervention needed)");
                 long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
                 log.info("[PERFORMANCE] rollover | close={}ms | open={}ms | total={}ms (aborted at open quote)", closeMs, abortOpenMs, closeMs + abortOpenMs);
-                return;
+                return false;
             }
             List<CompletableFuture<Void>> openFuts = legOrder.stream()
                 .map(w -> CompletableFuture.runAsync(() -> {
@@ -156,6 +200,7 @@ public class PositionRolloverService {
                 b.setOpenOrderId(pojo.getOpenOrderId());
                 b.setPosition(pojo.getParentPosition());
                 b.setMoneyness(pojo.getMoneyness());
+                b.setStrike(pojo.getStrike());
                 b.setLots(pojo.getLots());
                 b.setQuantity(pojo.getLots() * LOT_SIZE);
                 b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
@@ -173,6 +218,7 @@ public class PositionRolloverService {
             var liveTrade = positionRepository.save(tradeToRollOver);
             log.info("Live Position after rollOver completed is: {}", liveTrade);
             postTradeService.afterOpen(liveTrade);
+            return true;
         }
     }
 }

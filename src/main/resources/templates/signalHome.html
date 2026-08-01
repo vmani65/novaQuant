@@ -253,6 +253,166 @@
             }
         };
 
+        // ==================== STRIKE MAP ====================
+        const StrikeMap = {
+            load() {
+                fetch('/api/strike-map')
+                    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(rows => this.render(rows))
+                    .catch(e => {
+                        document.getElementById('strikeMapBox').innerHTML =
+                            `<div class="px-5 py-4"><div class="message error">Failed to load strike map: ${e.message}</div></div>`;
+                    });
+            },
+
+            render(rows) {
+                const box = document.getElementById('strikeMapBox');
+                if (!rows || rows.length === 0) {
+                    box.innerHTML = '<div class="px-5 py-6 text-center text-xs text-gray-400 italic">No strikes occupied</div>';
+                    return;
+                }
+                const body = rows.map(r => `
+                    <tr class="border-t border-gray-100">
+                        <td class="px-3 py-1.5 text-right font-mono text-[11px] font-semibold text-gray-900">${r.strike != null ? r.strike : '—'}</td>
+                        <td class="px-3 py-1.5 text-[11px] text-gray-700">${r.strategyName || '—'}</td>
+                        <td class="px-3 py-1.5 text-center text-[11px] font-semibold ${r.direction === 'LONG' ? 'text-emerald-600' : 'text-rose-600'}">${r.direction || '—'}</td>
+                        <td class="px-3 py-1.5 font-mono text-[11px] text-gray-800">${r.instrument || '—'}</td>
+                        <td class="px-3 py-1.5 text-center text-[11px] font-semibold ${r.side === 'BUY' ? 'text-emerald-600' : 'text-rose-600'}">${r.side || '—'}</td>
+                        <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-600">${r.quantity != null ? r.quantity : '—'}</td>
+                        <td class="px-3 py-1.5 text-center font-mono text-[11px] text-gray-400">#${r.positionId != null ? r.positionId : '—'}</td>
+                    </tr>`).join('');
+                box.innerHTML = `
+                    <div class="overflow-x-auto">
+                        <table class="w-full text-xs">
+                            <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
+                                <tr>
+                                    <th class="px-3 py-1.5 text-right font-semibold">Strike</th>
+                                    <th class="px-3 py-1.5 text-left font-semibold">Strategy</th>
+                                    <th class="px-3 py-1.5 text-center font-semibold">Direction</th>
+                                    <th class="px-3 py-1.5 text-left font-semibold">Instrument</th>
+                                    <th class="px-3 py-1.5 text-center font-semibold">Side</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">Qty</th>
+                                    <th class="px-3 py-1.5 text-center font-semibold">Trade</th>
+                                </tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>
+                    </div>`;
+            }
+        };
+
+        // ==================== STRATEGY REGISTRY ====================
+        const StrategyRegistryPanel = {
+            load() {
+                fetch('/api/strategy-registry')
+                    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(rows => this.render(rows))
+                    .catch(e => {
+                        document.getElementById('strategyRegistryBox').innerHTML =
+                            `<div class="px-5 py-4"><div class="message error">Failed to load registry: ${e.message}</div></div>`;
+                    });
+            },
+
+            render(rows) {
+                const box = document.getElementById('strategyRegistryBox');
+                const body = (rows || []).map(r => `
+                    <tr class="border-t border-gray-100" data-strategy="${r.name}">
+                        <td class="px-3 py-1.5 text-[12px] font-semibold text-gray-900">${r.name}</td>
+                        <td class="px-3 py-1.5 text-center">
+                            <span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[10px] font-bold uppercase tracking-wider ${r.enabled ? 'bg-emerald-50 text-emerald-700 border border-emerald-200' : 'bg-gray-100 text-gray-500 border border-gray-200'}">
+                                ${r.enabled ? 'Enabled' : 'Disabled'}
+                            </span>
+                        </td>
+                        <td class="px-3 py-1.5 text-center font-mono text-[11px] text-gray-700">${r.lots != null ? r.lots : '—'}</td>
+                        <td class="px-3 py-1.5 text-center font-mono text-[11px] text-gray-700">${r.maxStrikeOffset != null ? '±' + r.maxStrikeOffset : '—'}</td>
+                        <td class="px-3 py-1.5 text-center font-mono text-[11px] text-gray-700">${r.recenterMinProfit != null ? r.recenterMinProfit : '—'}</td>
+                        <td class="px-3 py-1.5 text-center">
+                            <button onclick="StrategyRegistryPanel.showEditRow('${r.name}', ${r.enabled}, ${r.lots == null ? 'null' : r.lots}, ${r.maxStrikeOffset == null ? 'null' : r.maxStrikeOffset}, ${r.recenterMinProfit == null ? 'null' : r.recenterMinProfit})"
+                                    class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
+                        </td>
+                    </tr>`).join('');
+                box.innerHTML = `
+                    <table class="w-full text-xs">
+                        <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
+                            <tr>
+                                <th class="px-3 py-1.5 text-left font-semibold">Strategy</th>
+                                <th class="px-3 py-1.5 text-center font-semibold">Status</th>
+                                <th class="px-3 py-1.5 text-center font-semibold">Lots Override</th>
+                                <th class="px-3 py-1.5 text-center font-semibold">Max Strike Offset</th>
+                                <th class="px-3 py-1.5 text-center font-semibold">Recenter Floor</th>
+                                <th class="px-3 py-1.5 text-center font-semibold">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody id="strategyRegistryTbody">${body || '<tr><td colspan="6" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No strategies registered</td></tr>'}</tbody>
+                    </table>`;
+            },
+
+            formRowHtml(name, enabled, lots, maxOffset, floor, nameEditable) {
+                return `
+                    <td class="px-3 py-1.5">${nameEditable
+                        ? `<input type="text" class="strat-name w-28 px-2 py-1 border border-gray-200 rounded text-xs" placeholder="StrategyName" value="${name || ''}" />`
+                        : `<span class="text-[12px] font-semibold text-gray-900">${name}</span><input type="hidden" class="strat-name" value="${name}" />`}
+                    </td>
+                    <td class="px-3 py-1.5 text-center">
+                        <select class="strat-enabled px-2 py-1 border border-gray-200 rounded text-xs">
+                            <option value="true" ${enabled ? 'selected' : ''}>Enabled</option>
+                            <option value="false" ${!enabled ? 'selected' : ''}>Disabled</option>
+                        </select>
+                    </td>
+                    <td class="px-3 py-1.5 text-center"><input type="number" class="strat-lots w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" min="1" value="${lots == null ? '' : lots}" placeholder="—" /></td>
+                    <td class="px-3 py-1.5 text-center"><input type="number" class="strat-offset w-20 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" step="50" min="0" value="${maxOffset == null ? '' : maxOffset}" placeholder="150" /></td>
+                    <td class="px-3 py-1.5 text-center"><input type="number" class="strat-floor w-20 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" step="50" min="0" value="${floor == null ? '' : floor}" placeholder="450" /></td>
+                    <td class="px-3 py-1.5 text-center">
+                        <button onclick="StrategyRegistryPanel.save(this)"
+                                class="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] border-0 cursor-pointer">Save</button>
+                        <button onclick="StrategyRegistryPanel.load()"
+                                class="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded text-[11px] border-0 cursor-pointer bg-transparent">Cancel</button>
+                    </td>`;
+            },
+
+            showAddRow() {
+                const tbody = document.getElementById('strategyRegistryTbody');
+                if (!tbody) return;
+                tbody.querySelectorAll('tr.strat-form-row').forEach(r => r.remove());
+                const row = document.createElement('tr');
+                row.className = 'strat-form-row bg-blue-50 border-t border-blue-100';
+                row.innerHTML = this.formRowHtml('', true, null, null, null, true);
+                tbody.prepend(row);
+            },
+
+            showEditRow(name, enabled, lots, maxOffset, floor) {
+                const tbody = document.getElementById('strategyRegistryTbody');
+                tbody.querySelectorAll('tr.strat-form-row').forEach(r => r.remove());
+                const existing = tbody.querySelector(`tr[data-strategy="${name}"]`);
+                if (!existing) return;
+                existing.outerHTML = `<tr class="strat-form-row bg-blue-50 border-t border-blue-100" data-strategy="${name}">${this.formRowHtml(name, enabled, lots, maxOffset, floor, false)}</tr>`;
+            },
+
+            save(btn) {
+                const row = btn.closest('tr');
+                const name = row.querySelector('.strat-name').value.trim();
+                if (!name) { Utils.showMessage('strategyRegistryMsg', 'Strategy name is required.', true); return; }
+                const numOrNull = cls => {
+                    const v = row.querySelector(cls).value.trim();
+                    return v === '' ? null : Number(v);
+                };
+                const body = {
+                    name,
+                    enabled: row.querySelector('.strat-enabled').value === 'true',
+                    lots: numOrNull('.strat-lots'),
+                    maxStrikeOffset: numOrNull('.strat-offset'),
+                    recenterMinProfit: numOrNull('.strat-floor')
+                };
+                fetch('/api/strategy-registry/save', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) })
+                    .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                    .then(() => {
+                        Utils.showMessage('strategyRegistryMsg', `Strategy "${name}" saved.`, false);
+                        this.load();
+                    })
+                    .catch(e => Utils.showMessage('strategyRegistryMsg', 'Save failed: ' + e.message, true));
+            }
+        };
+
         // ==================== TOPBAR AUTH TRAFFIC SIGNAL ====================
         function checkConnection() {
             const box   = document.getElementById('authSignal');
@@ -406,17 +566,18 @@
         function renderLegRows(tbodyId, legs, direction) {
             const tbody = document.getElementById(tbodyId);
             if (legs.length === 0) {
-                tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
+                tbody.innerHTML = `<tr><td colspan="6" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
                 return;
             }
             tbody.innerHTML = legs.map(l => `
                 <tr class="border-t border-gray-100" data-leg-id="${l.id}">
+                    <td class="px-2 py-1.5 text-center ${l.strategyName ? 'text-gray-800 font-medium' : 'text-gray-400 italic'}">${l.strategyName || 'Default'}</td>
                     <td class="px-2 py-1.5 font-medium text-gray-900 text-center">${l.optionType}</td>
                     <td class="px-2 py-1.5 text-gray-700 text-center">${l.side}</td>
                     <td class="px-2 py-1.5 font-mono text-gray-700 text-center">${l.offsetPts > 0 ? '+' + l.offsetPts : l.offsetPts}</td>
                     <td class="px-2 py-1.5 font-mono font-semibold text-gray-900 text-center">${l.lots}</td>
                     <td class="px-2 py-1.5 text-center">
-                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots})"
+                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots}, '${l.strategyName || ''}')"
                                 class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
                         <button onclick="deleteLeg(${l.id})"
                                 class="px-2 py-0.5 text-rose-600 hover:bg-rose-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Delete</button>
@@ -430,27 +591,30 @@
             // Remove any existing add/edit-form rows first
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             // Remove "no legs" placeholder if present
-            const placeholder = tbody.querySelector('td[colspan="5"]');
+            const placeholder = tbody.querySelector('td[colspan="6"]');
             if (placeholder) placeholder.parentElement.remove();
             const row = document.createElement('tr');
             row.className = 'leg-form-row bg-blue-50 border-t border-blue-100';
-            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1);
+            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1, '');
             tbody.appendChild(row);
         }
 
-        function editLegRow(id, direction, optionType, side, offsetPts, lots) {
+        function editLegRow(id, direction, optionType, side, offsetPts, lots, strategyName) {
             const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
             const tbody = document.getElementById(tbodyId);
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             const existing = tbody.querySelector(`tr[data-leg-id="${id}"]`);
             if (!existing) return;
-            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
+            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots, strategyName || '').replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
         }
 
-        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots) {
+        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots, strategyName) {
             const optSel = ['CE', 'PE'].map(o => `<option value="${o}" ${o === optionType ? 'selected' : ''}>${o}</option>`).join('');
             const sideSel = ['BUY', 'SELL'].map(s => `<option value="${s}" ${s === side ? 'selected' : ''}>${s}</option>`).join('');
             return `
+                <td class="px-2 py-1.5 text-center">
+                    <input type="text" class="leg-strategy w-24 px-2 py-1 border border-gray-200 rounded text-xs text-center" value="${strategyName}" placeholder="Default" title="Blank = shared default set" />
+                </td>
                 <td class="px-2 py-1.5 text-center">
                     <select class="leg-opt px-2 py-1 border border-gray-200 rounded text-xs text-center">${optSel}</select>
                 </td>
@@ -478,7 +642,8 @@
                 optionType: row.querySelector('.leg-opt').value,
                 side:       row.querySelector('.leg-side').value,
                 offsetPts:  parseInt(row.querySelector('.leg-offset').value) || 0,
-                lots:       parseInt(row.querySelector('.leg-lots').value) || 0
+                lots:       parseInt(row.querySelector('.leg-lots').value) || 0,
+                strategyName: row.querySelector('.leg-strategy').value.trim() || null
             };
             const url = id ? `/api/leg-templates/${id}` : '/api/leg-templates';
             const method = id ? 'PUT' : 'POST';
@@ -631,6 +796,46 @@
                     }
                 })
                 .catch(error => { console.error('Error loading capital data:', error); });
+            loadStrategyPnl();
+        }
+
+        function loadStrategyPnl() {
+            fetch('/api/strategy-pnl')
+                .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
+                .then(rows => {
+                    const box = document.getElementById('strategyPnlBox');
+                    if (!rows || rows.length === 0) {
+                        box.innerHTML = '<div class="px-3 py-3 text-center text-[11px] text-gray-400 italic">No closed trades yet</div>';
+                        return;
+                    }
+                    const body = rows.map(r => `
+                        <tr class="border-t border-gray-100">
+                            <td class="px-3 py-1.5 text-[11px] font-medium text-gray-800">${r.strategyName}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-600">${r.trades}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-emerald-600">${r.wins}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-rose-600">${r.losses}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] font-semibold ${r.totalPnl >= 0 ? 'text-emerald-600' : 'text-rose-600'}">₹${Number(r.totalPnl).toLocaleString('en-IN')}</td>
+                            <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-500">₹${Number(r.totalCharges).toLocaleString('en-IN')}</td>
+                        </tr>`).join('');
+                    box.innerHTML = `
+                        <table class="w-full text-xs">
+                            <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
+                                <tr>
+                                    <th class="px-3 py-1.5 text-left font-semibold">Strategy</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">Trades</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">W</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">L</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">Net P&amp;L</th>
+                                    <th class="px-3 py-1.5 text-right font-semibold">Charges</th>
+                                </tr>
+                            </thead>
+                            <tbody>${body}</tbody>
+                        </table>`;
+                })
+                .catch(e => {
+                    document.getElementById('strategyPnlBox').innerHTML =
+                        `<div class="px-3 py-3 text-center text-[11px] text-rose-500">Failed: ${e.message}</div>`;
+                });
         }
 
         function toggleCapital() {
@@ -700,6 +905,8 @@
             if (noSymbols) setSymbolsEditable(true);
             checkConnection();
             LivePositions.load();
+            StrikeMap.load();
+            StrategyRegistryPanel.load();
             loadCapitalData();
             loadLegTemplates();
             EquityCurve.loadEquityCurve();
@@ -1185,6 +1392,47 @@
             </div>
         </section>
 
+        <!-- ===== STRIKE MAP ===== -->
+        <section id="strikeMap" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Strike Map</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">Occupied Strikes</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Which strategy holds which strike — new entries auto-shift off occupied strikes</div>
+                    </div>
+                    <button onclick="StrikeMap.load()"
+                            class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">↺ Refresh</button>
+                </div>
+                <div id="strikeMapBox">
+                    <div class="px-5 py-6 text-center text-xs text-gray-400 italic">Loading…</div>
+                </div>
+            </div>
+        </section>
+
+        <!-- ===== STRATEGY REGISTRY ===== -->
+        <section id="strategyRegistry" class="scroll-mt-20">
+            <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Strategies</div>
+            <div class="bg-white border border-gray-200 rounded-xl overflow-hidden">
+                <div class="px-5 py-4 border-b border-gray-100 flex items-center justify-between">
+                    <div>
+                        <div class="text-sm font-semibold text-gray-900">Strategy Registry</div>
+                        <div class="text-xs text-gray-400 mt-0.5">Signals from unregistered or disabled strategies are rejected. Lots override resizes the template set; blank = template lots.</div>
+                    </div>
+                    <div class="flex gap-2">
+                        <button onclick="StrategyRegistryPanel.showAddRow()"
+                                class="px-3 py-1.5 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Register</button>
+                        <button onclick="StrategyRegistryPanel.load()"
+                                class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-600 text-xs font-medium rounded-md border-0 cursor-pointer">↺ Refresh</button>
+                    </div>
+                </div>
+                <div id="strategyRegistryBox">
+                    <div class="px-5 py-6 text-center text-xs text-gray-400 italic">Loading…</div>
+                </div>
+                <div id="strategyRegistryMsg" class="px-5 pb-3" style="display:none;"></div>
+            </div>
+        </section>
+
         <!-- ===== SYMBOLS ===== -->
         <section id="symbols" class="scroll-mt-20">
             <div class="text-[11px] font-semibold text-gray-400 uppercase tracking-widest mb-3">Symbols</div>
@@ -1269,6 +1517,7 @@
                                     <table class="w-full text-sm">
                                         <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
                                             <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Strategy</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Option</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Side</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
@@ -1291,6 +1540,7 @@
                                     <table class="w-full text-sm">
                                         <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
                                             <tr>
+                                                <th class="px-2 py-1.5 text-center font-medium">Strategy</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Option</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Side</th>
                                                 <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
@@ -1405,6 +1655,14 @@
                                             <div class="text-[10px] text-gray-400 uppercase tracking-wider mb-1">Lowest</div>
                                             <div class="text-sm text-gray-900 font-semibold" id="lowestNrmlCostPerLotDisplay">—</div>
                                         </div>
+                                    </div>
+                                </div>
+
+                                <!-- Row 3: per-strategy P&L contribution to the shared pool -->
+                                <div class="border-t border-gray-100 pt-4 mb-4">
+                                    <div class="text-[10px] text-gray-400 font-medium uppercase tracking-wider mb-2.5">Strategy P&amp;L Contribution</div>
+                                    <div id="strategyPnlBox" class="border border-gray-100 rounded-lg overflow-hidden">
+                                        <div class="px-3 py-3 text-center text-[11px] text-gray-400 italic">Loading…</div>
                                     </div>
                                 </div>
 

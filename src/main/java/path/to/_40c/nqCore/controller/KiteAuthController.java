@@ -164,6 +164,7 @@ public class KiteAuthController {
         Map<String, Object> err = validate(body);
         if (err != null) return ResponseEntity.badRequest().body(err);
         body.setId(null);
+        body.setStrategyName(normalizeStrategyName(body.getStrategyName()));
         LegTemplate saved = legTemplateRepository.save(body);
         legTemplateCache.refreshCache();
         log.info("Leg template created: {}", saved);
@@ -182,6 +183,7 @@ public class KiteAuthController {
                 existing.setSide(body.getSide());
                 existing.setOffsetPts(body.getOffsetPts());
                 existing.setLots(body.getLots());
+                existing.setStrategyName(normalizeStrategyName(body.getStrategyName()));
                 LegTemplate saved = legTemplateRepository.save(existing);
                 legTemplateCache.refreshCache();
                 log.info("Leg template updated: {}", saved);
@@ -202,6 +204,12 @@ public class KiteAuthController {
         legTemplateCache.refreshCache();
         log.info("Leg template deleted: id={}", id);
         return ResponseEntity.ok(Map.of("success", true));
+    }
+
+    /** Blank strategy names collapse to null = the shared default template set. */
+    private static String normalizeStrategyName(String strategyName) {
+        if (strategyName == null || strategyName.isBlank()) return null;
+        return strategyName.trim();
     }
 
     private Map<String, Object> validate(LegTemplate t) {

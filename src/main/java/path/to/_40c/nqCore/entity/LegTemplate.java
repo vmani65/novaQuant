@@ -19,6 +19,11 @@ import lombok.ToString;
  *
  * offsetPts is signed: -50 = strike 50pts below ATM, +50 = strike 50pts above ATM.
  * Strike at signal time = ATM + offsetPts. lots > 0.
+ *
+ * strategyName scopes a row to one strategy; null = the shared default set. Template
+ * selection for a trade: the strategy's own rows for that direction if any exist, else
+ * the default rows. The registry-level Strategy.lots (when set) overrides lots on
+ * whichever set is chosen.
  */
 @Entity
 @Table(name = "LEG_TEMPLATE")
@@ -45,6 +50,9 @@ public class LegTemplate {
 
     @Column(name = "LOTS", nullable = false)
     private Integer lots;
+
+    @Column(name = "STRATEGY_NAME")
+    private String strategyName;
 
     public LegTemplate() {}
 

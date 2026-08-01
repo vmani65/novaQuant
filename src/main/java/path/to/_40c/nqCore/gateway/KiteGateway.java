@@ -61,6 +61,12 @@ public interface KiteGateway {
     CombinedMarginData getCombinedMarginCalculation(List<MarginCalculationParams> params,
                                                     boolean considerPositions);
 
+    /**
+     * Net available equity funds (₹) from /user/margins. Null on any failure — callers must
+     * treat null as "unknown" and fail-open, never as zero.
+     */
+    Double getAvailableFunds();
+
     /** Fetch executed trades for a single orderId. Returns empty list on failure. */
     List<com.zerodhatech.models.Trade> getOrderTrades(String singleOrderId);
 

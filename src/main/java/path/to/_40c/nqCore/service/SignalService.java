@@ -3,18 +3,19 @@ package path.to._40c.nqCore.service;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
-import java.net.URI;
-import java.net.http.HttpClient;
-import java.net.http.HttpRequest;
-import java.net.http.HttpResponse;
+import java.time.Clock;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.LocalTime;
 import java.time.ZoneId;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.ConcurrentHashMap;
 
 import lombok.extern.slf4j.Slf4j;
-import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.controller.SignalController.Signal;
@@ -30,29 +31,54 @@ public class SignalService {
 	private final PostTradeService postTradeService;
 	private final PositionRepository positionRepository;
 	private final WeeklySymbolService weeklySymbolService;
+	private final NqTickerClient nqTickerClient;
 
-	private final HttpClient httpClient = HttpClient.newHttpClient();
+	/**
+	 * Strategies whose 9:15 longExit was delegated to nqTicker's open buffer and are awaiting
+	 * the /api/execute-close callback. The callback carries no strategy, so this set is the
+	 * only record of WHOSE positions it must close. In-memory by design: if the app restarts
+	 * between arm and callback the set is lost and the callback falls back to the legacy
+	 * any-strategy close — logged loudly when that happens.
+	 */
+	private final Set<String> pendingOpenBufferStrategies = ConcurrentHashMap.newKeySet();
 
-	@Value("${nq.ticker.url:http://localhost:9192}")
-	private String nqTickerUrl;
+	/** IST clock; replaceable in tests to pin the 9:15 open-buffer window. */
+	private Clock clock = Clock.system(ZoneId.of(ZONE_ID));
 
 	public SignalService(PositionOpeningService openingService, PositionClosingService closingService,
 			PositionRolloverService rollOverService, PostTradeService postTradeService,
-			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService) {
+			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService,
+			NqTickerClient nqTickerClient) {
 		this.openingService = openingService;
 		this.closingService = closingService;
 		this.rollOverService = rollOverService;
 		this.postTradeService = postTradeService;
 		this.positionRepository = positionRepository;
 		this.weeklySymbolService = weeklySymbolService;
+		this.nqTickerClient = nqTickerClient;
 	}
 
-	public Position getLastTrade() {
-	    Position liveTrade = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
-	    if (liveTrade != null) {
-	        return liveTrade;
+	void setClockForTesting(Clock clock) {
+		this.clock = clock;
+	}
+
+	/**
+	 * Last trade per strategy for seeding the sequence validator on restart: for each strategy
+	 * name in position history, the LIVE position if one exists, else the most recent position.
+	 * The old single-trade variant seeded only one strategy, leaving every other strategy's
+	 * sequence validator blind after a restart.
+	 */
+	public List<Position> getLastTradePerStrategy() {
+	    List<Position> lastTrades = new ArrayList<>();
+	    for (String name : positionRepository.findDistinctStrategyNames()) {
+	        if (name == null || name.isBlank()) continue;
+	        Position live = positionRepository.findFirstByStrategyNameAndStatusOrderByIdDesc(name, LIVE);
+	        Position last = live != null ? live : positionRepository.findFirstByStrategyNameOrderByIdDesc(name);
+	        if (last != null) {
+	            lastTrades.add(last);
+	        }
 	    }
-	    return positionRepository.findFirstByOrderByIdDesc();
+	    return lastTrades;
 	}
 
 	/**
@@ -112,9 +138,11 @@ public class SignalService {
 	   Instant start = Instant.now();
 
 	   if ("longExit".equals(signal.action) && isOpenBufferTime()) {
-	       if (armNqTickerBuffer(signalPrice)) {
-	           log.info("9:15 AM long exit delegated to nQTicker open buffer | openPrice={} | {}ms",
-	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
+	       if (nqTickerClient.armBuffer(signalPrice)) {
+	           pendingOpenBufferStrategies.add(signal.strategyName);
+	           log.info("9:15 AM long exit delegated to nQTicker open buffer | strategy={} | openPrice={} | pending={} | {}ms",
+	                   signal.strategyName, signalPrice, pendingOpenBufferStrategies,
+	                   Duration.between(start, Instant.now()).toMillis());
 	           return true;
 	       }
 	       log.warn("nQTicker arm-buffer call failed — falling back to immediate close");
@@ -127,42 +155,47 @@ public class SignalService {
 	   return true;
 	}
 
-	/** Called by /api/execute-close — nQTicker open-buffer callback. Closes directly, no re-check. */
+	/**
+	 * Called by /api/execute-close — nQTicker open-buffer callback. The callback carries no
+	 * strategy, so the pending set recorded at delegation time decides whose positions close:
+	 * one close per delegated strategy, each scoped by its own Signal. Sequence state needs no
+	 * update here — it already advanced when the original longExit was accepted at arm time.
+	 * An empty pending set (restart between arm and callback, or a stray callback) falls back
+	 * to the legacy any-strategy close so a real broker position is never left hanging.
+	 */
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
-	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
-	   Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
-	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
-	   checkAndPromoteRolloverSymbol();
-	   postTradeService.afterClose(closedTrade);
+	   List<String> strategies = new ArrayList<>(new LinkedHashSet<>(pendingOpenBufferStrategies));
+	   pendingOpenBufferStrategies.clear();
+	   if (strategies.isEmpty()) {
+	       log.warn("execute-close with NO pending open-buffer strategies (restart or stray callback) — falling back to any-strategy close");
+	       Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
+	       Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
+	       checkAndPromoteRolloverSymbol();
+	       postTradeService.afterClose(closedTrade);
+	   } else {
+	       for (String strategyName : strategies) {
+	           Signal signal = new Signal(strategyName, "longExit", "CE", "", signalPrice);
+	           Position closedTrade = closingService.closeTrade(signalPrice, signal, true);
+	           checkAndPromoteRolloverSymbol();
+	           postTradeService.afterClose(closedTrade);
+	       }
+	   }
+	   log.info("execute-close completed for strategies={} in {}ms",
+	           strategies.isEmpty() ? "[fallback]" : strategies, Duration.between(start, Instant.now()).toMillis());
 	}
 
 	private boolean isOpenBufferTime() {
-	   LocalTime now = LocalTime.now(ZoneId.of(ZONE_ID));
+	   LocalTime now = LocalTime.now(clock);
 	   return now.getHour() == 9 && now.getMinute() == 15;
-	}
-
-	private boolean armNqTickerBuffer(String openPrice) {
-	   String url = nqTickerUrl + "/arm-buffer?openPrice=" + openPrice;
-	   try {
-	       HttpResponse<String> resp = httpClient.send(
-	               HttpRequest.newBuilder().uri(URI.create(url)).timeout(Duration.ofSeconds(3)).GET().build(),
-	               HttpResponse.BodyHandlers.ofString());
-	       boolean ok = resp.statusCode() == 200;
-	       if (!ok) log.warn("arm-buffer returned HTTP {} — {}", resp.statusCode(), resp.body());
-	       return ok;
-	   } catch (Exception e) {
-	       log.error("arm-buffer HTTP call failed — is nqTicker open-buffer running on {}?", nqTickerUrl, e);
-	       return false;
-	   }
 	}
 
 	private void checkAndPromoteRolloverSymbol() {
 	   weeklySymbolService.checkAndPromoteRolloverSymbol();
 	}
 
+	/** Rolls every live position; true only when all rolled (or none live). */
 	public boolean handleRollOver(String signalPrice) {
-	   rollOverService.rollOver(signalPrice);
-	   return true;
+	   return rollOverService.rollOver(signalPrice);
 	}
 }

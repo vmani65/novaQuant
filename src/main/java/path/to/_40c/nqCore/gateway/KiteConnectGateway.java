@@ -184,6 +184,31 @@ public class KiteConnectGateway implements KiteGateway {
         return new ArrayList<>();
     }
 
+    /**
+     * Net available equity funds from /user/margins. Returns null (never zero) on any
+     * failure so the margin pre-check fails open instead of blocking trades on an API blip.
+     */
+    @Override
+    public Double getAvailableFunds() {
+        var kite = getKiteConnectObject();
+        if (kite == null) {
+            log.error("KiteConnect null — cannot fetch available funds");
+            return null;
+        }
+        try {
+            com.zerodhatech.models.Margin margin = kite.getMargins("equity");
+            if (margin != null && margin.net != null && !margin.net.isBlank()) {
+                return Double.parseDouble(margin.net);
+            }
+            log.error("getMargins(equity) returned no net value");
+        } catch (JSONException | IOException | KiteException e) {
+            log.error("Exception while fetching available funds", e);
+        } catch (NumberFormatException e) {
+            log.error("Unparsable net margin value from getMargins(equity)", e);
+        }
+        return null;
+    }
+
     @Override
     public List<ContractNote> getVirtualContractNote(List<ContractNoteParams> params) {
         var kite = getKiteConnectObject();

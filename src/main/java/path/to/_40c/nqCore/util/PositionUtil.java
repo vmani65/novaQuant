@@ -1060,11 +1060,33 @@ public class PositionUtil {
         return orderParams;
     }
 
+    /**
+     * Finds the latest LIVE position with only its LIVE legs loaded. strategyName scopes the
+     * lookup to that strategy's book; null means "any strategy" — the legacy single-position
+     * behavior, still used by callers whose trigger carries no strategy (rollover, recenter,
+     * nqTicker callbacks) until those paths become strategy-aware.
+     */
     @Transactional
-    public Position findLiveTradesWithLiveOrderBooks() {
+    public Position findLiveTradesWithLiveOrderBooks(String strategyName) {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
+        Position trades = strategyName == null
+            ? positionRepository.findFirstByStatusOrderByIdDesc(LIVE)
+            : positionRepository.findFirstByStrategyNameAndStatusOrderByIdDesc(strategyName, LIVE);
+        session.disableFilter("liveOrderBooks");
+        return trades;
+    }
+
+    /**
+     * All LIVE positions (every strategy's book), oldest first, each with only its LIVE legs
+     * loaded. The iteration source for operations that must touch every book: rollover-day
+     * rolls and profit recenters.
+     */
+    @Transactional
+    public List<Position> findAllLiveTradesWithLiveOrderBooks() {
+        Session session = entityManager.unwrap(Session.class);
+        session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
+        List<Position> trades = positionRepository.findAllByStatusOrderByIdAsc(LIVE);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
@@ -1072,20 +1094,28 @@ public class PositionUtil {
     /**
      * Finds the latest PARTIAL position (an open where only some legs filled) with only its
      * still-LIVE orphan legs loaded, so the closing path can flatten exactly what is held
-     * at the broker.
+     * at the broker. strategyName scopes the lookup; null means "any strategy".
      */
     @Transactional
-    public Position findPartialTradesWithLiveOrderBooks() {
+    public Position findPartialTradesWithLiveOrderBooks(String strategyName) {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(PARTIAL);
+        Position trades = strategyName == null
+            ? positionRepository.findFirstByStatusOrderByIdDesc(PARTIAL)
+            : positionRepository.findFirstByStrategyNameAndStatusOrderByIdDesc(strategyName, PARTIAL);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
 
+    /**
+     * Finds the latest LIVE position with all legs (every segment) loaded. strategyName scopes
+     * the lookup; null means "any strategy".
+     */
     @Transactional
-    public Position findLiveTradesWithAllOrderBooks() {
-        return positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
+    public Position findLiveTradesWithAllOrderBooks(String strategyName) {
+        return strategyName == null
+            ? positionRepository.findFirstByStatusOrderByIdDesc(LIVE)
+            : positionRepository.findFirstByStrategyNameAndStatusOrderByIdDesc(strategyName, LIVE);
     }
 
     private List<com.zerodhatech.models.Trade> fetchWithRetry(String orderId, String context) {

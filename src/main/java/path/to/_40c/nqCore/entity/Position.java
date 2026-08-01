@@ -49,7 +49,7 @@ import org.hibernate.annotations.ParamDef;
 public class Position extends BaseEntity {
 
     @Column(name = "STRATEGY_ID")
-    private String strategyId = "RIDETHETIDE";
+    private String strategyId;
 
     @Column(name = "ACCOUNT")
     private String account = "ZERODHAVINOTH";
@@ -136,6 +136,7 @@ public class Position extends BaseEntity {
         this.lastSignalAction = signal.action;
         this.lastSignalLeg    = signal.signalType;
         this.strategyName     = signal.strategyName;
+        this.strategyId       = signal.strategyName;
         this.signalAt         = normalizeSignalTime(signal.time);
         this.legs             = new ArrayList<>();
     }

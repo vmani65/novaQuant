@@ -28,7 +28,7 @@ class ComputeUtilCalcPnLTest {
 
     @BeforeEach
     void setUp() {
-        computeUtil = new ComputeUtil(null, null, null);
+        computeUtil = new ComputeUtil(null, null, null, null, null);
     }
 
     /**

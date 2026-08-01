@@ -55,6 +55,9 @@ public class MockKiteGateway implements KiteGateway {
     /** Execution price recorded per mock order ID; replayed by getOrderTrades for consistency. */
     private final ConcurrentHashMap<String, Double> executionPrices = new ConcurrentHashMap<>();
 
+    /** Order quantities as placed — echoed back by getOrderHistory/getOrderTrades so multi-lot orders fully fill (was hardcoded 65 in the 1-lot era). */
+    private final ConcurrentHashMap<String, Integer> orderQuantities = new ConcurrentHashMap<>();
+
     /** Mock WS counterpart — used by placeOrder to inject synthetic fill events that
      *  drive PositionUtil.placeGraduatedLimit's D₂ WS-await path. */
     private final MockKiteOrderStream orderStream;
@@ -110,8 +113,9 @@ public class MockKiteGateway implements KiteGateway {
         o.status = ORDER_COMPLETE;
         Double execPrice = executionPrices.get(orderId);
         o.averagePrice = execPrice != null ? String.valueOf(execPrice) : "0";
-        o.filledQuantity = "65";
-        o.quantity = "65";
+        String qty = String.valueOf(orderQuantities.getOrDefault(orderId, 65));
+        o.filledQuantity = qty;
+        o.quantity = qty;
         o.pendingQuantity = "0";
         log.info("[MOCK] getOrderHistory: orderId={} → status={} filled={}/{}",
                 orderId, o.status, o.filledQuantity, o.quantity);
@@ -123,6 +127,7 @@ public class MockKiteGateway implements KiteGateway {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
         double execPrice = applySlippage(params.price, params.transactionType);
         executionPrices.put(orderId, execPrice);
+        if (params.quantity != null) orderQuantities.put(orderId, params.quantity);
         log.info("[MOCK] placeOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, orderId);
@@ -180,6 +185,7 @@ public class MockKiteGateway implements KiteGateway {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
         double execPrice = applySlippage(params.price, params.transactionType);
         executionPrices.put(orderId, execPrice);
+        if (params.quantity != null) orderQuantities.put(orderId, params.quantity);
         log.info("[MOCK] placeAutoSliceOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, orderId);
@@ -221,6 +227,16 @@ public class MockKiteGateway implements KiteGateway {
         double baseMargin = notional * 0.15;
         double noise = 1 + (random.nextDouble() * 0.10 - 0.05);
         return Math.round(baseMargin * noise * 100.0) / 100.0;
+    }
+
+    /** Simulated funds pool for the margin pre-check; tune via mock.available-funds to force blocks in sims. */
+    @org.springframework.beans.factory.annotation.Value("${mock.available-funds:10000000}")
+    private double availableFunds;
+
+    @Override
+    public Double getAvailableFunds() {
+        log.info("[MOCK] getAvailableFunds → {}", availableFunds);
+        return availableFunds;
     }
 
     @Override
@@ -297,7 +313,7 @@ public class MockKiteGateway implements KiteGateway {
         com.zerodhatech.models.Trade trade = new com.zerodhatech.models.Trade();
         trade.orderId = singleOrderId;
         trade.averagePrice = String.valueOf(execPrice);
-        trade.quantity = "65";
+        trade.quantity = String.valueOf(orderQuantities.getOrDefault(singleOrderId, 65));
         log.info("[MOCK] getOrderTrades: orderId={} → averagePrice={}", singleOrderId, execPrice);
         return List.of(trade);
     }

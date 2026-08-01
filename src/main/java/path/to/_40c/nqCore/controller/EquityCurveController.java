@@ -42,6 +42,11 @@ public class EquityCurveController {
         return ResponseEntity.ok(equityCurveService.getEquityCurveData(strategy));
     }
 
+    @GetMapping("/strategy-pnl")
+    public ResponseEntity<List<Map<String, Object>>> getStrategyPnl() {
+        return ResponseEntity.ok(equityCurveService.getStrategyPnlSummary());
+    }
+
     @GetMapping("/capital")
     public ResponseEntity<TradeCapital> getTradeCapital() {
         try {

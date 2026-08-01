@@ -15,6 +15,7 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
 
+import path.to._40c.nqCore.entity.Strategy;
 import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
@@ -49,42 +50,64 @@ public class ProfitRecenterService {
     private final ComputeUtil      computeUtil;
     private final WeeklySymbolService    weeklySymbolService;
     private final PostTradeService postTradeService;
+    private final StrategyRegistry strategyRegistry;
 
     public ProfitRecenterService(PositionRepository positionRepository, PositionUtil positionUtil,
                                  ComputeUtil computeUtil, WeeklySymbolService weeklySymbolService,
-                                 PostTradeService postTradeService) {
+                                 PostTradeService postTradeService, StrategyRegistry strategyRegistry) {
         this.positionRepository  = positionRepository;
         this.positionUtil        = positionUtil;
         this.computeUtil      = computeUtil;
         this.weeklySymbolService    = weeklySymbolService;
         this.postTradeService = postTradeService;
+        this.strategyRegistry = strategyRegistry;
     }
 
     /**
-     * Re-centres the live trade at the new ATM. Aborts (no orders) if the effective profit from the
-     * current baselineSpot is below RECENTER_MIN_PROFIT — a backstop against a corrupt/stale baseline,
-     * bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked here.
-     * On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
+     * Re-centres every eligible live position (all strategies' books). nQTicker's trigger
+     * carries only the spot price — eligibility is decided here per position: effective
+     * profit measured from each position's own baselineSpot against that strategy's
+     * recenterMinProfit (registry, default 450). Ineligible positions are skipped without
+     * orders; one position's failure never blocks the others.
+     */
+    public void realizeProfits(String currentPrice) {
+        List<Position> liveTrades = positionUtil.findAllLiveTradesWithLiveOrderBooks();
+        if (liveTrades.isEmpty()) {
+            log.info("realizeProfits: no live trade — skipping.");
+            return;
+        }
+        for (Position trade : liveTrades) {
+            try {
+                realizeProfitsFor(trade, currentPrice);
+            } catch (Exception e) {
+                log.error("realizeProfits FAILED for position id={} strategy={} — continuing with remaining positions",
+                        trade.getId(), trade.getStrategyName(), e);
+            }
+        }
+    }
+
+    /**
+     * Re-centres one live trade at the new ATM. Aborts (no orders) if the effective profit from the
+     * current baselineSpot is below the strategy's recenter floor — a backstop against a corrupt/stale
+     * baseline, bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked
+     * here. On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
      * resets baselineSpot to currentPrice, then closes the old legs and opens new ones at the new ATM.
      * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
      * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
-    public void realizeProfits(String currentPrice) {
-        Position trade = positionUtil.findLiveTradesWithLiveOrderBooks();
-        if (trade == null) {
-            log.info("realizeProfits: no live trade — skipping.");
-            return;
-        }
+    private void realizeProfitsFor(Position trade, String currentPrice) {
         double newPrice = Double.parseDouble(currentPrice);
         double base = trade.getBaselineSpot() != null ? trade.getBaselineSpot()
                 : (trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0);
         double effectiveProfit = SHORT.equals(trade.getDirection()) ? base - newPrice : newPrice - base;
-        log.info("realizeProfits start | tradeId={} direction={} baseline={} currentPrice={} effectiveProfit={}pts",
-                trade.getId(), trade.getDirection(), base, currentPrice, Math.round(effectiveProfit * 100.0) / 100.0);
+        double floor = recenterFloorFor(trade.getStrategyName());
+        log.info("realizeProfits start | tradeId={} strategy={} direction={} baseline={} currentPrice={} effectiveProfit={}pts floor={}pts",
+                trade.getId(), trade.getStrategyName(), trade.getDirection(), base, currentPrice,
+                Math.round(effectiveProfit * 100.0) / 100.0, floor);
 
-        if (effectiveProfit < RECENTER_MIN_PROFIT) {
-            log.warn("realizeProfits ABORTED — effectiveProfit {}pts < {}pts floor. Ignoring trigger (no orders placed).",
-                    Math.round(effectiveProfit * 100.0) / 100.0, RECENTER_MIN_PROFIT);
+        if (effectiveProfit < floor) {
+            log.info("realizeProfits skip | tradeId={} strategy={} — effectiveProfit {}pts < {}pts floor (no orders placed).",
+                    trade.getId(), trade.getStrategyName(), Math.round(effectiveProfit * 100.0) / 100.0, floor);
             return;
         }
 
@@ -199,6 +222,7 @@ public class ProfitRecenterService {
             b.setOpenOrderId(pojo.getOpenOrderId());
             b.setPosition(pojo.getParentPosition());
             b.setMoneyness(pojo.getMoneyness());
+            b.setStrike(pojo.getStrike());
             b.setLots(pojo.getLots());
             b.setQuantity(pojo.getLots() * LOT_SIZE);
             b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
@@ -271,6 +295,12 @@ public class ProfitRecenterService {
                     w.getInstrument(), w.getSide(), avg, isClose,
                     w.getBuyFillPrice(), w.getSellFillPrice());
         });
+    }
+
+    /** The strategy's recenter floor from the registry, else the global default backstop. */
+    private double recenterFloorFor(String strategyName) {
+        Strategy s = strategyRegistry.get(strategyName);
+        return s != null && s.getRecenterMinProfit() != null ? s.getRecenterMinProfit() : RECENTER_MIN_PROFIT;
     }
 
     /** True if today's weekly rollover already ran (so new legs should use rolloverSymbol). */

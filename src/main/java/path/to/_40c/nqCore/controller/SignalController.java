@@ -5,6 +5,8 @@ import org.springframework.web.bind.annotation.*;
 import jakarta.annotation.PostConstruct;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.service.SignalService;
+import path.to._40c.nqCore.service.StrategyRegistry;
+import path.to._40c.nqCore.service.TradeExecutionQueue;
 import path.to._40c.nqCore.util.ComputeUtil;
 
 import org.springframework.http.ResponseEntity;
@@ -31,10 +33,15 @@ public class SignalController {
     private final Map<String, LastProcessed> previousByStrategy = new ConcurrentHashMap<>();
     private final SignalService signalService;
     private final ComputeUtil util;
-    
-    public SignalController(SignalService signalService, ComputeUtil util) {
+    private final StrategyRegistry strategyRegistry;
+    private final TradeExecutionQueue executionQueue;
+
+    public SignalController(SignalService signalService, ComputeUtil util, StrategyRegistry strategyRegistry,
+            TradeExecutionQueue executionQueue) {
         this.signalService = signalService;
         this.util = util;
+        this.strategyRegistry = strategyRegistry;
+        this.executionQueue = executionQueue;
     }
 
     @GetMapping("/flip")
@@ -64,26 +71,55 @@ public class SignalController {
 
     @GetMapping("/rollover")
     public boolean handleRollOver(@RequestParam("signalPrice") String signalPrice) {
-        signalService.handleRollOver(signalPrice.replace(",", ""));
+        String sanitised = signalPrice.replace(",", "");
+        executionQueue.submit("manual:rollover", () -> signalService.handleRollOver(sanitised));
         return true;
     }
 
+    @GetMapping("/queue/status")
+    public ResponseEntity<Map<String, Object>> queueStatus() {
+        return ResponseEntity.ok(executionQueue.status());
+    }
+
+    /**
+     * HTTP-thread half of signal handling: cheap in-memory gates only (registry, dedup),
+     * then enqueue and return immediately. Order placement and the sequence check run on
+     * the trade-exec queue — AmiBroker's HTTP call never waits behind another strategy's
+     * execution, and a retry of the same signal is absorbed by the dedup cache because
+     * the cache is populated before this method returns.
+     */
     private void handleSignal(Action action, String signalType, String currentPrice, String strategyName, String time) {
+        if (!strategyRegistry.isActive(strategyName)) {
+            log.warn("UNREGISTERED STRATEGY REJECTED | strategyName={} | action={} | signalType={} | time={} — register it via /api/strategy-registry/save",
+                    strategyName, action.getValue(), signalType, time);
+            return;
+        }
         if (isDuplicate(strategyName, action.getValue(), signalType, time)) return;
-        if (!isValidSequence(action, strategyName, LegType.fromString(signalType), currentPrice)) return;
-        
-        LastProcessed prev = previousByStrategy.get(strategyName);
-        logAcceptedWithPrev(strategyName, action.getValue(), signalType, time, currentPrice, prev);
+
         var s = new Signal(strategyName, action.getValue(), signalType, time, currentPrice);
-        boolean success = true;
-        switch (action) {
-	    	case FLIP -> success = signalService.handleFlip(currentPrice, signalType, s);
-	    	case LONG_ENTRY, SHORT_ENTRY -> success = signalService.handleTradeOpen(currentPrice, signalType, s);
-	    	case LONG_EXIT, SHORT_EXIT -> success = signalService.handleTradeClose(currentPrice, signalType, s);
-        }
+        executionQueue.submit(strategyName + ":" + action.getValue(), () -> executeSignal(action, s));
+    }
+
+    /**
+     * Queue-thread half of signal handling. Sequence validation happens here — at execution
+     * time, not enqueue time — so each signal is checked against the true, ordered previous
+     * state even when several strategies' signals were enqueued in the same instant, and two
+     * rapid signals for one strategy can no longer both read a stale previousByStrategy.
+     */
+    private boolean executeSignal(Action action, Signal s) {
+        if (!isValidSequence(action, s.strategyName, LegType.fromString(s.signalType), s.currentPrice)) return false;
+
+        LastProcessed prev = previousByStrategy.get(s.strategyName);
+        logAcceptedWithPrev(s.strategyName, s.action, s.signalType, s.time, s.currentPrice, prev);
+        boolean success = switch (action) {
+            case FLIP -> signalService.handleFlip(s.currentPrice, s.signalType, s);
+            case LONG_ENTRY, SHORT_ENTRY -> signalService.handleTradeOpen(s.currentPrice, s.signalType, s);
+            case LONG_EXIT, SHORT_EXIT -> signalService.handleTradeClose(s.currentPrice, s.signalType, s);
+        };
         if (success) {
-            updatePrevious(strategyName, action.getValue(), signalType, time, currentPrice);
+            updatePrevious(s.strategyName, s.action, s.signalType, s.time, s.currentPrice);
         }
+        return success;
     }
 
     private boolean isValidSequence(Action action, String strategyName, LegType legType, String currentPrice) {
@@ -271,16 +307,21 @@ public class SignalController {
         }
     }
     
+    /**
+     * Seeds the per-strategy sequence validator from position history on startup — one entry
+     * per strategy (its LIVE position if any, else its most recent), so every strategy's
+     * validator survives a restart, not just the last-traded one.
+     */
     @PostConstruct
     public void loadCacheFromDatabase() {
-        log.info("Starting cache initialization from database...");        
-        try {            
-            Position lastTrade = signalService.getLastTrade();           
-            if (lastTrade != null) {
+        log.info("Starting cache initialization from database...");
+        try {
+            for (Position lastTrade : signalService.getLastTradePerStrategy()) {
+                if (lastTrade.getStrategyName() == null || lastTrade.getLastSignalAction() == null) continue;
                 previousByStrategy.put(lastTrade.getStrategyName(), new LastProcessed(lastTrade.getLastSignalAction(),lastTrade.getLastSignalLeg(),lastTrade.getSignalAt(),String.valueOf(lastTrade.getEntrySpot()),Instant.now()));
                 log.info("Loaded last trade for strategy: {}", lastTrade.getStrategyName());
-            }            
-            log.info("Cache initialization complete: {} signals cached, {} strategies tracked",signalCache.size(), previousByStrategy.size());                    
+            }
+            log.info("Cache initialization complete: {} signals cached, {} strategies tracked",signalCache.size(), previousByStrategy.size());
         } catch (Exception e) {
             log.error("Failed to load cache from database. Starting with empty cache.", e);
         }

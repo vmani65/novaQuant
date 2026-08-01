@@ -29,6 +29,7 @@ public class LegOrder {
     private String side;
     private String moneyness;
     private String optionType;
+    private Integer strike;
     private Position parentPosition;
     private int lots;
     private String openOrderId;

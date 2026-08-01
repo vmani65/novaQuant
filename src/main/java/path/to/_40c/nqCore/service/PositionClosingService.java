@@ -25,28 +25,33 @@ public class PositionClosingService {
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
+    private final StrategyRegistry strategyRegistry;
 
-    public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil) {
+    public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil,
+            StrategyRegistry strategyRegistry) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
+        this.strategyRegistry = strategyRegistry;
     }
 
     /**
-     * Closes the live position at signalPrice. exitSpot is the literal final-exit spot: the current
-     * open segment (baselineSpot -> exitSpot) is the last contribution to pointsPnl, while all prior
-     * re-strike segments are already accumulated in bankedPoints.
+     * Closes the live position at signalPrice, scoped to the signal's strategy so one strategy's
+     * exit can never flatten another strategy's book. exitSpot is the literal final-exit spot: the
+     * current open segment (baselineSpot -> exitSpot) is the last contribution to pointsPnl, while
+     * all prior re-strike segments are already accumulated in bankedPoints.
      */
     public Position closeTrade(String signalPrice, Signal signal, boolean updateApiAction) {
-        Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks();
+        String strategyName = resolveStrategy(signal);
+        Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks(strategyName);
         if (tradeToClose == null) {
-            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks();
+            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks(strategyName);
             if (tradeToClose != null) {
                 log.warn("ORPHAN: no LIVE trade, but PARTIAL trade id={} has orphan legs — closing them now", tradeToClose.getId());
             }
         }
         if(tradeToClose == null) {
-            log.info("No Live trades to close.");
+            log.info("No Live trades to close for strategy={}.", strategyName == null ? "ANY" : strategyName);
             return null;
         }
         return doClose(tradeToClose, signalPrice, signal, updateApiAction);
@@ -54,16 +59,29 @@ public class PositionClosingService {
 
     /**
      * Flattens the orphan legs of a PARTIAL position (an open where only some legs filled),
-     * if one exists. Called by entry-signal handling before a new position is opened, so a
-     * fresh open never coexists with untracked broker positions from a failed earlier open.
+     * if one exists — scoped to the signal's strategy, so a fresh open only sweeps its own
+     * strategy's earlier failed open, never another strategy's orphan. Called by entry-signal
+     * handling before a new position is opened, so a fresh open never coexists with untracked
+     * broker positions from a failed earlier open.
      */
     public Position closeOrphanIfAny(String signalPrice, Signal signal) {
-        Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks();
+        Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks(resolveStrategy(signal));
         if (partialTrade == null) {
             return null;
         }
         log.warn("ORPHAN: PARTIAL trade id={} found before new open — closing its orphan legs first", partialTrade.getId());
         return doClose(partialTrade, signalPrice, signal, false);
+    }
+
+    /**
+     * Maps a signal to the strategy scope for position lookups. Registered names scope the
+     * lookup to that strategy's book; synthetic callers that carry no real strategy (e.g. the
+     * nqTicker open-buffer callback's "open-buffer") fall back to null = any-strategy, which
+     * preserves today's behavior until those trigger paths become strategy-aware.
+     */
+    private String resolveStrategy(Signal signal) {
+        if (signal == null || signal.strategyName == null) return null;
+        return strategyRegistry.isRegistered(signal.strategyName) ? signal.strategyName : null;
     }
 
     private Position doClose(Position tradeToClose, String signalPrice, Signal signal, boolean updateApiAction) {

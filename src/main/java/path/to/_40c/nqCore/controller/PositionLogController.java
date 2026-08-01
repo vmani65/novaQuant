@@ -13,14 +13,27 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import path.to._40c.nqCore.entity.BaseLegEntity;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.service.StrikeOccupancyService;
 
 @Controller
 public class PositionLogController {
 
     private final PositionRepository positionRepository;
+    private final StrikeOccupancyService strikeOccupancyService;
 
-    public PositionLogController(PositionRepository positionRepository) {
+    public PositionLogController(PositionRepository positionRepository, StrikeOccupancyService strikeOccupancyService) {
         this.positionRepository = positionRepository;
+        this.strikeOccupancyService = strikeOccupancyService;
+    }
+
+    /**
+     * The "who occupies which strike" table: one row per live leg across all strategies,
+     * sorted by strike. Backs the dashboard strike-map panel.
+     */
+    @GetMapping("/api/strike-map")
+    @ResponseBody
+    public List<Map<String, Object>> getStrikeMap() {
+        return strikeOccupancyService.snapshot();
     }
 
     @GetMapping("/tradeLog")
@@ -70,6 +83,7 @@ public class PositionLogController {
         m.put("exchangeSymbol", c.getExchangeSymbol());
         m.put("side", c.getSide());
         m.put("moneyness", c.getMoneyness());
+        m.put("strike", c.getStrike());
         m.put("lots", c.getLots());
         m.put("quantity", c.getQuantity());
         m.put("sellFillPrice", c.getSellFillPrice());

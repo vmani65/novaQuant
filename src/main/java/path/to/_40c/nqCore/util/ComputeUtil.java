@@ -5,11 +5,14 @@ import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.entity.Position;
+import path.to._40c.nqCore.entity.Strategy;
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.service.LegTemplateCache;
+import path.to._40c.nqCore.service.StrategyRegistry;
+import path.to._40c.nqCore.service.StrikeOccupancyService;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
@@ -40,26 +43,64 @@ public class ComputeUtil {
     private final WeeklySymbolCache symbolCache;
     private final LegTemplateCache templateCache;
     private final TradeCapitalRepository tradeCapital;
+    private final StrikeOccupancyService strikeOccupancy;
+    private final StrategyRegistry strategyRegistry;
 
     public ComputeUtil(WeeklySymbolCache symbolCache, LegTemplateCache templateCache,
-            TradeCapitalRepository tradeCapital) {
+            TradeCapitalRepository tradeCapital, StrikeOccupancyService strikeOccupancy,
+            StrategyRegistry strategyRegistry) {
         this.symbolCache = symbolCache;
         this.templateCache = templateCache;
         this.tradeCapital = tradeCapital;
+        this.strikeOccupancy = strikeOccupancy;
+        this.strategyRegistry = strategyRegistry;
     }
 
+	/**
+	 * Builds the leg orders for a synthetic position. Templates are selected per strategy
+	 * (own rows if configured, else the shared defaults) and the registry-level Strategy.lots
+	 * override, when set, resizes every leg. The base strike is the ATM unless another
+	 * strategy already holds it on the target expiry — then StrikeOccupancyService shifts to
+	 * the nearest free strike, so two strategies' books never merge into one net broker
+	 * position. Safe under the trade-exec queue: no other strategy can claim a strike between
+	 * the occupancy check and the order placement.
+	 */
 	public List<LegOrder> buildInstrument(String signalPrice, Position trade, boolean rollOver) {
         log.info("Starting to build instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
                  signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null, rollOver);
-        boolean isLong = LONG.equals(trade.getDirection());
         int atm = roundNFToNearestATM(signalPrice);
-        List<LegTemplate> templates = isLong ? templateCache.getLongLegs() : templateCache.getShortLegs();
+        List<LegTemplate> templates = effectiveTemplates(trade.getDirection(), trade.getStrategyName());
         String symbolPrefix = rollOver ? symbolCache.get().getRolloverSymbol() : symbolCache.get().getThisWeekSymbol();
+        List<Integer> templateOffsets = templates.stream().map(LegTemplate::getOffsetPts).collect(Collectors.toList());
+        int baseStrike = strikeOccupancy.resolveBaseStrike(atm, symbolPrefix, trade.getStrategyName(), templateOffsets);
         List<LegOrder> orders = templates.stream()
-                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
+                .map(tpl -> buildLegOrder(tpl, baseStrike, symbolPrefix, trade))
                 .collect(Collectors.toList());
-        log.info("Built leg orders: size={}, rollOver={}, details={}", orders.size(), rollOver, orders);
+        log.info("Built leg orders: size={}, rollOver={}, baseStrike={}, details={}", orders.size(), rollOver, baseStrike, orders);
         return orders;
+    }
+
+    /**
+     * Per-strategy template resolution: the strategy's own rows for the direction if any,
+     * else the shared defaults; then the registry-level Strategy.lots override (when set)
+     * is applied onto detached copies so cached rows are never mutated. Throws when no
+     * template exists at all — a position with zero legs must never be built.
+     */
+    private List<LegTemplate> effectiveTemplates(String direction, String strategyName) {
+        List<LegTemplate> templates = templateCache.getLegs(direction, strategyName);
+        if (templates.isEmpty()) {
+            throw new IllegalStateException("No leg templates configured for direction=" + direction
+                    + " (strategy=" + strategyName + ") — configure the Position Size Matrix before trading");
+        }
+        Strategy strategy = strategyRegistry.get(strategyName);
+        Integer lotsOverride = strategy != null ? strategy.getLots() : null;
+        if (lotsOverride == null) {
+            return templates;
+        }
+        log.info("Applying registry lots override for strategy={}: {} lots per leg", strategyName, lotsOverride);
+        return templates.stream()
+                .map(t -> new LegTemplate(t.getDirection(), t.getOptionType(), t.getSide(), t.getOffsetPts(), lotsOverride))
+                .collect(Collectors.toList());
     }
 
     public int roundNFToNearestATM(String price) {
@@ -69,15 +110,16 @@ public class ComputeUtil {
         return strikePrice;
     }
 
-    private LegOrder buildLegOrder(LegTemplate tpl, int atm, String symbolPrefix, Position position) {
+    private LegOrder buildLegOrder(LegTemplate tpl, int baseStrike, String symbolPrefix, Position position) {
         LegOrder w = new LegOrder();
         String optionSuffix = tpl.getOptionType();
-        int strike = atm + tpl.getOffsetPts();
+        int strike = baseStrike + tpl.getOffsetPts();
         w.setExchangeSymbol(NFO_COLON + NIFTY + symbolPrefix + strike + optionSuffix);
         w.setInstrument(NIFTY + symbolPrefix + strike + optionSuffix);
         w.setSide(tpl.getSide());
         w.setMoneyness(formatMoneyness(tpl.getOffsetPts()));
         w.setOptionType(optionSuffix);
+        w.setStrike(strike);
         w.setLots(tpl.getLots());
         w.setParentPosition(position);
         return w;
@@ -267,15 +309,35 @@ public class ComputeUtil {
 		});
 	}
 
+	/**
+	 * Chains the closed trade's P&L into the global capital pool. Degrades gracefully — a
+	 * missing trade_capital row (fresh install) or an uncomputed actualPnl skips the capital
+	 * chain with a loud log instead of throwing, so the rest of the post-close persistence
+	 * (outcome, per-leg P&L) is never lost to a capital-side problem.
+	 */
 	public void recalculateCapital(Position closedTrade) {
 		TradeCapital capital = tradeCapital.getTradeCapital();
+		if (capital == null || capital.getCurrentCapital() == null) {
+			log.error("recalculateCapital SKIPPED for trade id={} — no trade_capital row configured; set capital via the dashboard",
+					closedTrade.getId());
+			return;
+		}
+		if (closedTrade.getActualPnl() == null) {
+			log.warn("recalculateCapital SKIPPED for trade id={} — actualPnl not computed", closedTrade.getId());
+			return;
+		}
 		closedTrade.setStartingCapital(capital.getCurrentCapital());
 		closedTrade.setEndingCapital(capital.getCurrentCapital() + closedTrade.getActualPnl());
 		capital.setCurrentCapital(closedTrade.getEndingCapital());
-		int currentLots = closedTrade.getLots();
-		int possibleLots = (int) (capital.getCurrentCapital() / capital.getDefinedRiskPerLot());
-		capital.setPossibleLots(possibleLots > currentLots ? possibleLots : 0);
-		capital.setCurrentRiskPerLot((int)(closedTrade.getEndingCapital() / capital.getDefinedRiskPerLot()));
+		Integer riskPerLot = capital.getDefinedRiskPerLot();
+		if (riskPerLot != null && riskPerLot > 0) {
+			int currentLots = closedTrade.getLots() != null ? closedTrade.getLots() : 0;
+			int possibleLots = (int) (capital.getCurrentCapital() / riskPerLot);
+			capital.setPossibleLots(possibleLots > currentLots ? possibleLots : 0);
+			capital.setCurrentRiskPerLot((int) (closedTrade.getEndingCapital() / riskPerLot));
+		} else {
+			log.warn("definedRiskPerLot not configured — lot-sizing stats skipped for trade id={}", closedTrade.getId());
+		}
 		tradeCapital.save(capital);
 	}
 

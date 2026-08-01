@@ -42,6 +42,9 @@ public abstract class BaseLegEntity extends BaseEntity {
     @Column(name = "MONEYNESS")
     protected String moneyness;
 
+    @Column(name = "STRIKE")
+    protected Integer strike;
+
     @Column(name = "LOTS")
     protected Integer lots;
 
