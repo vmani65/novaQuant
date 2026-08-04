@@ -25,11 +25,14 @@ public class PositionClosingService {
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
+    private final PendingCloseReconciler pendingCloseReconciler;
 
-    public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil) {
+    public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil,
+            ComputeUtil computeUtil, PendingCloseReconciler pendingCloseReconciler) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
+        this.pendingCloseReconciler = pendingCloseReconciler;
     }
 
     /**
@@ -38,6 +41,7 @@ public class PositionClosingService {
      * re-strike segments are already accumulated in bankedPoints.
      */
     public Position closeTrade(String signalPrice, Signal signal, boolean updateApiAction) {
+        pendingCloseReconciler.resolveBeforeSignal();
         Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks();
         if (tradeToClose == null) {
             tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks();
@@ -58,6 +62,7 @@ public class PositionClosingService {
      * fresh open never coexists with untracked broker positions from a failed earlier open.
      */
     public Position closeOrphanIfAny(String signalPrice, Signal signal) {
+        pendingCloseReconciler.resolveBeforeSignal();
         Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks();
         if (partialTrade == null) {
             return null;
@@ -98,8 +103,16 @@ public class PositionClosingService {
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         w.setCloseOrderId(er.aggregateOrderIds());
                     }
-                    w.setStatus(er.fullyFilled() ? CLOSED : FAILED);
-                    if (!er.fullyFilled()) {
+                    if (er.fullyFilled()) {
+                        w.setStatus(CLOSED);
+                    } else if (PositionUtil.closeOrderMayBeLive(er)) {
+                        w.setStatus(PENDING_CLOSE);
+                        log.error("[EXIT] {} ({} qty) close order {} still working at broker (term={}, filled={}/{}) — "
+                                + "leg PENDING_CLOSE, reconciler will settle it from the tradebook",
+                            w.getInstrument(), w.getQuantity(), er.aggregateOrderIds(), er.terminalStatus(),
+                            er.totalFilled(), er.totalRequested());
+                    } else {
+                        w.setStatus(FAILED);
                         log.error("[EXIT] {} ({} qty) NOT fully closed: filled={}/{} term={}",
                             w.getInstrument(), w.getQuantity(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
                     }
@@ -117,11 +130,16 @@ public class PositionClosingService {
         }
         if (tradeToClose.getLegs().stream().allMatch(ob -> CLOSED.equals(ob.getStatus()))) {
             tradeToClose.setStatus(CLOSED);
+            tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
+        } else if (tradeToClose.getLegs().stream().anyMatch(ob -> PENDING_CLOSE.equals(ob.getStatus()))) {
+            tradeToClose.setStatus(PENDING_CLOSE);
+            log.error("Position close not confirmed - a close order is still working at the broker; "
+                    + "position PENDING_CLOSE (closedAt deferred), reconciler will finalize");
         } else {
             tradeToClose.setStatus(FAILED);
+            tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
             log.error("Position closing failed - not all orders were closed successfully");
         }
-        tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
         log.info("Position closing completed: {}", tradeToClose);
         Position closedTrade = positionRepository.save(tradeToClose);
         return closedTrade;

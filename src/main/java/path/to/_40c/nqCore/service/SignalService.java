@@ -1,6 +1,7 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.PENDING_CLOSE;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.net.URI;
@@ -59,6 +60,13 @@ public class SignalService {
 	 * Flip = close current + open new in opposite direction. Rollover symbol check runs first
 	 * so prepareOpen sees the correct symbol; then open prep runs concurrently with closeTrade
 	 * (prep ~100ms, close ~400-600ms) so the future is ready by the time we join().
+	 *
+	 * A close that ends PENDING_CLOSE (its order still working at the broker) is settled before
+	 * the opposite entry is placed: closeOrphanIfAny first resolves the pending (cancelling the
+	 * working order) and then flattens whatever the broker still holds, so the new entry can
+	 * never stack on top of an unconfirmed close of the same strike. When the reconciler settles
+	 * the close as fully filled it runs post-close calc itself, hence closedTrade is replaced by
+	 * the flatten result (or null) rather than fed to afterClose twice.
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
@@ -67,6 +75,10 @@ public class SignalService {
 	   CompletableFuture<PositionOpeningService.OpenPrep> openPrepFuture =
 	       CompletableFuture.supplyAsync(() -> openingService.prepareOpen(signalPrice, type, trade));
 	   Position closedTrade = closingService.closeTrade(signalPrice, signal, false);
+	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
+	       log.warn("flip: close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());
+	       closedTrade = closingService.closeOrphanIfAny(signalPrice, signal);
+	   }
 	   Instant closeEnd = Instant.now();
 	   long closeMs = Duration.between(start, closeEnd).toMillis();
 	   PositionOpeningService.OpenPrep prep = null;

@@ -13,6 +13,8 @@ public interface PositionRepository extends JpaRepository<Position, Long> {
 
 	Position findFirstByStatusOrderByIdDesc(String status);
 
+	List<Position> findByStatus(String status);
+
 	Position findFirstByOrderByIdDesc();
 
 	List<Position> findByPeakMarginNotNull();

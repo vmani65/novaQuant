@@ -171,7 +171,7 @@
             load() {
                 fetch('/api/trades')
                     .then(r => { if (!r.ok) throw new Error('HTTP ' + r.status); return r.json(); })
-                    .then(trades => this.render(trades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL')))
+                    .then(trades => this.render(trades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL' || t.status === 'PENDING_CLOSE')))
                     .catch(e => {
                         document.getElementById('livePositionsBox').innerHTML =
                             `<div class="px-5 py-4"><div class="message error">Failed to load positions: ${e.message}</div></div>`;
@@ -197,7 +197,7 @@
                     return;
                 }
                 box.innerHTML = live.map(t => {
-                    const liveLegs = (t.legs || []).filter(l => l.status === 'LIVE');
+                    const liveLegs = (t.legs || []).filter(l => l.status === 'LIVE' || l.status === 'PENDING_CLOSE');
                     const margin   = liveLegs.reduce((s, l) => s + (l.marginRequired || 0), 0);
                     const isLong   = t.direction === 'LONG';
                     const banked   = t.bankedPoints || 0;
@@ -216,6 +216,10 @@
                             ${t.status === 'PARTIAL'
                                 ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-300">
                                        <span class="w-1.5 h-1.5 rounded-full bg-amber-500 pulse-dot"></span> Partial — orphan leg
+                                   </span>`
+                                : t.status === 'PENDING_CLOSE'
+                                ? `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-amber-50 text-amber-700 text-[10px] font-bold uppercase tracking-wider border border-amber-300">
+                                       <span class="w-1.5 h-1.5 rounded-full bg-amber-500 pulse-dot"></span> Pending close
                                    </span>`
                                 : `<span class="inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full bg-blue-50 text-blue-700 text-[10px] font-bold uppercase tracking-wider border border-blue-200">
                                        <span class="w-1.5 h-1.5 rounded-full bg-blue-500 pulse-dot"></span> Live

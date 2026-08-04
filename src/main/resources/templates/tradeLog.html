@@ -316,7 +316,7 @@
 
     function statusBadge(status) {
         if (!status) return '—';
-        const cls = status === 'LIVE' ? 'badge-open' : (status === 'FAILED' || status === 'PARTIAL') ? 'badge-loss' : 'badge-closed';
+        const cls = status === 'LIVE' ? 'badge-open' : (status === 'FAILED' || status === 'PARTIAL' || status === 'PENDING_CLOSE') ? 'badge-loss' : 'badge-closed';
         return badge(status, cls);
     }
 
@@ -496,7 +496,7 @@
         const active = document.getElementById('f' + f.charAt(0) + f.slice(1).toLowerCase());
         if (active) active.className = 'filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700';
         const filtered = f === 'ALL' ? allTrades
-            : f === 'LIVE' ? allTrades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL')
+            : f === 'LIVE' ? allTrades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL' || t.status === 'PENDING_CLOSE')
             : allTrades.filter(t => t.status === f);
         renderTrades(filtered);
     }

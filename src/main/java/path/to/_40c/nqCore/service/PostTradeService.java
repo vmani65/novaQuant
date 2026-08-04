@@ -2,6 +2,7 @@ package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.PARTIAL;
+import static path.to._40c.nqCore.util.Constants.PENDING_CLOSE;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
@@ -76,6 +77,11 @@ public class PostTradeService {
     @Transactional
     public void afterClose(Position closedTrade) {
         if (closedTrade == null) return;
+        if (PENDING_CLOSE.equals(closedTrade.getStatus())) {
+            log.warn("afterClose deferred — trade id={} is PENDING_CLOSE; PendingCloseReconciler runs it after the close settles",
+                closedTrade.getId());
+            return;
+        }
         try {
             positionUtil.setTradeExecutedPrices(closedTrade);
             positionUtil.applyActualCharges(closedTrade);

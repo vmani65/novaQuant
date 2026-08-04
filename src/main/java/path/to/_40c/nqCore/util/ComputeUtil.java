@@ -205,13 +205,15 @@ public class ComputeUtil {
 	}
 
 	/**
-	 * A leg that never existed at the broker: FAILED at open with no order placed and no fills.
-	 * Its presence marks an orphan-origin (PARTIAL) trade. Distinct from a leg whose CLOSE
-	 * failed — that one has an open order id and an open-side fill price, and still represents
-	 * a real broker position.
+	 * A leg that never existed at the broker: FAILED at open with no fills on either side.
+	 * Its presence marks an orphan-origin (PARTIAL) trade. Fill prices are the discriminator,
+	 * not the order id — since the PENDING_CLOSE work an id may be recorded for an order that
+	 * was placed but never filled (possibly-live orders stay traceable for reconciliation).
+	 * Distinct from a leg whose CLOSE failed — that one has an open-side fill price and still
+	 * represents a real broker position.
 	 */
 	private static boolean neverTraded(WeeklyLeg w) {
-		return FAILED.equals(w.getStatus()) && w.getOpenOrderId() == null
+		return FAILED.equals(w.getStatus())
 				&& w.getBuyFillPrice() == null && w.getSellFillPrice() == null;
 	}
 

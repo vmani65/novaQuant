@@ -754,7 +754,14 @@ public class PositionUtil {
         return ar;
     }
 
-    /** Pure MARKET path (extracted from old placeAggressiveOrder). Reused as the safety fallback. */
+    /**
+     * Pure MARKET path (extracted from old placeAggressiveOrder). Reused as the safety fallback.
+     * The result carries the orderId when fills exist OR the order's last-read state is
+     * non-terminal — a possibly-still-working order must stay traceable so the PENDING_CLOSE
+     * reconciler can settle it later. A definitively terminal 0-fill (REJECTED/CANCELLED)
+     * returns no id, preserving the legacy null openOrderId/closeOrderId that downstream
+     * classification (ComputeUtil.neverTraded) and fill-fetch retries key on.
+     */
     private ExecResult placeMarketCore(String ins, String txn, int qty, String contextLabel) {
         ExecTrace trace = EXEC_TRACE.get();
         OrderParams params = buildAggressiveOrderParams();
@@ -776,7 +783,7 @@ public class PositionUtil {
         AttemptResult ar = confirmMarketFill(resp.orderId, qty, ins);
         boolean full = ar.filledQty() >= qty;
         String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
-        String ids   = ar.filledQty() > 0 ? resp.orderId : "";
+        String ids   = (ar.filledQty() > 0 || !isTerminal(ar.status())) ? resp.orderId : "";
         trace.record("MARKET %s %d/%d avg=%s", term, ar.filledQty(), qty, ar.avgFillPrice());
         return new ExecResult(ids, ar.filledQty(), qty, ar.avgFillPrice(), full, term);
     }
@@ -840,6 +847,80 @@ public class PositionUtil {
                 + "leg may still be live at broker — reconcile before re-entry", orderId, MARKET_CONFIRM_POLLS, lastHist.status(), lastHist.filledQty());
         trace.record("MARKET UNCONFIRMED after %d polls (hist=%s, tradebook empty)", MARKET_CONFIRM_POLLS, lastHist.status());
         return lastHist;
+    }
+
+    // ─── PENDING_CLOSE reconciliation (closes the still-working-order-marked-FAILED gap) ───
+    /**
+     * True when a close attempt's order may still be working at the broker: an order was placed
+     * but its last-read status is neither COMPLETE nor a definitive failure. This is the
+     * 2026-08-04 trade-73 shape — a MARKET order that market-protection converted to a LIMIT sat
+     * OPEN past the confirm budget, filled 56s later, and the terminal-FAILED marking meant the
+     * fill was never recorded. Such a leg must become PENDING_CLOSE (reconciled later), never
+     * FAILED (final).
+     */
+    public static boolean closeOrderMayBeLive(ExecResult er) {
+        if (er == null || er.aggregateOrderIds() == null || er.aggregateOrderIds().isBlank()) return false;
+        String t = er.terminalStatus();
+        return !ORDER_COMPLETE.equals(t) && !ORDER_REJECTED.equals(t) && !ORDER_CANCELLED.equals(t)
+                && !"FAILED".equals(t) && !"PLACE_FAILED".equals(t) && !"OVERFILL".equals(t) && !"PARTIAL".equals(t);
+    }
+
+    /** Public view of Kite terminal order states (COMPLETE / REJECTED / CANCELLED); null and UNKNOWN are non-terminal. */
+    public static boolean isTerminalStatus(String status) {
+        return isTerminal(status);
+    }
+
+    /** Snapshot of a close order's true broker state: tradebook qty + vwap, and the least-settled history status. */
+    public record CloseOrderState(int tradedQty, double vwap, String lastStatus) {}
+
+    /**
+     * Reads the authoritative state of a (possibly multi-slice) close order: executed qty and vwap
+     * come from the tradebook, status from order history. Across multiple ids the least-settled
+     * status wins — one still-working slice makes the whole close non-terminal. Empty history
+     * reads as UNKNOWN (non-terminal) so a lagging snapshot is never mistaken for a reject.
+     */
+    public CloseOrderState readCloseOrderState(String orderIds) {
+        List<com.zerodhatech.models.Trade> trades = getOrderTrades(orderIds);
+        String status = "UNKNOWN";
+        boolean sawNonTerminal = false;
+        for (String id : orderIds.split("\\s*,\\s*")) {
+            if (id.isBlank()) continue;
+            List<Order> hist = kiteGateway.getOrderHistory(id.trim());
+            String st = (hist == null || hist.isEmpty()) ? "UNKNOWN" : hist.get(hist.size() - 1).status;
+            if (!isTerminal(st)) {
+                status = st;
+                sawNonTerminal = true;
+            } else if (!sawNonTerminal) {
+                status = st;
+            }
+        }
+        return new CloseOrderState(tradedQty(trades), weightedAvgFillPrice(trades), status);
+    }
+
+    /** Requests cancellation of every slice of a close order; failures (already terminal) are logged and ignored. */
+    public void cancelCloseOrders(String orderIds) {
+        for (String id : orderIds.split("\\s*,\\s*")) {
+            if (id.isBlank()) continue;
+            try {
+                kiteGateway.cancelOrder(id.trim(), Constants.VARIETY_REGULAR);
+            } catch (Exception e) {
+                log.warn("cancelCloseOrders: cancel failed for orderId={} (likely already terminal): {}", id, e.getMessage());
+            }
+        }
+    }
+
+    /**
+     * Polls a close order after a cancel request until it settles terminal, returning its TRUE
+     * final fill — the same cancel-vs-fill discipline as confirmTerminalFill, applied to the
+     * pending-close path so a flatten decision is never sized from an in-flight snapshot.
+     */
+    public CloseOrderState confirmCloseOrderSettled(String orderIds) {
+        CloseOrderState s = readCloseOrderState(orderIds);
+        for (int i = 0; i < CANCEL_CONFIRM_POLLS && !isTerminal(s.lastStatus()); i++) {
+            sleepMillis(CANCEL_CONFIRM_GAP_MS);
+            s = readCloseOrderState(orderIds);
+        }
+        return s;
     }
 
     /** Σ tradedQuantity across an order's tradebook — authoritative executed qty. */
