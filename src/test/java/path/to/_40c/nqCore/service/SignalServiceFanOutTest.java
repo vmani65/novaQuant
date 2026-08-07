@@ -38,8 +38,8 @@ import path.to._40c.nqCore.repo.PositionRepository;
  */
 class SignalServiceFanOutTest {
 
-    private PositionOpeningService openingService;
-    private PositionClosingService closingService;
+    private PositionOpenService openingService;
+    private PositionCloseService closingService;
     private PositionRolloverService rollOverService;
     private PostTradeService postTradeService;
     private BookConfigService bookConfig;
@@ -51,8 +51,8 @@ class SignalServiceFanOutTest {
 
     @BeforeEach
     void setUp() {
-        openingService = mock(PositionOpeningService.class);
-        closingService = mock(PositionClosingService.class);
+        openingService = mock(PositionOpenService.class);
+        closingService = mock(PositionCloseService.class);
         rollOverService = mock(PositionRolloverService.class);
         postTradeService = mock(PostTradeService.class);
         bookConfig = mock(BookConfigService.class);
@@ -63,7 +63,7 @@ class SignalServiceFanOutTest {
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
         when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(true);
         when(openingService.prepareWeeklyOpen(anyString(), anyString(), any(Position.class)))
-                .thenReturn(new PositionOpeningService.OpenPrep(List.of(), Map.of()));
+                .thenReturn(new PositionOpenService.OpenPrep(List.of(), Map.of()));
         when(openingService.openTrade(anyString(), anyString(), any(Position.class), any()))
                 .thenReturn(weeklyLive);
         when(openingService.openWeeklyTrade(anyString(), anyString(), any(Position.class)))

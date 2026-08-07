@@ -10,11 +10,8 @@ import java.util.Optional;
 import java.util.concurrent.atomic.AtomicReference;
 import java.util.stream.Collectors;
 
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
-import org.springframework.transaction.annotation.Transactional;
 
 import com.zerodhatech.models.Instrument;
 
@@ -30,16 +27,15 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 import static path.to._40c.nqCore.entity.SymbolConfig.MONTHLY_ID;
 
 /**
- * Owns the MONTHLY calendar's symbol lifecycle — row id=2 and the monthly cache slot,
- * nothing weekly. Mirror of WeeklySymbolService: each calendar's service answers
- * "what contract do I trade" and "when does it advance" with its own mechanism.
- * Monthly's mechanism is automated: the NFO instrument dump (cached once per IST day)
- * resolves each month's contract (latest NIFTY option expiry in the calendar month),
- * the tradingsymbol prefix is derived by cutting the exchange-reported strike + option
- * type off a real symbol (verified by reconstruction — never digit regex, which weekly
- * prefixes like 26811 make ambiguous), and the DTE >= {@link #MIN_DTE} rule keeps the
- * row pointed at the correct series (daily at 08:40 IST, before every monthly open,
- * and via /api/monthly-roll-check).
+ * The MONTHLY calendar's symbol service — row id=2 and the monthly cache slot. Row
+ * lifecycle (save/get/current/warm) is inherited from SymbolService; what lives here
+ * is monthly's own contract-advance mechanism, fully automated: the NFO instrument
+ * dump (cached once per IST day) resolves each month's contract (latest NIFTY option
+ * expiry in the calendar month), the tradingsymbol prefix is derived by cutting the
+ * exchange-reported strike + option type off a real symbol (verified by reconstruction
+ * — never digit regex, which weekly prefixes like 26811 make ambiguous), and the
+ * DTE >= {@link #MIN_DTE} rule keeps the row pointed at the correct series (daily at
+ * 08:40 IST, before every monthly open, and via /api/monthly-roll-check).
  *
  * This service resolves WHICH contract is traded — it never touches positions. The
  * position roll (sell in-hand, re-buy at ATM on the contract resolved here) lives in
@@ -50,68 +46,22 @@ import static path.to._40c.nqCore.entity.SymbolConfig.MONTHLY_ID;
  */
 @Service
 @Slf4j
-public class MonthlySymbolService {
+public class MonthlySymbolService extends SymbolService {
 
     /** Below this many days to expiry, new monthly positions move to the next contract. */
     static final int MIN_DTE = 10;
 
-    private final SymbolConfigRepository repo;
-    private final MonthlySymbolCache cache;
     private final KiteGateway kiteGateway;
     private final AtomicReference<List<Instrument>> chain = new AtomicReference<>(List.of());
     private final AtomicReference<LocalDate> chainLoadedOn = new AtomicReference<>();
 
     public MonthlySymbolService(SymbolConfigRepository repo, MonthlySymbolCache cache, KiteGateway kiteGateway) {
-        this.repo = repo;
-        this.cache = cache;
+        super(repo, cache, MONTHLY_ID, MONTHLY, "Monthly");
         this.kiteGateway = kiteGateway;
     }
 
     /** A resolved monthly contract: its expiry and the tradingsymbol prefix (e.g. 26AUG). */
     public record MonthlyContract(LocalDate expiry, String prefix) {}
-
-    // ---------------------------------------------------------------
-    // Row + cache lifecycle (mirror of WeeklySymbolService)
-    // ---------------------------------------------------------------
-
-    /** Upserts the monthly row (id=2) and refreshes the monthly cache slot. */
-    @Transactional
-    public void saveSymbols(String currentSymbol, String rolloverSymbol, String rolloverDay) {
-        SymbolConfig cfg = repo.findById(MONTHLY_ID)
-                .orElseGet(() -> new SymbolConfig(MONTHLY_ID, MONTHLY, currentSymbol, rolloverSymbol));
-        cfg.setScope(MONTHLY);
-        cfg.setThisWeekSymbol(currentSymbol);
-        cfg.setRolloverSymbol(rolloverSymbol);
-        cfg.setRolloverComplete(false);
-        cfg.setRolloverDay(rolloverDay != null && !rolloverDay.isBlank()
-                ? LocalDate.parse(rolloverDay) : null);
-        SymbolConfig saved = repo.save(cfg);
-        cache.set(saved);
-        log.info("Monthly symbols saved | current={} rollover={}", currentSymbol, rolloverSymbol);
-    }
-
-    public Optional<SymbolConfig> get() {
-        return repo.findById(MONTHLY_ID);
-    }
-
-    @Transactional(readOnly = true)
-    public SymbolConfig current() {
-        SymbolConfig c = cache.get();
-        if (c != null) return c;
-        return repo.findById(MONTHLY_ID).orElse(null);
-    }
-
-    /** Warms the monthly slot from row id=2 (created by a UI save or the contract sync). */
-    @EventListener(ApplicationReadyEvent.class)
-    @Transactional
-    public void warmCache() {
-        repo.findById(MONTHLY_ID).ifPresent(cache::set);
-    }
-
-    // ---------------------------------------------------------------
-    // Contract advance (monthly's automated counterpart of the weekly
-    // rolloverDay promotion)
-    // ---------------------------------------------------------------
 
     /**
      * Daily tick at 08:40 IST (after the usual auth window): refresh the dump and run the

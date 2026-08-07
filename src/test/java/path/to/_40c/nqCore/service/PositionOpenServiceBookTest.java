@@ -49,7 +49,7 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  *   untracked broker position (with a 1-leg book: the entire position). A definitively
  *   REJECTED entry still fails exactly as before.
  */
-class PositionOpeningServiceBookTest {
+class PositionOpenServiceBookTest {
 
     private static final String CE_INS = "NIFTY2681224500CE";
     private static final String PE_INS = "NIFTY2681224500PE";
@@ -59,14 +59,14 @@ class PositionOpeningServiceBookTest {
     private PositionRepository repo;
     private PositionUtil util;
     private ComputeUtil compute;
-    private PositionOpeningService service;
+    private PositionOpenService service;
 
     @BeforeEach
     void setUp() {
         repo = mock(PositionRepository.class);
         util = mock(PositionUtil.class);
         compute = mock(ComputeUtil.class);
-        service = new PositionOpeningService(repo, util, compute);
+        service = new PositionOpenService(repo, util, compute);
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 

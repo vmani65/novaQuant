@@ -35,8 +35,8 @@ import path.to._40c.nqCore.repo.PositionRepository;
 @Service
 @Slf4j
 public class SignalService {
-	private final PositionOpeningService openingService;
-	private final PositionClosingService closingService;
+	private final PositionOpenService openingService;
+	private final PositionCloseService closingService;
 	private final PositionRolloverService rollOverService;
 	private final PostTradeService postTradeService;
 	private final PositionRepository positionRepository;
@@ -49,7 +49,7 @@ public class SignalService {
 	@Value("${nq.ticker.url:http://localhost:9192}")
 	private String nqTickerUrl;
 
-	public SignalService(PositionOpeningService openingService, PositionClosingService closingService,
+	public SignalService(PositionOpenService openingService, PositionCloseService closingService,
 			PositionRolloverService rollOverService, PostTradeService postTradeService,
 			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService,
 			BookConfigService bookConfigService, MonthlySymbolService monthlySymbolService) {
@@ -198,7 +198,7 @@ public class SignalService {
 	private void flipWeekly(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 	   Position trade = new Position(signal);
-	   CompletableFuture<PositionOpeningService.OpenPrep> openPrepFuture =
+	   CompletableFuture<PositionOpenService.OpenPrep> openPrepFuture =
 	       CompletableFuture.supplyAsync(() -> openingService.prepareWeeklyOpen(signalPrice, type, trade));
 	   Position closedTrade = closingService.closeWeeklyTrade(signalPrice, signal, false);
 	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
@@ -207,7 +207,7 @@ public class SignalService {
 	   }
 	   Instant closeEnd = Instant.now();
 	   long closeMs = Duration.between(start, closeEnd).toMillis();
-	   PositionOpeningService.OpenPrep prep = null;
+	   PositionOpenService.OpenPrep prep = null;
 	   try {
 	       prep = openPrepFuture.join();
 	   } catch (Exception e) {

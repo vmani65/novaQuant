@@ -59,7 +59,7 @@ import path.to._40c.nqCore.repo.PositionRepository;
 public class PositionUtil {
     /**
      * Shared virtual-thread executor for parallel leg operations across services.
-     * Used by PositionOpeningService, PositionClosingService, PositionRolloverService,
+     * Used by PositionOpenService, PositionCloseService, PositionRolloverService,
      * ProfitRecenterService — replaces FJP common pool for blocking I/O fan-out.
      * Static lifetime; virtual-thread executors hold negligible resources.
      */

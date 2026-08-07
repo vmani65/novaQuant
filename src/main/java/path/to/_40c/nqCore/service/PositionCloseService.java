@@ -21,14 +21,14 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 @Service
 @Slf4j
-public class PositionClosingService {
+public class PositionCloseService {
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
     private final PendingCloseReconciler pendingCloseReconciler;
     private final PendingOpenReconciler pendingOpenReconciler;
 
-    public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil,
+    public PositionCloseService(PositionRepository positionRepository, PositionUtil positionUtil,
             ComputeUtil computeUtil, PendingCloseReconciler pendingCloseReconciler,
             PendingOpenReconciler pendingOpenReconciler) {
         this.positionRepository = positionRepository;

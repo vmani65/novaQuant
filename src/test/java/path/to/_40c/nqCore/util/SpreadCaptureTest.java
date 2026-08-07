@@ -32,8 +32,8 @@ import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.service.PendingCloseReconciler;
 import path.to._40c.nqCore.service.PendingOpenReconciler;
-import path.to._40c.nqCore.service.PositionClosingService;
-import path.to._40c.nqCore.service.PositionOpeningService;
+import path.to._40c.nqCore.service.PositionCloseService;
+import path.to._40c.nqCore.service.PositionOpenService;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 /**
@@ -100,7 +100,7 @@ class SpreadCaptureTest {
     @Test
     @DisplayName("entry records openSpreadPaid on the persisted leg from the order-time quote")
     void entryRecordsOpenSpread() {
-        PositionOpeningService opening = new PositionOpeningService(repo, util, compute);
+        PositionOpenService opening = new PositionOpenService(repo, util, compute);
         LegOrder leg = new LegOrder();
         leg.setInstrument(INS);
         leg.setExchangeSymbol("NFO:" + INS);
@@ -121,7 +121,7 @@ class SpreadCaptureTest {
     @Test
     @DisplayName("exit records closeSpreadPaid measured on the closing transaction side")
     void exitRecordsCloseSpread() {
-        PositionClosingService closing = new PositionClosingService(repo, util, compute,
+        PositionCloseService closing = new PositionCloseService(repo, util, compute,
                 mock(PendingCloseReconciler.class), mock(PendingOpenReconciler.class));
         when(compute.getDtTimeNow()).thenReturn("07-08-2026 14:30:00.000");
         WeeklyLeg leg = new WeeklyLeg();

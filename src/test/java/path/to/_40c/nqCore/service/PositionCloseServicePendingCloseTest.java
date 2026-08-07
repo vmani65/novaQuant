@@ -45,7 +45,7 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  * (closedAt deferred, close orderId retained) so {@link PendingCloseReconciler} can settle it
  * from the tradebook — while a definitively rejected close still fails exactly as before.
  */
-class PositionClosingServicePendingCloseTest {
+class PositionCloseServicePendingCloseTest {
 
     private static final String CE = "NIFTY2681124650CE";
     private static final String PE = "NIFTY2681124650PE";
@@ -53,7 +53,7 @@ class PositionClosingServicePendingCloseTest {
 
     private PositionUtil util;
     private PendingCloseReconciler reconciler;
-    private PositionClosingService service;
+    private PositionCloseService service;
     private Position position;
     private WeeklyLeg ceLeg;
     private WeeklyLeg peLeg;
@@ -64,7 +64,7 @@ class PositionClosingServicePendingCloseTest {
         util = mock(PositionUtil.class);
         ComputeUtil compute = mock(ComputeUtil.class);
         reconciler = mock(PendingCloseReconciler.class);
-        service = new PositionClosingService(repo, util, compute, reconciler, mock(PendingOpenReconciler.class));
+        service = new PositionCloseService(repo, util, compute, reconciler, mock(PendingOpenReconciler.class));
 
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
         when(compute.getDtTimeNow()).thenReturn("04-08-2026 09:15:04.328");

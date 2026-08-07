@@ -42,13 +42,13 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  * that a close finding nothing (the disabled-dormant or never-opened case) is a clean
  * no-op rather than an error.
  */
-class PositionClosingServiceBookIsolationTest {
+class PositionCloseServiceBookIsolationTest {
 
     private static final String WEEKLY_CE = "NIFTY2681224500CE";
     private static final String MONTHLY_CE = "NIFTY26AUG24500CE";
 
     private PositionUtil util;
-    private PositionClosingService service;
+    private PositionCloseService service;
     private Position weeklyLive;
     private Position monthlyLive;
 
@@ -57,7 +57,7 @@ class PositionClosingServiceBookIsolationTest {
         PositionRepository repo = mock(PositionRepository.class);
         util = mock(PositionUtil.class);
         ComputeUtil compute = mock(ComputeUtil.class);
-        service = new PositionClosingService(repo, util, compute,
+        service = new PositionCloseService(repo, util, compute,
                 mock(PendingCloseReconciler.class), mock(PendingOpenReconciler.class));
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
         when(compute.getDtTimeNow()).thenReturn("07-08-2026 10:30:00.000");

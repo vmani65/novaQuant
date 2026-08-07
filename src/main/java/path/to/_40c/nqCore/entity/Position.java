@@ -31,7 +31,7 @@ import org.hibernate.annotations.ParamDef;
  * Spot/points accounting (the baseline/banked scheme):
  * entrySpot and exitSpot are immutable — the spot at original entry (set once on open/flip,
  * never mutated by recenter/rollover; reporting + signal-dedup only) and the spot at final
- * close (set once by PositionClosingService; reporting only). baselineSpot is the live
+ * close (set once by PositionCloseService; reporting only). baselineSpot is the live
  * baseline: the spot at which the CURRENT live legs were struck — set = entrySpot on open,
  * then reset to the re-strike price on every recenter and rollover. It is the single source
  * of truth for "how far has spot moved from where the current legs sit", read by nQTicker's

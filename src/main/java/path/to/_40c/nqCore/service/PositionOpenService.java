@@ -23,12 +23,12 @@ import static path.to._40c.nqCore.util.Constants.*;
 
 @Service
 @Slf4j
-public class PositionOpeningService {
+public class PositionOpenService {
     private final PositionRepository positionRepository;
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
 
-    public PositionOpeningService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil) {
+    public PositionOpenService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
