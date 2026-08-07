@@ -43,6 +43,7 @@ class SignalServiceFanOutTest {
     private PositionRolloverService rollOverService;
     private PostTradeService postTradeService;
     private BookConfigService bookConfig;
+    private MonthlyRollService monthlyRollService;
     private SignalService service;
 
     private final Position weeklyLive = livePosition(SYNTH_WEEKLY);
@@ -55,8 +56,9 @@ class SignalServiceFanOutTest {
         rollOverService = mock(PositionRolloverService.class);
         postTradeService = mock(PostTradeService.class);
         bookConfig = mock(BookConfigService.class);
+        monthlyRollService = mock(MonthlyRollService.class);
         service = new SignalService(openingService, closingService, rollOverService, postTradeService,
-                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig);
+                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlyRollService);
 
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
         when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(true);
@@ -145,6 +147,19 @@ class SignalServiceFanOutTest {
         InOrder monthly = inOrder(closingService, openingService);
         monthly.verify(closingService).closeMonthlyOrphanIfAny(eq("24500"), any(Signal.class));
         monthly.verify(openingService).openMonthlyTrade(eq("24500"), eq(CE), any(Position.class));
+    }
+
+    @Test
+    @DisplayName("monthly opens run the DTE roll check first; a disabled monthly book never does")
+    void monthlyOpenRunsRollCheckFirst() {
+        service.handleTradeOpen("24500", CE, signal("longEntry"));
+        InOrder order = inOrder(monthlyRollService, openingService);
+        order.verify(monthlyRollService).checkAndPromoteMonthly();
+        order.verify(openingService).openMonthlyTrade(eq("24500"), eq(CE), any(Position.class));
+
+        when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(false);
+        service.handleFlip("24501", CE, signal("flip"));
+        verify(monthlyRollService).checkAndPromoteMonthly();
     }
 
     @Test

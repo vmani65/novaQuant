@@ -42,6 +42,7 @@ public class SignalService {
 	private final PositionRepository positionRepository;
 	private final WeeklySymbolService weeklySymbolService;
 	private final BookConfigService bookConfigService;
+	private final MonthlyRollService monthlyRollService;
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -51,7 +52,7 @@ public class SignalService {
 	public SignalService(PositionOpeningService openingService, PositionClosingService closingService,
 			PositionRolloverService rollOverService, PostTradeService postTradeService,
 			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService,
-			BookConfigService bookConfigService) {
+			BookConfigService bookConfigService, MonthlyRollService monthlyRollService) {
 		this.openingService = openingService;
 		this.closingService = closingService;
 		this.rollOverService = rollOverService;
@@ -59,6 +60,7 @@ public class SignalService {
 		this.positionRepository = positionRepository;
 		this.weeklySymbolService = weeklySymbolService;
 		this.bookConfigService = bookConfigService;
+		this.monthlyRollService = monthlyRollService;
 	}
 
 	/**
@@ -122,6 +124,7 @@ public class SignalService {
 	           return null;
 	       }
 	       Instant start = Instant.now();
+	       monthlyRollService.checkAndPromoteMonthly();
 	       Position orphanClosed = closingService.closeMonthlyOrphanIfAny(signalPrice, signal);
 	       Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, new Position(signal));
 	       log.info("[PERFORMANCE] open LONG_MONTHLY | exec={}ms", Duration.between(start, Instant.now()).toMillis());
@@ -206,6 +209,7 @@ public class SignalService {
 	 */
 	private void flipMonthly(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
+	   monthlyRollService.checkAndPromoteMonthly();
 	   Position closedTrade = closingService.closeMonthlyTrade(signalPrice, signal, false);
 	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
 	       log.warn("flip: monthly close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());

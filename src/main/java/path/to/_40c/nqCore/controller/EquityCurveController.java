@@ -38,8 +38,9 @@ public class EquityCurveController {
 
     @GetMapping("/equity-curve")
     public ResponseEntity<EquityCurve> getEquityCurve(
-            @RequestParam(defaultValue = "All") String strategy) {
-        return ResponseEntity.ok(equityCurveService.getEquityCurveData(strategy));
+            @RequestParam(defaultValue = "All") String strategy,
+            @RequestParam(defaultValue = "All") String book) {
+        return ResponseEntity.ok(equityCurveService.getEquityCurveData(strategy, book));
     }
 
     @GetMapping("/capital")

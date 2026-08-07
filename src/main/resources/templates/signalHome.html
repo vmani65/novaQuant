@@ -119,6 +119,7 @@
             equityCurveChart: null,
             fullEquityData: null,
             currentStrategy: 'All',
+            currentBook: 'All',
             availableStrategies: [],
             isLoading: false
         };
@@ -815,13 +816,15 @@
 
             filterByStrategy(strategy) { AppState.currentStrategy = strategy; this.loadEquityCurveWithFilters(); },
 
+            filterByBook(book) { AppState.currentBook = book; this.loadEquityCurveWithFilters(); },
+
             loadEquityCurveWithFilters() {
                 const container = document.getElementById('equityCurveContainer');
                 const filters   = document.getElementById('equityFilters');
                 const status    = document.getElementById('equityCurveStatus');
                 status.style.display = 'block'; status.className = 'message'; status.textContent = 'Loading equity curve...';
                 container.style.position = 'relative';
-                fetch(`/api/equity-curve?strategy=${encodeURIComponent(AppState.currentStrategy)}`)
+                fetch(`/api/equity-curve?strategy=${encodeURIComponent(AppState.currentStrategy)}&book=${encodeURIComponent(AppState.currentBook)}`)
                     .then(response => { if (!response.ok) throw new Error('Failed to fetch equity data'); return response.json(); })
                     .then(data => {
                         if (!data || !data.equity || data.equity.length === 0) {
@@ -1037,6 +1040,7 @@
         function filterEquityByMonth(value) { EquityCurve.filterEquityByMonth(value); }
         function applyCustomDateRange(){ EquityCurve.applyCustomDateRange(); }
         function filterByStrategy(strategy) { EquityCurve.filterByStrategy(strategy); }
+        function filterByBook(book) { EquityCurve.filterByBook(book); }
 
         // ==================== NSE HOLIDAY CALENDAR ====================
         const NSECalendar = {
@@ -1645,6 +1649,16 @@
                             <select id="strategyFilter" onchange="filterByStrategy(this.value)"
                                     class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
                                 <option value="All">All Strategies</option>
+                            </select>
+                        </div>
+                        <div class="w-px h-5 bg-gray-200"></div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-xs text-gray-500 font-medium">Book</label>
+                            <select id="bookFilter" onchange="filterByBook(this.value)"
+                                    class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer font-sans text-gray-700 outline-none">
+                                <option value="All">Both Books</option>
+                                <option value="SYNTH_WEEKLY">Weekly</option>
+                                <option value="LONG_MONTHLY">Monthly</option>
                             </select>
                         </div>
                     </div>

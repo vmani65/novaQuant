@@ -9,6 +9,7 @@ import org.springframework.web.bind.annotation.RestController;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.service.MonthlyRollService;
 import path.to._40c.nqCore.service.ProfitRecenterService;
 import path.to._40c.nqCore.service.SignalService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
@@ -23,12 +24,14 @@ public class RollOverTriggerController {
     private final SignalService          signalService;
     private final WeeklySymbolService          weeklySymbolService;
     private final ProfitRecenterService  profitRecenterService;
+    private final MonthlyRollService     monthlyRollService;
 
     public RollOverTriggerController(SignalService signalService, WeeklySymbolService weeklySymbolService,
-                                     ProfitRecenterService profitRecenterService) {
+                                     ProfitRecenterService profitRecenterService, MonthlyRollService monthlyRollService) {
         this.signalService         = signalService;
         this.weeklySymbolService         = weeklySymbolService;
         this.profitRecenterService = profitRecenterService;
+        this.monthlyRollService    = monthlyRollService;
     }
 
     /**
@@ -107,5 +110,16 @@ public class RollOverTriggerController {
     public void refreshSymbolCache() {
         weeklySymbolService.warmCache();
         log.info("Symbol cache refreshed from DB");
+    }
+
+    /**
+     * Manual trigger for the LONG_MONTHLY calendar-roll check (DTE >= 10 rule). The same
+     * check runs daily at 08:40 IST and before every monthly open; this endpoint exists
+     * for ops verification after auth/config changes.
+     */
+    @GetMapping("/monthly-roll-check")
+    public void handleMonthlyRollCheck() {
+        log.info("Manual monthly roll check requested");
+        monthlyRollService.checkAndPromoteMonthly();
     }
 }

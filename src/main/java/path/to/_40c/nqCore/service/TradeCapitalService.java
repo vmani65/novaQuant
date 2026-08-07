@@ -1,6 +1,7 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.time.LocalDateTime;
@@ -46,11 +47,14 @@ public class TradeCapitalService {
      * Computes highest / average / lowest of (peakMargin / lots) across trades closed in the last 30 days
      * and writes them onto the entity's transient fields. Skips trades with null peakMargin,
      * null/zero lots, or unparseable close datetime. Leaves transients null if no qualifying trades.
+     * SYNTH_WEEKLY only: these are NRML margin-per-lot statistics; a LONG_MONTHLY row's
+     * peakMargin means premium outlay (an order of magnitude smaller) and would poison the mean.
      */
     private void populateNrmlCostStats(TradeCapital capital) {
         LocalDateTime cutoff = LocalDateTime.now(ZoneId.of(ZONE_ID)).minusDays(30);
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern(DATE_FORMAT);
         List<Integer> perLotValues = positionRepository.findByPeakMarginNotNull().stream()
+                .filter(t -> !LONG_MONTHLY.equals(t.getBook()))
                 .filter(t -> t.getLots() != null && t.getLots() > 0 && t.getClosedAt() != null)
                 .filter(t -> {
                     try { return LocalDateTime.parse(t.getClosedAt(), fmt).isAfter(cutoff); }

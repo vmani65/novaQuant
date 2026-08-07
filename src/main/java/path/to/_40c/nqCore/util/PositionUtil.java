@@ -1116,18 +1116,23 @@ public class PositionUtil {
         }
     }
 
+    /**
+     * NIFTY tradingsymbols for the UI autocomplete. Far-dated LEAPS are dropped by their
+     * actual expiry (> ~1 year out), NOT by tradingsymbol prefix — the old
+     * startsWith("NIFTY27".."NIFTY30") hack also killed every weekly/monthly contract
+     * expiring on the 27th-30th of a month, and would have dropped ALL contracts from
+     * January 2027 onward.
+     */
     public List<String> getNiftyInstruments() {
+        java.time.LocalDate horizon = java.time.LocalDate.now(ZoneId.of(ZONE_ID)).plusDays(370);
         return kiteGateway.getInstruments(NFO).stream()
+            .filter(i -> i.expiry == null || !i.expiry.toInstant().atZone(ZoneId.of(ZONE_ID)).toLocalDate().isAfter(horizon))
             .map(i -> i.tradingsymbol)
             .filter(symbol -> symbol.contains(NIFTY))
             .filter(symbol -> !symbol.contains("MIDCPNIFTY"))
             .filter(symbol -> !symbol.contains("BANKNIFTY"))
             .filter(symbol -> !symbol.contains("NIFTYNXT"))
             .filter(symbol -> !symbol.contains("FINNIFTY"))
-            .filter(symbol -> !symbol.startsWith("NIFTY27"))
-            .filter(symbol -> !symbol.startsWith("NIFTY28"))
-            .filter(symbol -> !symbol.startsWith("NIFTY29"))
-            .filter(symbol -> !symbol.startsWith("NIFTY30"))
             .toList();
     }
 

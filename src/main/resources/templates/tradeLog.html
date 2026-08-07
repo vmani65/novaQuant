@@ -169,6 +169,12 @@
                     <button onclick="setFilter('LIVE')" id="fLive" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Live</button>
                     <button onclick="setFilter('CLOSED')" id="fClosed" class="filter-btn px-3 py-1 rounded-md text-xs font-medium text-gray-500 hover:text-gray-700">Closed</button>
                 </div>
+                <select id="bookFilter" onchange="setBookFilter(this.value)" style="display:none;"
+                        class="px-2 py-1 border border-gray-200 rounded-md text-xs bg-white cursor-pointer text-gray-700 outline-none">
+                    <option value="ALL">Both Books</option>
+                    <option value="SYNTH_WEEKLY">Weekly</option>
+                    <option value="LONG_MONTHLY">Monthly</option>
+                </select>
                 <!-- Trade count -->
                 <span id="tradeCount" class="text-xs text-gray-400" style="display:none;"></span>
                 <!-- Buttons -->
@@ -496,6 +502,13 @@
         if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
     }
 
+    let activeBook = 'ALL';
+
+    function setBookFilter(book) {
+        activeBook = book;
+        applyFilters();
+    }
+
     function setFilter(f) {
         activeFilter = f;
         document.querySelectorAll('.filter-btn').forEach(b => {
@@ -503,9 +516,17 @@
         });
         const active = document.getElementById('f' + f.charAt(0) + f.slice(1).toLowerCase());
         if (active) active.className = 'filter-btn px-3 py-1 rounded-md text-xs font-medium bg-white shadow-sm text-gray-700';
-        const filtered = f === 'ALL' ? allTrades
-            : f === 'LIVE' ? allTrades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL' || t.status === 'PENDING_CLOSE')
-            : allTrades.filter(t => t.status === f);
+        applyFilters();
+    }
+
+    // Status and book filter independently; legacy rows with no book count as WEEKLY.
+    function applyFilters() {
+        let filtered = activeFilter === 'ALL' ? allTrades
+            : activeFilter === 'LIVE' ? allTrades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL' || t.status === 'PENDING_CLOSE')
+            : allTrades.filter(t => t.status === activeFilter);
+        if (activeBook !== 'ALL') {
+            filtered = filtered.filter(t => (t.book || 'SYNTH_WEEKLY') === activeBook);
+        }
         renderTrades(filtered);
     }
 
@@ -524,6 +545,7 @@
             document.getElementById('loadingState').style.display = 'none';
             document.getElementById('tableContainer').style.display = 'block';
             document.getElementById('filterBar').style.display = 'flex';
+            document.getElementById('bookFilter').style.display = 'inline-block';
             document.getElementById('tradeCount').style.display = 'inline';
             document.getElementById('unloadBtn').style.display = 'inline-flex';
             document.getElementById('loadBtn').style.display = 'none';
@@ -542,6 +564,7 @@
         document.getElementById('tradeBody').innerHTML = '';
         document.getElementById('tableContainer').style.display = 'none';
         document.getElementById('filterBar').style.display = 'none';
+        document.getElementById('bookFilter').style.display = 'none';
         document.getElementById('tradeCount').style.display = 'none';
         document.getElementById('unloadBtn').style.display = 'none';
         document.getElementById('loadBtn').style.display = 'inline-flex';

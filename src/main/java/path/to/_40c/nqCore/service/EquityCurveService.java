@@ -10,6 +10,7 @@ import org.springframework.stereotype.Service;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.pojo.EquityCurve;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.util.Constants;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 
@@ -26,13 +27,23 @@ public class EquityCurveService {
         return positionRepository.findDistinctStrategyNames();
     }
 
-    public EquityCurve getEquityCurveData(String strategy) {
+    /**
+     * book filter: "All" combines both books (the account-level curve that ties to the
+     * broker ledger); SYNTH_WEEKLY / LONG_MONTHLY isolate one book's trades. Legacy rows
+     * with a null book count as SYNTH_WEEKLY, matching the startup backfill.
+     */
+    public EquityCurve getEquityCurveData(String strategy, String book) {
         List<Position> trades;
 
         if ("All".equalsIgnoreCase(strategy)) {
             trades = positionRepository.findAllByOrderByOpenedAtAsc();
         } else {
             trades = positionRepository.findByStrategyNameOrderByOpenedAtAsc(strategy);
+        }
+        if (book != null && !"All".equalsIgnoreCase(book)) {
+            trades = trades.stream()
+                    .filter(t -> book.equals(t.getBook() != null ? t.getBook() : Constants.SYNTH_WEEKLY))
+                    .collect(Collectors.toList());
         }
 
         return buildEquityCurve(trades);

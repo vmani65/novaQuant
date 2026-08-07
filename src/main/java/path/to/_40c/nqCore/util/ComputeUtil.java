@@ -16,6 +16,7 @@ import path.to._40c.nqCore.service.WeeklySymbolCache;
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.LOSS;
 import static path.to._40c.nqCore.util.Constants.NFO_COLON;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
@@ -126,6 +127,11 @@ public class ComputeUtil {
 	 * Orphan-origin trades (a PARTIAL open whose surviving legs were later flattened) are skipped:
 	 * synthetic points assume a complete CE+PE pair, so pointsPnl stays null and calcPnL derives
 	 * the WIN/LOSS result from actual leg PnL instead.
+	 *
+	 * LONG_MONTHLY records pointsPnl (the spot move is still the reference) but leaves result
+	 * null here: a bought option's rupee outcome diverges from the spot sign (theta can turn a
+	 * small spot-points winner into a rupee loser), so calcPnL derives WIN/LOSS from net actual
+	 * PnL instead — spot-points sign stays authoritative only for the delta-1 synthetic.
 	 */
 	public void calcTradeOutcome(Position trade) {
 		if(trade != null) {
@@ -149,6 +155,11 @@ public class ComputeUtil {
 			double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
 			double totalPoints = banked + segmentPoints;
 			trade.setPointsPnl(totalPoints);
+			if (LONG_MONTHLY.equals(trade.getBook())) {
+				log.info("LONG_MONTHLY trade id={} — pointsPnl={} recorded; WIN/LOSS derives from rupee PnL in calcPnL",
+						trade.getId(), totalPoints);
+				return;
+			}
 			trade.setResult(totalPoints > 0 ? WIN : LOSS);
 		}
 	}
@@ -172,6 +183,12 @@ public class ComputeUtil {
 	 * PnL and charges are computed from the surviving legs alone, expectedPnl/capture stay
 	 * null (a single leg has no full-move denominator), and WIN/LOSS falls back to the sign
 	 * of net actual PnL since calcTradeOutcome leaves result null for these trades.
+	 *
+	 * LONG_MONTHLY (single bought leg, 2 monthly lots ≈ delta 1 per futures-equivalent):
+	 * expected PnL uses (qty / 2) × points — the futures-equivalent yardstick — so both books'
+	 * pnlCapturePct read on the same scale: a monthly leg fully capturing the move reads ~100%,
+	 * gamma can push it above, theta below. WIN/LOSS comes from the rupee fallback below since
+	 * calcTradeOutcome leaves result null for this book.
 	 */
 	public void calcPnL(Position trade) {
 		if (trade == null) return;
@@ -183,6 +200,7 @@ public class ComputeUtil {
 
 		double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
 		Double finalSegmentPoints = trade.getPointsPnl() != null ? trade.getPointsPnl() - banked : null;
+		double expectedQtyFactor = LONG_MONTHLY.equals(trade.getBook()) ? 0.5 : 1.0;
 
 		double totalBrokerage  = 0.0;
 		double totalExpectedPnL = 0.0;
@@ -206,7 +224,7 @@ public class ComputeUtil {
 				w.setActualPnl(actualLegPnL);
 				if (fullPair) {
 					if (w.getExpectedPnl() == null) {
-						w.setExpectedPnl(rnd(w.getQuantity() * finalSegmentPoints));
+						w.setExpectedPnl(rnd(w.getQuantity() * expectedQtyFactor * finalSegmentPoints));
 					}
 					w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
 				}
@@ -218,7 +236,7 @@ public class ComputeUtil {
 					.mapToDouble(w -> w.getOpenCharges() + w.getCloseCharges()).sum();
 			totalLots      += traded.get(0).getLots();
 			if (fullPair) {
-				totalExpectedPnL += rnd(traded.get(0).getQuantity() * trade.getPointsPnl());
+				totalExpectedPnL += rnd(traded.get(0).getQuantity() * expectedQtyFactor * trade.getPointsPnl());
 				anyFullPair = true;
 			}
 		}
@@ -298,15 +316,33 @@ public class ComputeUtil {
 		});
 	}
 
+	/**
+	 * The capital chain (starting/endingCapital, currentCapital) is account-level and flows
+	 * from every book's closes. The sizing fields (possibleLots, currentRiskPerLot) are
+	 * weekly-margin-regime math — definedRiskPerLot means NRML margin per synthetic lot —
+	 * so LONG_MONTHLY closes (a monthly "lot" costs ~premium, an order of magnitude less)
+	 * leave them untouched, and an unset/zero definedRiskPerLot skips them instead of
+	 * poisoning possibleLots via Infinity-cast or an unboxing NPE.
+	 */
 	public void recalculateCapital(Position closedTrade) {
 		TradeCapital capital = tradeCapital.getTradeCapital();
 		closedTrade.setStartingCapital(capital.getCurrentCapital());
 		closedTrade.setEndingCapital(capital.getCurrentCapital() + closedTrade.getActualPnl());
 		capital.setCurrentCapital(closedTrade.getEndingCapital());
+		if (LONG_MONTHLY.equals(closedTrade.getBook())) {
+			tradeCapital.save(capital);
+			return;
+		}
+		Integer riskPerLot = capital.getDefinedRiskPerLot();
+		if (riskPerLot == null || riskPerLot <= 0) {
+			log.warn("recalculateCapital: definedRiskPerLot is {} — capital chain updated, lot sizing skipped", riskPerLot);
+			tradeCapital.save(capital);
+			return;
+		}
 		int currentLots = closedTrade.getLots();
-		int possibleLots = (int) (capital.getCurrentCapital() / capital.getDefinedRiskPerLot());
+		int possibleLots = (int) (capital.getCurrentCapital() / riskPerLot);
 		capital.setPossibleLots(possibleLots > currentLots ? possibleLots : 0);
-		capital.setCurrentRiskPerLot((int)(closedTrade.getEndingCapital() / capital.getDefinedRiskPerLot()));
+		capital.setCurrentRiskPerLot((int)(closedTrade.getEndingCapital() / riskPerLot));
 		tradeCapital.save(capital);
 	}
 

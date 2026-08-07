@@ -302,10 +302,59 @@ public class MockKiteGateway implements KiteGateway {
         return List.of(trade);
     }
 
+    /**
+     * Fabricates a realistic NIFTY option chain so the monthly DTE-roll automation and
+     * the symbol autocomplete work under the mock profile: weekly expiries every Tuesday
+     * for the next 10 weeks, with the last expiry of each calendar month carrying the
+     * monthly naming (NIFTY26AUG...) exactly as NSE does; strikes 23500-25500 step 100.
+     */
     @Override
     public List<Instrument> getInstruments(String exchange) {
-        log.info("[MOCK] getInstruments: exchange={} → returning empty list", exchange);
-        return Collections.emptyList();
+        java.time.ZoneId ist = java.time.ZoneId.of(path.to._40c.nqCore.util.Constants.ZONE_ID);
+        java.time.LocalDate firstExpiry = java.time.LocalDate.now(ist)
+                .with(java.time.temporal.TemporalAdjusters.next(java.time.DayOfWeek.TUESDAY));
+        List<Instrument> out = new ArrayList<>();
+        for (int week = 0; week < 10; week++) {
+            java.time.LocalDate expiry = firstExpiry.plusWeeks(week);
+            boolean lastOfMonth = expiry.plusWeeks(1).getMonth() != expiry.getMonth();
+            String prefix = lastOfMonth ? monthlyPrefix(expiry) : weeklyPrefix(expiry);
+            for (int strike = 23500; strike <= 25500; strike += 100) {
+                for (String type : List.of("CE", "PE")) {
+                    Instrument i = new Instrument();
+                    i.tradingsymbol = "NIFTY" + prefix + strike + type;
+                    i.name = "NIFTY";
+                    i.instrument_type = type;
+                    i.strike = strike + ".0";
+                    i.lot_size = 65;
+                    i.segment = "NFO-OPT";
+                    i.exchange = exchange;
+                    i.expiry = java.util.Date.from(expiry.atStartOfDay(ist).toInstant());
+                    out.add(i);
+                }
+            }
+        }
+        log.info("[MOCK] getInstruments: exchange={} → fabricated {} NIFTY option rows across 10 expiries", exchange, out.size());
+        return out;
+    }
+
+    /** NSE monthly naming: NIFTY{yy}{MMM}, e.g. 26AUG. */
+    private static String monthlyPrefix(java.time.LocalDate expiry) {
+        String yy = String.format("%02d", expiry.getYear() % 100);
+        String mon = expiry.getMonth().getDisplayName(java.time.format.TextStyle.SHORT, java.util.Locale.ENGLISH).toUpperCase();
+        return yy + mon;
+    }
+
+    /** NSE weekly naming: NIFTY{yy}{m}{dd} with m = 1-9 / O / N / D, e.g. 26812 for 2026-08-12. */
+    private static String weeklyPrefix(java.time.LocalDate expiry) {
+        String yy = String.format("%02d", expiry.getYear() % 100);
+        int m = expiry.getMonthValue();
+        String monthToken = switch (m) {
+            case 10 -> "O";
+            case 11 -> "N";
+            case 12 -> "D";
+            default -> String.valueOf(m);
+        };
+        return yy + monthToken + String.format("%02d", expiry.getDayOfMonth());
     }
 
     @Override
