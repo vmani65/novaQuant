@@ -24,6 +24,9 @@ public class Constants {
 	
 	public static final String LONG = "LONG";
 	public static final String SHORT = "SHORT";
+
+	public static final String WEEKLY = "WEEKLY";
+	public static final String MONTHLY = "MONTHLY";
 	
 	public static final String NFO = "NFO";
 	public static final String NFO_COLON = NFO+":";

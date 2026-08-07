@@ -392,22 +392,43 @@
             const tw = document.getElementById('thisWeekSymbolInput').value.trim();
             const ro = document.getElementById('rolloverSymbolInput').value.trim();
             const rd = document.getElementById('rolloverDayInput').value;
-            postForm('/symbol/save', { thisWeekSymbol: tw, rolloverSymbol: ro, rolloverDay: rd }, 'symbolsMsg',
+            postForm('/symbol/save', { scope: 'WEEKLY', thisWeekSymbol: tw, rolloverSymbol: ro, rolloverDay: rd }, 'symbolsMsg',
                 () => setSymbolsEditable(false));
         }
 
+        function saveMonthlySymbols(event) {
+            event.preventDefault();
+            const tm = document.getElementById('thisMonthSymbolInput').value.trim();
+            const ro = document.getElementById('monthlyRolloverSymbolInput').value.trim();
+            const rd = document.getElementById('monthlyRolloverDayInput').value;
+            postForm('/symbol/save', { scope: 'MONTHLY', thisWeekSymbol: tm, rolloverSymbol: ro, rolloverDay: rd }, 'monthlySymbolsMsg',
+                () => setMonthlySymbolsEditable(false));
+        }
+
         // ==================== LEG TEMPLATES ====================
+        // Scope-aware manifestation: MONTHLY column on the left, WEEKLY on the right.
+        // Rows with a null scope (pre-migration) are treated as WEEKLY.
+        function legScope(l) { return l.scope === 'MONTHLY' ? 'MONTHLY' : 'WEEKLY'; }
+
+        function tbodyIdFor(direction, scope) {
+            if (scope === 'MONTHLY') return direction === 'LONG' ? 'monthlyLongLegsBody' : 'monthlyShortLegsBody';
+            return direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
+        }
+
         function loadLegTemplates() {
             fetch('/api/leg-templates')
                 .then(r => r.json())
                 .then(legs => {
-                    renderLegRows('longLegsBody',  legs.filter(l => l.direction === 'LONG'),  'LONG');
-                    renderLegRows('shortLegsBody', legs.filter(l => l.direction === 'SHORT'), 'SHORT');
+                    ['WEEKLY', 'MONTHLY'].forEach(scope => {
+                        const scoped = legs.filter(l => legScope(l) === scope);
+                        renderLegRows(tbodyIdFor('LONG', scope),  scoped.filter(l => l.direction === 'LONG'),  'LONG',  scope);
+                        renderLegRows(tbodyIdFor('SHORT', scope), scoped.filter(l => l.direction === 'SHORT'), 'SHORT', scope);
+                    });
                 })
                 .catch(e => Utils.showMessage('legTemplatesMsg', 'Load error: ' + e, true));
         }
 
-        function renderLegRows(tbodyId, legs, direction) {
+        function renderLegRows(tbodyId, legs, direction, scope) {
             const tbody = document.getElementById(tbodyId);
             if (legs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
@@ -420,7 +441,7 @@
                     <td class="px-2 py-1.5 font-mono text-gray-700 text-center">${l.offsetPts > 0 ? '+' + l.offsetPts : l.offsetPts}</td>
                     <td class="px-2 py-1.5 font-mono font-semibold text-gray-900 text-center">${l.lots}</td>
                     <td class="px-2 py-1.5 text-center">
-                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots})"
+                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots}, '${scope}')"
                                 class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
                         <button onclick="deleteLeg(${l.id})"
                                 class="px-2 py-0.5 text-rose-600 hover:bg-rose-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Delete</button>
@@ -428,9 +449,8 @@
                 </tr>`).join('');
         }
 
-        function showAddLegRow(direction) {
-            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
-            const tbody = document.getElementById(tbodyId);
+        function showAddLegRow(direction, scope) {
+            const tbody = document.getElementById(tbodyIdFor(direction, scope));
             // Remove any existing add/edit-form rows first
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             // Remove "no legs" placeholder if present
@@ -438,20 +458,19 @@
             if (placeholder) placeholder.parentElement.remove();
             const row = document.createElement('tr');
             row.className = 'leg-form-row bg-blue-50 border-t border-blue-100';
-            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1);
+            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1, scope);
             tbody.appendChild(row);
         }
 
-        function editLegRow(id, direction, optionType, side, offsetPts, lots) {
-            const tbodyId = direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
-            const tbody = document.getElementById(tbodyId);
+        function editLegRow(id, direction, optionType, side, offsetPts, lots, scope) {
+            const tbody = document.getElementById(tbodyIdFor(direction, scope));
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             const existing = tbody.querySelector(`tr[data-leg-id="${id}"]`);
             if (!existing) return;
-            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
+            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots, scope).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
         }
 
-        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots) {
+        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots, scope) {
             const optSel = ['CE', 'PE'].map(o => `<option value="${o}" ${o === optionType ? 'selected' : ''}>${o}</option>`).join('');
             const sideSel = ['BUY', 'SELL'].map(s => `<option value="${s}" ${s === side ? 'selected' : ''}>${s}</option>`).join('');
             return `
@@ -468,17 +487,18 @@
                     <input type="number" class="leg-lots w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${lots}" min="1" />
                 </td>
                 <td class="px-2 py-1.5 text-center">
-                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}')"
+                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}', '${scope}')"
                             class="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] border-0 cursor-pointer">Save</button>
                     <button onclick="loadLegTemplates()"
                             class="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded text-[11px] border-0 cursor-pointer bg-transparent">Cancel</button>
                 </td>`;
         }
 
-        function saveLeg(btn, id, direction) {
+        function saveLeg(btn, id, direction, scope) {
             const row = btn.closest('tr');
             const body = {
                 direction,
+                scope,
                 optionType: row.querySelector('.leg-opt').value,
                 side:       row.querySelector('.leg-side').value,
                 offsetPts:  parseInt(row.querySelector('.leg-offset').value) || 0,
@@ -564,6 +584,30 @@
         }
         function enableSymbolEdit() { setSymbolsEditable(true); }
         function cancelSymbolEdit() { setSymbolsEditable(false); }
+
+        function setMonthlySymbolsEditable(editable) {
+            const tm = document.getElementById('thisMonthSymbolInput');
+            const ro = document.getElementById('monthlyRolloverSymbolInput');
+            const rd = document.getElementById('monthlyRolloverDayInput');
+            const save = document.getElementById('saveMonthlySymbolsBtn');
+            const edit = document.getElementById('editMonthlySymbolsBtn');
+            const cancel = document.getElementById('cancelMonthlySymbolsBtn');
+            if (editable) {
+                tm.removeAttribute('disabled'); ro.removeAttribute('disabled'); rd.removeAttribute('disabled');
+                save.removeAttribute('disabled');
+                tm.classList.remove('readonly'); ro.classList.remove('readonly'); rd.classList.remove('readonly');
+                save.classList.remove('btn-secondary');
+                edit.style.display = 'none'; cancel.style.display = 'inline-block'; tm.focus();
+            } else {
+                tm.setAttribute('disabled','disabled'); ro.setAttribute('disabled','disabled'); rd.setAttribute('disabled','disabled');
+                save.setAttribute('disabled','disabled');
+                tm.classList.add('readonly'); ro.classList.add('readonly'); rd.classList.add('readonly');
+                save.classList.add('btn-secondary');
+                edit.style.display = 'inline-block'; cancel.style.display = 'none';
+            }
+        }
+        function enableMonthlySymbolEdit() { setMonthlySymbolsEditable(true); }
+        function cancelMonthlySymbolEdit() { setMonthlySymbolsEditable(false); }
 
         // ==================== NIFTY INSTRUMENTS ====================
         function fetchNiftyInstruments() {
@@ -1197,10 +1241,11 @@
                  th:attr="data-no-symbols=${noSymbols}">
                 <div class="px-5 py-4 border-b border-gray-100">
                     <div class="text-sm font-semibold text-gray-900 sec-title">Save Symbols</div>
-                    <div class="text-xs text-gray-400 mt-0.5">This week &amp; rollover contract symbols</div>
+                    <div class="text-xs text-gray-400 mt-0.5">Weekly &amp; monthly contract symbols — each saves independently</div>
                 </div>
                 <div class="px-5 py-4">
                     <form id="symbolsForm" onsubmit="saveSymbols(event)" class="flex items-center gap-4 flex-wrap">
+                        <div class="w-20 shrink-0 text-[11px] font-bold text-blue-700 uppercase tracking-widest">Weekly</div>
                         <div class="flex items-center gap-2">
                             <label class="text-[11px] font-semibold text-blue-600 uppercase tracking-wide shrink-0">This Week</label>
                             <input type="text" id="thisWeekSymbolInput" name="thisWeekSymbol" required placeholder="18MAR25" maxlength="7"
@@ -1227,9 +1272,9 @@
                             <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide shrink-0">Rollover Complete?</label>
                             <input type="text" readonly
                                    th:value="${symbols?.rolloverComplete == true ? 'YES' : 'NO'}"
+                                   th:classappend="${symbols?.rolloverComplete == true} ? ' text-green-600 font-semibold' : ' text-gray-400'"
                                    class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-center w-14
-                                          bg-gray-50 cursor-not-allowed
-                                          [[${symbols?.rolloverComplete == true ? 'text-green-600 font-semibold' : 'text-gray-400'}]]" />
+                                          bg-gray-50 cursor-not-allowed" />
                         </div>
                         <div class="flex gap-2 items-center">
                             <button type="button" id="editSymbolsBtn" onclick="enableSymbolEdit()"
@@ -1243,6 +1288,57 @@
                         </div>
                     </form>
                     <div id="symbolsMsg" style="display:none;" class="mt-3"></div>
+
+                    <div class="border-t border-gray-100 my-4"></div>
+
+                    <form id="monthlySymbolsForm" onsubmit="saveMonthlySymbols(event)" class="flex items-center gap-4 flex-wrap">
+                        <div class="w-20 shrink-0 text-[11px] font-bold text-violet-700 uppercase tracking-widest">Monthly</div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-violet-600 uppercase tracking-wide shrink-0">This Month</label>
+                            <input type="text" id="thisMonthSymbolInput" name="thisWeekSymbol" required placeholder="26AUG" maxlength="7"
+                                   th:value="${monthlySymbols?.thisWeekSymbol}"
+                                   th:disabled="${!noMonthlySymbols}"
+                                   th:classappend="${!noMonthlySymbols} ? ' readonly' : ''"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-24 disabled:bg-gray-50 disabled:text-gray-400" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-violet-600 uppercase tracking-wide shrink-0">Rollover</label>
+                            <input type="text" id="monthlyRolloverSymbolInput" name="rolloverSymbol" required placeholder="26SEP" maxlength="7"
+                                   th:value="${monthlySymbols?.rolloverSymbol}"
+                                   th:disabled="${!noMonthlySymbols}"
+                                   th:classappend="${!noMonthlySymbols} ? ' readonly' : ''"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-24 disabled:bg-gray-50 disabled:text-gray-400" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-orange-600 uppercase tracking-wide shrink-0">Rollover Day</label>
+                            <input type="date" id="monthlyRolloverDayInput" name="rolloverDay"
+                                   th:value="${monthlySymbols?.rolloverDay}"
+                                   th:disabled="${!noMonthlySymbols}"
+                                   th:classappend="${!noMonthlySymbols} ? ' readonly' : ''"
+                                   onkeydown="return false;"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-gray-900 bg-white outline-none focus:border-blue-500 w-36 disabled:bg-gray-50 disabled:text-gray-400 cursor-pointer" />
+                        </div>
+                        <div class="flex items-center gap-2">
+                            <label class="text-[11px] font-semibold text-gray-500 uppercase tracking-wide shrink-0">Rollover Complete?</label>
+                            <input type="text" readonly
+                                   th:value="${monthlySymbols?.rolloverComplete == true ? 'YES' : 'NO'}"
+                                   th:classappend="${monthlySymbols?.rolloverComplete == true} ? ' text-green-600 font-semibold' : ' text-gray-400'"
+                                   class="px-2 py-1.5 border border-gray-200 rounded-md text-sm font-mono text-center w-14
+                                          bg-gray-50 cursor-not-allowed" />
+                        </div>
+                        <div class="flex gap-2 items-center">
+                            <button type="button" id="editMonthlySymbolsBtn" onclick="enableMonthlySymbolEdit()"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-md border-0 cursor-pointer">Edit</button>
+                            <button type="button" id="cancelMonthlySymbolsBtn" onclick="cancelMonthlySymbolEdit()" style="display:none;"
+                                    class="px-3 py-1.5 bg-gray-100 hover:bg-gray-200 text-gray-700 text-xs font-medium rounded-md border-0 cursor-pointer">Cancel</button>
+                            <button type="submit" id="saveMonthlySymbolsBtn"
+                                    th:disabled="${!noMonthlySymbols}"
+                                    th:classappend="${!noMonthlySymbols} ? ' btn-secondary' : ''"
+                                    class="px-3 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-medium rounded-md border-0 cursor-pointer">Save</button>
+                        </div>
+                    </form>
+                    <div class="text-[10px] text-gray-400 mt-2 ml-24">Monthly rollover day is informational for now — automatic promotion arrives with the monthly strategy wiring; the weekly row's automation is unaffected.</div>
+                    <div id="monthlySymbolsMsg" style="display:none;" class="mt-3"></div>
                 </div>
             </div>
         </section>
@@ -1261,53 +1357,101 @@
                 </div>
                 <div id="legTemplatesBody" style="display:none;">
                     <div class="p-5">
-                        <div class="max-w-3xl mx-auto space-y-6">
-                            <!-- LONG legs -->
-                            <div>
-                                <div class="flex items-center justify-between mb-2">
-                                    <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
-                                    <button onclick="showAddLegRow('LONG')"
-                                            class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                            <!-- MONTHLY column (left) -->
+                            <div class="space-y-6">
+                                <div class="text-[11px] font-bold text-violet-700 uppercase tracking-widest border-b border-violet-100 pb-2">Monthly</div>
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
+                                        <button onclick="showAddLegRow('LONG', 'MONTHLY')"
+                                                class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                    </div>
+                                    <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="monthlyLongLegsBody" class="text-xs"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <div class="border border-gray-100 rounded-lg overflow-hidden">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
-                                            <tr>
-                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="longLegsBody" class="text-xs"></tbody>
-                                    </table>
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
+                                        <button onclick="showAddLegRow('SHORT', 'MONTHLY')"
+                                                class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                    </div>
+                                    <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="monthlyShortLegsBody" class="text-xs"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
-                            <!-- SHORT legs -->
-                            <div>
-                                <div class="flex items-center justify-between mb-2">
-                                    <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
-                                    <button onclick="showAddLegRow('SHORT')"
-                                            class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                            <!-- WEEKLY column (right) -->
+                            <div class="space-y-6">
+                                <div class="text-[11px] font-bold text-blue-700 uppercase tracking-widest border-b border-blue-100 pb-2">Weekly</div>
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
+                                        <button onclick="showAddLegRow('LONG', 'WEEKLY')"
+                                                class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                    </div>
+                                    <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="longLegsBody" class="text-xs"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
-                                <div class="border border-gray-100 rounded-lg overflow-hidden">
-                                    <table class="w-full text-sm">
-                                        <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
-                                            <tr>
-                                                <th class="px-2 py-1.5 text-center font-medium">Option</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Side</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Lots</th>
-                                                <th class="px-2 py-1.5 text-center font-medium">Action</th>
-                                            </tr>
-                                        </thead>
-                                        <tbody id="shortLegsBody" class="text-xs"></tbody>
-                                    </table>
+                                <div>
+                                    <div class="flex items-center justify-between mb-2">
+                                        <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
+                                        <button onclick="showAddLegRow('SHORT', 'WEEKLY')"
+                                                class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
+                                    </div>
+                                    <div class="border border-gray-100 rounded-lg overflow-hidden">
+                                        <table class="w-full text-sm">
+                                            <thead class="bg-gray-50 text-[11px] uppercase tracking-wider text-gray-500">
+                                                <tr>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Option</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Side</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Offset (pts)</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Lots</th>
+                                                    <th class="px-2 py-1.5 text-center font-medium">Action</th>
+                                                </tr>
+                                            </thead>
+                                            <tbody id="shortLegsBody" class="text-xs"></tbody>
+                                        </table>
+                                    </div>
                                 </div>
                             </div>
-                            <div id="legTemplatesMsg" style="display:none;"></div>
                         </div>
+                        <div id="legTemplatesMsg" style="display:none;" class="mt-4"></div>
                     </div>
                 </div>
             </div>

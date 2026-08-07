@@ -1,10 +1,14 @@
 # Capital Efficiency Plan — Option A (Hedged Synthetic) & Option B (2× Monthly ATM Buying)
 
-> Status: DESIGN — approved direction, not yet implemented.
-> Owner decision so far: **Option A chosen for the main strategy.** Option B is a candidate
-> second strategy (multi-strategy branch), gated on a backtest.
-> This document is self-contained: it carries the problem, the evidence, and the full
-> implementable spec for both options. It is written to be handed to a coding agent.
+> Status: BUILD IN PROGRESS — see §6 (terminology) and §7 (implementation status + pending plan).
+> Decision timeline: Option A was initially chosen (2026-08-04), then superseded on 2026-08-05:
+> **Option B builds FIRST**, running as a second execution BOOK alongside the current synthetic
+> in ONE application, each book independently enable/disableable. Option A (wings) is DEFERRED,
+> not dead — its live-verified margin data in §2 stays valid for a later revisit.
+> This document is self-contained: problem, evidence, spec, and the pending build plan.
+> It is written to be handed to a coding agent. Read §6 BEFORE reading anything else —
+> the terminology there ("book", "calendar") is used throughout and mislabeling these
+> concepts as "strategies" caused real confusion.
 
 ---
 
@@ -73,7 +77,7 @@ All numbers below come from reconciling `position` against `weekly_leg` actual f
 
 ---
 
-## 2. OPTION A — Hedged synthetic ("synthetic + wing") — CHOSEN for main strategy
+## 2. OPTION A — Hedged synthetic ("synthetic + wing") — DEFERRED 2026-08-05 (Option B first; the live-verified margin data below remains valid)
 
 ### 2.1 Concept
 
@@ -208,7 +212,7 @@ Live basket-margin dry-run was executed 2026-08-04 (results in 2.2). Productize 
 
 ---
 
-## 3. OPTION B — 2× Monthly ATM buying (Madan-style) — candidate 2nd strategy, backtest-gated
+## 3. OPTION B — 2× Monthly ATM buying (Madan-style) — CHOSEN 2026-08-05: builds as the LONG_MONTHLY book (§6), live money at reduced size, backtest gate DROPPED (see §3.4 status note)
 
 ### 3.1 Concept
 
@@ -252,7 +256,15 @@ This is a MODEL, not a measurement — hence the backtest gate.
 3. Positions opened near month-end may hold across the roll boundary — position exit
    uses whatever contract it entered; no mid-position rolling in v1.
 
-### 3.4 Backtest gate (MANDATORY before any live order)
+### 3.4 Backtest gate — DROPPED 2026-08-05 (kept for the record)
+
+> STATUS: A 5-agent audit (wf_be7562d9-1e4) proved the strict backtest is IMPOSSIBLE from local
+> data: the tick recorder captured monthly-format options ONLY during expiry weeks (the exact
+> <10-DTE window the roll rule avoids) — 0 of 69 May–Jul signals priceable. A relaxed partial
+> backtest (18/69 signals, expiry weeks, real ticks) remains possible later as a cross-check.
+> Owner decision: go live at reduced size instead — the live run IS the test, tuition capped by
+> sizing. Prep item: subscribe the nqTicker recorder to current monthly ATM strikes NOW so the
+> live book has tick history from day one. Original gate text below, superseded:
 
 Backtest Option B against the **actual 62 historical signals** (entry/exit timestamps
 from `position`) using real monthly option prices:
@@ -267,19 +279,23 @@ from `position`) using real monthly option prices:
   pathological per-trade behavior (e.g. small winners systematically turning into
   losers, which is what killed the weekly variant).
 
-### 3.5 Rollout (only if backtest passes)
+### 3.5 Rollout (updated 2026-08-05)
 
-Run as a **separate strategy on the multi-strategy branch** at small size
-(2–4 lots bought, i.e. 1–2 futures-equivalent) in parallel with the main Option A
-strategy for ≥1 month. Compare realized capture, slippage, decay vs model. Only then
-discuss capital migration.
+Run as the **LONG_MONTHLY book inside the one application** (§6 — NOT the multiStatergy
+branch, which stays unmerged) at small size (owner seeded 1 lot/leg; the 2×-delta ratio
+suggests 2 lots per futures-equivalent — open decision, §7) in parallel with the
+SYNTH_WEEKLY book for ≥1 month. Compare realized capture, slippage, decay vs model.
+Only then discuss capital migration.
 
 ---
 
 ## 4. What is explicitly OUT of scope
 
 - No change to signal generation, entries, exits, or trade selection. Every signal is
-  taken, always-in-market flip behavior unchanged.
+  taken, always-in-market flip behavior unchanged. RIDETHETIDE remains the only strategy.
+- No generic multi-strategy framework. The `feature/multiStatergy` branch (commit c650f7f)
+  stays unmerged; the two-book design in §6/§7 is deliberately scoped to exactly two
+  hardcoded books with toggles.
 - No lot-size increase from freed capital in this phase (calculated lots from
   `trade_capital` is a separate future task).
 - No daily-loss circuit breaker (rejected: incompatible with take-every-signal
@@ -297,3 +313,127 @@ discuss capital migration.
 | Edge tax | — | ~21–23% (10 pts/wk wing budget) | decay + monthly spread (model ~4%, UNVERIFIED) |
 | Evidence | +₹107.7k live (62 trades) | same engine + insurance; margins verified live | model only — backtest gate |
 | Status | live today | **build now** (2.8 order) | build after backtest passes |
+
+*(Table statuses above predate the 2026-08-05 decision change — §7 is authoritative.)*
+
+---
+
+## 6. TERMINOLOGY (authoritative — use these words in code, UI, and docs)
+
+Calling the two execution styles "strategies" caused real confusion. Corrected model:
+
+- **STRATEGY** — the signal engine. There is exactly ONE: `RIDETHETIDE` (AmiBroker,
+  LONG/SHORT/exit signals). `position.strategy_name` keeps meaning this. Unchanged.
+- **BOOK** — how a signal is expressed in the market. Each book has its own contracts,
+  structure, lot size, positions, P&L, and an independent enable/disable toggle. Two books:
+  - **`SYNTH_WEEKLY`** — today's live book: weekly contracts, 2-leg synthetic
+    (BUY ATM CE + SELL ATM PE on LONG; mirrored on SHORT), 10 lots.
+  - **`LONG_MONTHLY`** — the new book: monthly contracts, 1 bought leg
+    (BUY ATM CE on LONG / BUY ATM PE on SHORT), small size to start.
+- **CALENDAR** — the contract series a book trades: `WEEKLY` (row id=1 of the symbol
+  config, drives the existing rollover automation) or `MONTHLY` (row id=2). The phase-1
+  "scope" column on the symbol table IS the calendar — keep that column name there.
+
+Hierarchy: `RIDETHETIDE signal → fan-out → each ENABLED book opens/flips/closes its own position`.
+
+Naming for the coding agent: new column `position.BOOK` (values SYNTH_WEEKLY | LONG_MONTHLY);
+`LEG_TEMPLATE.SCOPE` from phase 1 should be RENAMED to `BOOK` with those values (nothing is
+deployed, renaming is free); symbol config keeps `scope` = calendar (WEEKLY | MONTHLY);
+each book maps to exactly one calendar (SYNTH_WEEKLY→WEEKLY, LONG_MONTHLY→MONTHLY).
+
+---
+
+## 7. IMPLEMENTATION STATUS & PENDING BUILD PLAN (authoritative as of 2026-08-05 03:30)
+
+### 7.0 Phase 1 — Calendars & books CONFIG + UI: BUILT, REVIEWED, ROLLED BACK FROM PROD
+
+Built and adversarially reviewed 2026-08-05 (21/21 tests green), briefly deployed, then
+**rolled back from prod at owner's demand** — schema changes must never hit live signals.db
+without a mock,test pass AND explicit owner approval. Current state:
+- Code: sits UNCOMMITTED in the working tree (baseline commit 5832a34). Covers: symbol
+  config scope column + id=2 monthly row + scope-aware upsert; LEG_TEMPLATE scope column +
+  scoped cache (engine reads WEEKLY-only) + null backfill; two-form Symbols UI; two-column
+  manifestation (MONTHLY left / WEEKLY right); scope threaded through leg CRUD; review fixes
+  (scope-less PUT preserves existing scope; /symbol/save rejects unknown scope).
+- Prod: OLD jar restored (`nqCore-2026.06.jar.bak-20260805-024624-predeploy` content),
+  live DB reverted (columns dropped, monthly rows deleted, integrity verified).
+- Owner's monthly entries (calendar 26AUG/26SEP + 2 monthly 1-lot legs) are recoverable
+  from `signals.db.bak-20260805-025557-prerollback`.
+- **Deploy protocol from now on (non-negotiable):** run under
+  `--spring.profiles.active=mock,test` (signals_test.db) → owner clicks through → owner
+  says "promote" explicitly → fresh signals.db backup → deploy → verify. Never let
+  Hibernate ddl-auto touch live signals.db as a side effect of a casual start.
+
+### 7.1 Phase 2 — Book plumbing (minimum for LONG_MONTHLY to trade safely)
+
+1. Rename phase-1 `LEG_TEMPLATE.SCOPE` → `BOOK` (SYNTH_WEEKLY | LONG_MONTHLY); add
+   `position.BOOK`, stamped at open. `strategy_name` stays RIDETHETIDE.
+2. **Book-scoped position queries — the core surgery.** `findFirstByStatusOrderByIdDesc`
+   (PositionRepository:14) selects THE latest LIVE position bookless; today two books would
+   close each other's positions. Thread book through: PositionClosingService.closeTrade(:45)
+   + closeOrphanIfAny(:66), SignalService.getLastTrade(:52), ProfitRecenterService(:72-74),
+   PositionRolloverService(:55), PendingCloseReconciler, PositionUtil.findLiveTradesWithLiveOrderBooks(:1145).
+3. **Signal fan-out**: each signal (open/flip/close) executes once per ENABLED book, error-
+   isolated — an exception in one book must never block the other. Mind SQLite write
+   contention (busy_timeout=5000 exists; consider sequential book execution, weekly first).
+4. **Per-book enable/disable toggles** (DB-backed config + UI switches). Define disable
+   semantics: no NEW positions; an already-open position keeps being managed until its
+   natural close (recommended), then the book goes dormant.
+5. **Calendar-aware order building**: ComputeUtil.buildInstrument(:57) hardwires the weekly
+   prefix; each leg must resolve its prefix from its book's calendar (weekly cache slot vs
+   monthly cache slot built in phase 1).
+6. **Automation fences**: 14:47 weekly rollover (RollOverTriggerController:41 →
+   PositionRolloverService) and +500-pt recenter (/api/realize-profits →
+   ProfitRecenterService) act on SYNTH_WEEKLY ONLY. Today either one would close a monthly
+   leg and reopen it as a WEEKLY leg (audit BLOCKERs). Hard book filter at both entry points.
+7. **Per-book signal dedup/sequence seeding**: SignalController's previousByStrategy
+   startup seeding loads only one last trade; seed per book.
+8. **PENDING_OPEN reconciler** (pulled forward from robustness, trade-73 class): an open
+   order marked FAILED with a stored orderId that fills late = untracked broker position
+   (PositionOpeningService:135, PositionUtil:786). With a 1-leg book this is the entire
+   position. Reconcile FAILED-with-orderId opens from the tradebook, mirroring
+   PendingCloseReconciler.
+
+### 7.2 Phase 3 — LONG_MONTHLY lifecycle & book-correct accounting
+
+9.  **Monthly calendar roll (DTE≥10)**: make the monthly "Rollover Day" real — promote
+    26AUG→26SEP automatically. Expiry dates via gateway.getInstruments("NFO") (Instrument.expiry);
+    monthly expiry = latest NIFTY option expiry in the calendar month; derive the prefix
+    from a real tradingsymbol (never regex-guess; weekly prefixes like 26811 make digit
+    parsing ambiguous). Cache the NFO dump daily.
+10. **Book-aware expected P&L**: calcPnL (ComputeUtil:180,:192) assumes delta-1 pairs —
+    ~2× overstated for one bought leg. For LONG_MONTHLY use expected = (qty/2) × points
+    (futures-equivalent), so both books' pnlCapturePct read on the same scale.
+11. **WIN/LOSS from rupees for LONG_MONTHLY**: calcTradeOutcome (:122) uses spot-points
+    sign; a theta-bled small winner gets labeled WIN with negative actualPnl. For
+    LONG_MONTHLY derive result from actualPnl.
+12. **Per-book capital semantics**: recalculateCapital (:277-280) uses definedRiskPerLot
+    = 400000 (margin-era); a LONG_MONTHLY "lot" costs ~premium (~₹21.5k). Make risk-per-lot
+    per-book or exclude LONG_MONTHLY from possibleLots math initially. position.lots now
+    means option lots for LONG_MONTHLY rows — label in UI.
+13. **Trade log + equity curve**: book filter/column; peak_margin means premium outlay for
+    LONG_MONTHLY rows (TradeCapitalService 30-day NRML stats will blend regimes — label).
+
+### 7.3 Phase 4 — Robustness & ops
+
+14. Single-leg PARTIAL open = correctly-directed real position; treat as LIVE at reduced
+    size instead of orphan-flagged PARTIAL (today: invisible to monitoring, noisy ORPHAN logs).
+15. **Monthly liquidity guard**: monthlies are 4–10× thinner than weeklies (Madan's own
+    reason to leave them at 60L+). Log effective spread paid per fill; alert > ~2 pts/side.
+16. **NIFTY27\* filter bug**: PositionUtil.getNiftyInstruments(:1127) drops all NIFTY27+
+    symbols — every contract from Jan 2027. Book-independent time bomb; fix.
+17. Subscribe the nqTicker recorder to current monthly ATM strikes (tick history for
+    evaluating the live book; the strict backtest was proven impossible — §3.4 note).
+18. Commit phase-1 code; after next deploy re-enter monthly calendar+legs (or restore from
+    the prerollback backup).
+
+### 7.4 Open decisions (owner)
+
+- **LONG_MONTHLY starting lots**: owner seeded 1 lot/leg; the 2×-delta ratio implies 2 lots
+  per futures-equivalent. Confirm 1 (ultra-cautious, capture ~½ point per point) or 2
+  (delta≈1, the Madan construction) before first live trade.
+- **Recenter policy for LONG_MONTHLY**: recommended NONE (gamma convexity is the point;
+  re-striking sells it off). Confirm.
+- **9:15 open-buffer (nQTicker longExit delegation)**: recommended weekly-only; LONG_MONTHLY
+  closes inline. Confirm.
+- **Evaluation window**: ≥1 month parallel run before any capital-migration discussion.

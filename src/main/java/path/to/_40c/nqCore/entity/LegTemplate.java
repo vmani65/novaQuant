@@ -46,6 +46,15 @@ public class LegTemplate {
     @Column(name = "LOTS", nullable = false)
     private Integer lots;
 
+    /**
+     * Expiry scope this leg belongs to: WEEKLY (synthetic strategy, the only scope the
+     * engine consumes today) or MONTHLY (option-buying strategy, config-only until wired).
+     * Nullable because rows predating the column read null after the DDL update;
+     * LegTemplateCache backfills null to WEEKLY at startup.
+     */
+    @Column(name = "SCOPE", length = 10)
+    private String scope;
+
     public LegTemplate() {}
 
     public LegTemplate(String direction, String optionType, String side, Integer offsetPts, Integer lots) {

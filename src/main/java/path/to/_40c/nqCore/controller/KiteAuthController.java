@@ -14,13 +14,16 @@ import lombok.extern.slf4j.Slf4j;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.MONTHLY;
 import static path.to._40c.nqCore.util.Constants.PE;
 import static path.to._40c.nqCore.util.Constants.SELL;
 import static path.to._40c.nqCore.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
 import path.to._40c.nqCore.entity.LegTemplate;
+import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.repo.LegTemplateRepository;
 import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 
@@ -92,9 +95,16 @@ public class KiteAuthController {
     public ResponseEntity<Map<String, Object>> save(
             @RequestParam String thisWeekSymbol,
             @RequestParam String rolloverSymbol,
-            @RequestParam(required = false) String rolloverDay) {
-        weeklySymbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
-        return ResponseEntity.ok(Map.of("success", true, "message", "Symbols saved."));
+            @RequestParam(required = false) String rolloverDay,
+            @RequestParam(required = false, defaultValue = WEEKLY) String scope) {
+        String normalizedScope = scope == null ? WEEKLY : scope.trim().toUpperCase();
+        if (!WEEKLY.equals(normalizedScope) && !MONTHLY.equals(normalizedScope)) {
+            return ResponseEntity.badRequest().body(Map.of("success", false,
+                    "message", "scope must be WEEKLY or MONTHLY (got '" + scope + "')"));
+        }
+        weeklySymbolService.saveSymbols(normalizedScope, thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
+        return ResponseEntity.ok(Map.of("success", true,
+                "message", (MONTHLY.equals(normalizedScope) ? "Monthly" : "Weekly") + " symbols saved."));
     }
 
     @GetMapping(value = "/getNiftyInstruments", produces = MediaType.APPLICATION_JSON_VALUE)
@@ -143,6 +153,9 @@ public class KiteAuthController {
     public String showForm(Model model) {
     	model.addAttribute("symbols", weeklySymbolService.get().orElse(null));
         model.addAttribute("noSymbols", weeklySymbolService.isMissing());
+        Optional<WeeklySymbolConfig> monthly = weeklySymbolService.getMonthly();
+        model.addAttribute("monthlySymbols", monthly.orElse(null));
+        model.addAttribute("noMonthlySymbols", monthly.isEmpty());
         return "signalHome";
     }
 
@@ -173,6 +186,7 @@ public class KiteAuthController {
     @PutMapping("/api/leg-templates/{id}")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> updateLegTemplate(@PathVariable Long id, @RequestBody LegTemplate body) {
+        String requestedScope = body.getScope();
         return legTemplateRepository.findById(id)
             .<ResponseEntity<Map<String, Object>>>map(existing -> {
                 Map<String, Object> err = validate(body);
@@ -182,6 +196,9 @@ public class KiteAuthController {
                 existing.setSide(body.getSide());
                 existing.setOffsetPts(body.getOffsetPts());
                 existing.setLots(body.getLots());
+                existing.setScope(requestedScope == null || requestedScope.isBlank()
+                        ? (existing.getScope() == null ? WEEKLY : existing.getScope())
+                        : body.getScope());
                 LegTemplate saved = legTemplateRepository.save(existing);
                 legTemplateCache.refreshCache();
                 log.info("Leg template updated: {}", saved);
@@ -215,6 +232,9 @@ public class KiteAuthController {
         if (t.getLots() == null || t.getLots() <= 0)
             return Map.of("success", false, "message", "lots must be > 0");
         if (t.getOffsetPts() == null) t.setOffsetPts(0);
+        if (t.getScope() == null || t.getScope().isBlank()) t.setScope(WEEKLY);
+        if (!WEEKLY.equals(t.getScope()) && !MONTHLY.equals(t.getScope()))
+            return Map.of("success", false, "message", "scope must be WEEKLY or MONTHLY");
         return null;
     }
 }
