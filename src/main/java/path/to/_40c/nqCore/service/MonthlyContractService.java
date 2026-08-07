@@ -25,9 +25,13 @@ import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 /**
- * The LONG_MONTHLY calendar roll (plan §3.3.1): trade the current monthly while its DTE
- * is >= {@link #MIN_DTE}; below that, new positions use the NEXT monthly (decay steepens
- * in the last ~10 days). This service owns the automation:
+ * Resolves WHICH monthly contract the LONG_MONTHLY book trades — nothing else. This
+ * service never touches positions or places orders; the position roll (sell in-hand,
+ * re-buy at ATM on the contract this service resolved) lives in
+ * PositionRolloverService.rollOverMonthly.
+ *
+ * The rule (plan §3.3.1): trade the current monthly while its DTE is >= {@link #MIN_DTE};
+ * below that, the NEXT monthly (decay steepens in the last ~10 days). Owned automation:
  *
  * - caches the NFO instrument dump once per IST day (the gateway call is a full-exchange
  *   download — never fetch it per signal);
@@ -50,7 +54,7 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
  */
 @Service
 @Slf4j
-public class MonthlyRollService {
+public class MonthlyContractService {
 
     /** Below this many days to expiry, new monthly positions move to the next contract. */
     static final int MIN_DTE = 10;
@@ -60,7 +64,7 @@ public class MonthlyRollService {
     private final AtomicReference<List<Instrument>> chain = new AtomicReference<>(List.of());
     private final AtomicReference<LocalDate> chainLoadedOn = new AtomicReference<>();
 
-    public MonthlyRollService(KiteGateway kiteGateway, WeeklySymbolService weeklySymbolService) {
+    public MonthlyContractService(KiteGateway kiteGateway, WeeklySymbolService weeklySymbolService) {
         this.kiteGateway = kiteGateway;
         this.weeklySymbolService = weeklySymbolService;
     }
@@ -74,7 +78,7 @@ public class MonthlyRollService {
      */
     @Scheduled(cron = "0 40 8 * * MON-FRI", zone = ZONE_ID)
     public void dailyRollCheck() {
-        checkAndPromoteMonthly();
+        syncTradedContract();
     }
 
     /**
@@ -82,7 +86,7 @@ public class MonthlyRollService {
      * the daily tick, the manual endpoint, and defensively before every monthly open.
      * Any failure leaves the existing config in place.
      */
-    public synchronized void checkAndPromoteMonthly() {
+    public synchronized void syncTradedContract() {
         try {
             List<MonthlyContract> monthlies = resolveMonthlyContracts();
             if (monthlies.size() < 2) {
@@ -132,7 +136,7 @@ public class MonthlyRollService {
     private Optional<String> prefixFor(LocalDate expiry) {
         return niftyOptionChain().stream()
                 .filter(i -> expiry.equals(toLocalDate(i.expiry)))
-                .map(MonthlyRollService::derivePrefix)
+                .map(MonthlyContractService::derivePrefix)
                 .flatMap(Optional::stream)
                 .findFirst();
     }

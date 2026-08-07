@@ -67,11 +67,15 @@ class BookFenceTest {
     }
 
     @Test
-    @DisplayName("rollOverMonthly is a documented no-op in v1 — no lookups, no orders")
-    void monthlyRolloverPlacesNothing() {
-        rolloverService.rollOverMonthly();
+    @DisplayName("monthly rollover asks the finder for LONG_MONTHLY only — a LIVE weekly position is invisible to it")
+    void monthlyRolloverIsFencedToMonthlyBook() {
+        when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(null);
 
-        verifyNoInteractions(util);
+        rolloverService.rollOverMonthly("24500");
+
+        verify(util).findLiveTradesWithLiveOrderBooks(LONG_MONTHLY);
+        verify(util, never()).findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY);
+        verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString());
     }
 
     @Test

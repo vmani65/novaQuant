@@ -26,7 +26,7 @@ import com.zerodhatech.models.Instrument;
 
 import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.gateway.KiteGateway;
-import path.to._40c.nqCore.service.MonthlyRollService.MonthlyContract;
+import path.to._40c.nqCore.service.MonthlyContractService.MonthlyContract;
 
 /**
  * Business rules of the LONG_MONTHLY calendar roll (plan §3.3.1):
@@ -39,20 +39,20 @@ import path.to._40c.nqCore.service.MonthlyRollService.MonthlyContract;
  * - promotion rewrites the MONTHLY symbol row only when it differs, and an empty/broken
  *   NFO dump leaves the existing config untouched (fail-safe: never blank the symbols).
  */
-class MonthlyRollServiceTest {
+class MonthlyContractServiceTest {
 
     private static final ZoneId IST = ZoneId.of(ZONE_ID);
 
     private KiteGateway gateway;
     private WeeklySymbolService symbolService;
-    private MonthlyRollService service;
+    private MonthlyContractService service;
     private final LocalDate today = LocalDate.now(IST);
 
     @BeforeEach
     void setUp() {
         gateway = mock(KiteGateway.class);
         symbolService = mock(WeeklySymbolService.class);
-        service = new MonthlyRollService(gateway, symbolService);
+        service = new MonthlyContractService(gateway, symbolService);
         when(symbolService.getMonthly()).thenReturn(Optional.empty());
     }
 
@@ -79,7 +79,7 @@ class MonthlyRollServiceTest {
         when(gateway.getInstruments(NFO)).thenReturn(chainWithCurrentMonthlyAt(today.plusDays(10)));
         assertThat(service.resolveMonthlyContracts().get(0).prefix()).isEqualTo("CURM");
 
-        MonthlyRollService fresh = new MonthlyRollService(gateway, symbolService);
+        MonthlyContractService fresh = new MonthlyContractService(gateway, symbolService);
         when(gateway.getInstruments(NFO)).thenReturn(chainWithCurrentMonthlyAt(today.plusDays(9)));
         assertThat(fresh.resolveMonthlyContracts().get(0).prefix()).isEqualTo("NXTM");
     }
@@ -87,14 +87,14 @@ class MonthlyRollServiceTest {
     @Test
     @DisplayName("prefix derivation cuts strike+type using the exchange strike field, ambiguous weekly digits included")
     void prefixDerivationIsRegexFree() {
-        assertThat(MonthlyRollService.derivePrefix(instrument("NIFTY2681124650CE", "24650.0", "CE", today)))
+        assertThat(MonthlyContractService.derivePrefix(instrument("NIFTY2681124650CE", "24650.0", "CE", today)))
                 .contains("26811");
-        assertThat(MonthlyRollService.derivePrefix(instrument("NIFTY26AUG24500PE", "24500.0", "PE", today)))
+        assertThat(MonthlyContractService.derivePrefix(instrument("NIFTY26AUG24500PE", "24500.0", "PE", today)))
                 .contains("26AUG");
-        assertThat(MonthlyRollService.derivePrefix(instrument("NIFTY26AUG24500PE", "99999.0", "PE", today)))
+        assertThat(MonthlyContractService.derivePrefix(instrument("NIFTY26AUG24500PE", "99999.0", "PE", today)))
                 .as("strike that does not reconstruct the symbol is rejected")
                 .isEmpty();
-        assertThat(MonthlyRollService.derivePrefix(instrument("BANKNIFTY26AUG50000CE", "50000.0", "CE", today)))
+        assertThat(MonthlyContractService.derivePrefix(instrument("BANKNIFTY26AUG50000CE", "50000.0", "CE", today)))
                 .as("symbols not starting with NIFTY are rejected")
                 .isEmpty();
     }
@@ -106,7 +106,7 @@ class MonthlyRollServiceTest {
         when(symbolService.getMonthly()).thenReturn(
                 Optional.of(new WeeklySymbolConfig(WeeklySymbolConfig.MONTHLY_ID, MONTHLY, "CURM", "NXTM")));
 
-        service.checkAndPromoteMonthly();
+        service.syncTradedContract();
 
         verify(symbolService).saveSymbols(MONTHLY, "NXTM", "FARM", null);
     }
@@ -118,7 +118,7 @@ class MonthlyRollServiceTest {
         when(symbolService.getMonthly()).thenReturn(
                 Optional.of(new WeeklySymbolConfig(WeeklySymbolConfig.MONTHLY_ID, MONTHLY, "CURM", "NXTM")));
 
-        service.checkAndPromoteMonthly();
+        service.syncTradedContract();
 
         verify(symbolService, never()).saveSymbols(anyString(), anyString(), anyString(), any());
     }
@@ -128,7 +128,7 @@ class MonthlyRollServiceTest {
     void emptyDumpIsFailSafe() {
         when(gateway.getInstruments(NFO)).thenReturn(List.of());
 
-        service.checkAndPromoteMonthly();
+        service.syncTradedContract();
 
         verify(symbolService, never()).saveSymbols(anyString(), anyString(), anyString(), any());
     }

@@ -42,7 +42,7 @@ public class SignalService {
 	private final PositionRepository positionRepository;
 	private final WeeklySymbolService weeklySymbolService;
 	private final BookConfigService bookConfigService;
-	private final MonthlyRollService monthlyRollService;
+	private final MonthlyContractService monthlyContractService;
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -52,7 +52,7 @@ public class SignalService {
 	public SignalService(PositionOpeningService openingService, PositionClosingService closingService,
 			PositionRolloverService rollOverService, PostTradeService postTradeService,
 			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService,
-			BookConfigService bookConfigService, MonthlyRollService monthlyRollService) {
+			BookConfigService bookConfigService, MonthlyContractService monthlyContractService) {
 		this.openingService = openingService;
 		this.closingService = closingService;
 		this.rollOverService = rollOverService;
@@ -60,7 +60,7 @@ public class SignalService {
 		this.positionRepository = positionRepository;
 		this.weeklySymbolService = weeklySymbolService;
 		this.bookConfigService = bookConfigService;
-		this.monthlyRollService = monthlyRollService;
+		this.monthlyContractService = monthlyContractService;
 	}
 
 	/**
@@ -83,17 +83,24 @@ public class SignalService {
 	 * close without opening a new one.
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
+	   Instant overallStart = Instant.now();
 	   checkAndPromoteRolloverSymbol();
+	   Instant weeklyStart = Instant.now();
 	   runIsolated(SYNTH_WEEKLY, "flip", () -> {
 	       if (bookConfigService.isEnabled(SYNTH_WEEKLY)) flipWeekly(signalPrice, type, signal);
 	       else closeOnlyForDisabledBook(SYNTH_WEEKLY, signalPrice, signal);
 	       return null;
 	   });
+	   long weeklyMs = Duration.between(weeklyStart, Instant.now()).toMillis();
+	   Instant monthlyStart = Instant.now();
 	   runIsolated(LONG_MONTHLY, "flip", () -> {
 	       if (bookConfigService.isEnabled(LONG_MONTHLY)) flipMonthly(signalPrice, type, signal);
 	       else closeOnlyForDisabledBook(LONG_MONTHLY, signalPrice, signal);
 	       return null;
 	   });
+	   long monthlyMs = Duration.between(monthlyStart, Instant.now()).toMillis();
+	   log.info("[PERFORMANCE] flip OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
+	           weeklyMs, monthlyMs, Duration.between(overallStart, Instant.now()).toMillis());
 	   return true;
 	}
 
@@ -103,6 +110,8 @@ public class SignalService {
 	 * untracked broker positions of that book.
 	 */
 	public boolean handleTradeOpen(String signalPrice, String type, Signal signal) {
+	   Instant overallStart = Instant.now();
+	   Instant weeklyStart = Instant.now();
 	   runIsolated(SYNTH_WEEKLY, "open", () -> {
 	       if (!bookConfigService.isEnabled(SYNTH_WEEKLY)) {
 	           log.info("SYNTH_WEEKLY disabled — skipping open");
@@ -118,13 +127,15 @@ public class SignalService {
 	       }
 	       return null;
 	   });
+	   long weeklyMs = Duration.between(weeklyStart, Instant.now()).toMillis();
+	   Instant monthlyStart = Instant.now();
 	   runIsolated(LONG_MONTHLY, "open", () -> {
 	       if (!bookConfigService.isEnabled(LONG_MONTHLY)) {
 	           log.info("LONG_MONTHLY disabled — skipping open");
 	           return null;
 	       }
 	       Instant start = Instant.now();
-	       monthlyRollService.checkAndPromoteMonthly();
+	       monthlyContractService.syncTradedContract();
 	       Position orphanClosed = closingService.closeMonthlyOrphanIfAny(signalPrice, signal);
 	       Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, new Position(signal));
 	       log.info("[PERFORMANCE] open LONG_MONTHLY | exec={}ms", Duration.between(start, Instant.now()).toMillis());
@@ -134,6 +145,9 @@ public class SignalService {
 	       }
 	       return null;
 	   });
+	   long monthlyMs = Duration.between(monthlyStart, Instant.now()).toMillis();
+	   log.info("[PERFORMANCE] open OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
+	           weeklyMs, monthlyMs, Duration.between(overallStart, Instant.now()).toMillis());
 	   return true;
 	}
 
@@ -148,9 +162,15 @@ public class SignalService {
 	public boolean handleTradeClose(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 	   Position weeklyClosed = runIsolated(SYNTH_WEEKLY, "close", () -> closeWeeklyForSignal(signalPrice, signal, start));
+	   long weeklyMs = Duration.between(start, Instant.now()).toMillis();
+	   log.info("[PERFORMANCE] close SYNTH_WEEKLY | exec={}ms", weeklyMs);
+	   Instant monthlyStart = Instant.now();
 	   Position monthlyClosed = runIsolated(LONG_MONTHLY, "close", () ->
 	           closingService.closeMonthlyTrade(signalPrice, signal, true));
-	   log.info("[PERFORMANCE] close | exec={}ms", Duration.between(start, Instant.now()).toMillis());
+	   long monthlyMs = Duration.between(monthlyStart, Instant.now()).toMillis();
+	   log.info("[PERFORMANCE] close LONG_MONTHLY | exec={}ms", monthlyMs);
+	   log.info("[PERFORMANCE] close OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
+	           weeklyMs, monthlyMs, Duration.between(start, Instant.now()).toMillis());
 	   checkAndPromoteRolloverSymbol();
 	   postTradeService.afterClose(weeklyClosed);
 	   postTradeService.afterClose(monthlyClosed);
@@ -209,7 +229,7 @@ public class SignalService {
 	 */
 	private void flipMonthly(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
-	   monthlyRollService.checkAndPromoteMonthly();
+	   monthlyContractService.syncTradedContract();
 	   Position closedTrade = closingService.closeMonthlyTrade(signalPrice, signal, false);
 	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
 	       log.warn("flip: monthly close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());
@@ -290,6 +310,25 @@ public class SignalService {
 	/** 14:47 expiry-day trigger — rolls the SYNTH_WEEKLY book only (hard fence). */
 	public boolean handleRollOver(String signalPrice) {
 	   rollOverService.rollOverWeekly(signalPrice);
+	   return true;
+	}
+
+	/**
+	 * nQTicker monthly-roll trigger — syncs the traded monthly contract to the DTE rule,
+	 * then rolls the LONG_MONTHLY book's position onto it (sell in-hand, buy current ATM
+	 * on the latest contract). Weekly book untouched. Failures are logged, never thrown —
+	 * a broken roll trigger must not take the endpoint down.
+	 */
+	public boolean handleMonthlyRollOver(String signalPrice) {
+	   Instant start = Instant.now();
+	   try {
+	       monthlyContractService.syncTradedContract();
+	       rollOverService.rollOverMonthly(signalPrice);
+	   } catch (Exception e) {
+	       log.error("[BOOK-ISOLATED] LONG_MONTHLY rollover failed: {}", e.getMessage(), e);
+	       return false;
+	   }
+	   log.info("[PERFORMANCE] rollover LONG_MONTHLY trigger | total={}ms", Duration.between(start, Instant.now()).toMillis());
 	   return true;
 	}
 }
