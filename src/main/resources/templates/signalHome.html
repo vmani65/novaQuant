@@ -1396,15 +1396,19 @@
                 </div>
                 <div id="legTemplatesBody" style="display:none;">
                     <div class="p-5">
-                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                        <div class="grid grid-cols-1 lg:grid-cols-2 gap-x-24 gap-y-8">
                             <!-- MONTHLY column (left) -->
-                            <div class="space-y-6">
-                                <div class="flex items-center justify-between border-b border-violet-100 pb-2">
-                                    <div class="text-[11px] font-bold text-violet-700 uppercase tracking-widest">Monthly <span class="normal-case tracking-normal font-mono text-gray-400">LONG_MONTHLY</span></div>
-                                    <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
-                                        <span id="bookStateLONG_MONTHLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
-                                        <input type="checkbox" id="bookToggleLONG_MONTHLY" onchange="toggleBook('LONG_MONTHLY', this.checked)" class="accent-violet-600 w-4 h-4 cursor-pointer">
-                                    </label>
+                            <div class="space-y-6 w-full max-w-xl lg:justify-self-end">
+                                <div class="flex items-center border-b border-violet-100 pb-2">
+                                    <div class="flex-1"></div>
+                                    <div class="text-[11px] font-bold text-violet-700 uppercase tracking-widest text-center"
+                                         title="Book LONG_MONTHLY — expresses each signal as a single BOUGHT monthly option (nothing sold)">Monthly Buying</div>
+                                    <div class="flex-1 flex justify-end">
+                                        <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
+                                            <span id="bookStateLONG_MONTHLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
+                                            <input type="checkbox" id="bookToggleLONG_MONTHLY" onchange="toggleBook('LONG_MONTHLY', this.checked)" class="accent-violet-600 w-4 h-4 cursor-pointer">
+                                        </label>
+                                    </div>
                                 </div>
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
@@ -1450,13 +1454,17 @@
                                 </div>
                             </div>
                             <!-- WEEKLY column (right) -->
-                            <div class="space-y-6">
-                                <div class="flex items-center justify-between border-b border-blue-100 pb-2">
-                                    <div class="text-[11px] font-bold text-blue-700 uppercase tracking-widest">Weekly <span class="normal-case tracking-normal font-mono text-gray-400">SYNTH_WEEKLY</span></div>
-                                    <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
-                                        <span id="bookStateSYNTH_WEEKLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
-                                        <input type="checkbox" id="bookToggleSYNTH_WEEKLY" onchange="toggleBook('SYNTH_WEEKLY', this.checked)" class="accent-blue-600 w-4 h-4 cursor-pointer">
-                                    </label>
+                            <div class="space-y-6 w-full max-w-xl lg:justify-self-start">
+                                <div class="flex items-center border-b border-blue-100 pb-2">
+                                    <div class="flex-1"></div>
+                                    <div class="text-[11px] font-bold text-blue-700 uppercase tracking-widest text-center"
+                                         title="Book SYNTH_WEEKLY — 2-leg synthetic future on weekly options (buy + sell at ATM)">Weekly Synthetic</div>
+                                    <div class="flex-1 flex justify-end">
+                                        <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
+                                            <span id="bookStateSYNTH_WEEKLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
+                                            <input type="checkbox" id="bookToggleSYNTH_WEEKLY" onchange="toggleBook('SYNTH_WEEKLY', this.checked)" class="accent-blue-600 w-4 h-4 cursor-pointer">
+                                        </label>
+                                    </div>
                                 </div>
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
