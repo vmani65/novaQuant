@@ -31,6 +31,8 @@
         .trade-row:hover { background: #f8fafc; }
         .child-row { display: none; }
         .child-row.open { display: table-row; }
+        .sig-child { display: none; }
+        .sig-child.open { display: table-row; }
 
         /* Outcome badges */
         .badge-win    { background: #dcfce7; color: #15803d; border: 1px solid #86efac; }
@@ -436,6 +438,10 @@
         </tr>`;
     }
 
+    // One signal, expressed by each enabled book, opens one position PER BOOK — so a
+    // flip day with both books on writes two rows per signal. The log groups those
+    // rows under one signal-level parent (grouped by strategy + signalAt, the OPEN
+    // signal's timestamp); a signal with a single position renders exactly as before.
     function renderTrades(trades) {
         const tbody = document.getElementById('tradeBody');
         if (!trades || trades.length === 0) {
@@ -443,38 +449,121 @@
             return;
         }
 
-        tbody.innerHTML = trades.map(t => {
-            const hasChildren = t.legs && t.legs.length > 0;
-            const chevron = hasChildren
-                ? `<svg class="chevron w-3.5 h-3.5 text-gray-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`
-                : `<span class="w-3.5 h-3.5 inline-block"></span>`;
+        const groups = [];
+        const byKey = new Map();
+        trades.forEach(t => {
+            const key = t.signalAt && String(t.signalAt).trim()
+                ? (t.strategyName || '') + '|' + t.signalAt
+                : 'solo-' + t.id;
+            if (byKey.has(key)) byKey.get(key).push(t);
+            else { const g = [t]; byKey.set(key, g); groups.push(g); }
+        });
 
-            const childRows = buildChildRows(t.legs || [], t.id);
+        tbody.innerHTML = groups.map((g, i) =>
+            g.length === 1 ? positionRowHtml(g[0], '', '') : signalGroupHtml(g, 'g' + i)
+        ).join('');
 
-            return `
-                <tr class="trade-row border-b border-gray-100" data-trade-id="${t.id}" onclick="toggleChildren(${t.id}, this)">
-                    <td class="px-4 py-3 text-center">${chevron}</td>
-                    <td class="px-4 py-3 font-mono text-gray-500 text-[11px]">#${t.id}</td>
-                    <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${t.openedAt || '—'}</td>
-                    <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${t.closedAt || '—'}</td>
-                    <td class="px-4 py-3">${directionBadge(t.direction)}</td>
-                    <td class="px-4 py-3">${statusBadge(t.status)}</td>
-                    <td class="px-4 py-3">${outcomeBadge(t.result)}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.entrySpot != null ? fmt(t.entrySpot) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-700">${t.exitSpot != null ? fmt(t.exitSpot) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pointsPnl != null ? fmt(t.pointsPnl) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.expectedPnl != null ? '₹' + fmt(t.expectedPnl) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
-                    <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
-                    <td class="px-4 py-3">${bookBadge(t.book)}</td>
-                    <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
-                </tr>
-                ${childRows}`;
-        }).join('');
-
-        document.getElementById('tradeCount').textContent = `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
+        const grouped = groups.some(g => g.length > 1);
+        document.getElementById('tradeCount').textContent = grouped
+            ? `${groups.length} signal${groups.length !== 1 ? 's' : ''} · ${trades.length} positions`
+            : `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
         renderSummary(trades);
+    }
+
+    function positionRowHtml(t, extraClass, sigAttr) {
+        const hasChildren = t.legs && t.legs.length > 0;
+        const chevron = hasChildren
+            ? `<svg class="chevron w-3.5 h-3.5 text-gray-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg>`
+            : `<span class="w-3.5 h-3.5 inline-block"></span>`;
+
+        const childRows = buildChildRows(t.legs || [], t.id);
+
+        return `
+            <tr class="trade-row border-b border-gray-100 ${extraClass}" ${sigAttr} data-trade-id="${t.id}" onclick="toggleChildren(${t.id}, this)">
+                <td class="px-4 py-3 text-center">${chevron}</td>
+                <td class="px-4 py-3 font-mono text-gray-500 text-[11px]">#${t.id}</td>
+                <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${t.openedAt || '—'}</td>
+                <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${t.closedAt || '—'}</td>
+                <td class="px-4 py-3">${directionBadge(t.direction)}</td>
+                <td class="px-4 py-3">${statusBadge(t.status)}</td>
+                <td class="px-4 py-3">${outcomeBadge(t.result)}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-700">${t.entrySpot != null ? fmt(t.entrySpot) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-700">${t.exitSpot != null ? fmt(t.exitSpot) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pointsPnl != null ? fmt(t.pointsPnl) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${t.expectedPnl != null ? '₹' + fmt(t.expectedPnl) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
+                <td class="px-4 py-3">${bookBadge(t.book)}</td>
+                <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
+            </tr>
+            ${childRows}`;
+    }
+
+    /**
+     * Signal parent row: rupee columns are SUMS across the group's positions (the
+     * account-level view of the signal); spot/points columns show the shared value
+     * when every position agrees and an em dash when they diverge (e.g. weekly
+     * banked recenter points vs monthly) — never a misleading blend.
+     */
+    function signalGroupHtml(group, sigId) {
+        const first = group[0];
+        const same = sel => { const v = sel(group[0]); return group.every(t => String(sel(t)) === String(v)) ? v : null; };
+        const sum = sel => { const vals = group.map(sel).filter(v => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) : null; };
+        const allClosed = group.every(t => t.closedAt);
+        const lastClosed = allClosed ? group.map(t => t.closedAt).sort().slice(-1)[0] : null;
+        const dir = same(t => t.direction);
+        const result = same(t => t.result);
+        const entry = same(t => t.entrySpot);
+        const exit = same(t => t.exitSpot);
+        const points = same(t => t.pointsPnl);
+        const expected = sum(t => t.expectedPnl);
+        const actual = sum(t => t.actualPnl);
+        const charges = sum(t => t.totalCharges);
+        const statusCell = group.map(t => `
+            <div class="flex items-center gap-1.5 whitespace-nowrap">
+                <span class="text-[9px] font-bold w-3 ${t.book === 'LONG_MONTHLY' ? 'text-violet-500' : 'text-blue-500'}">${t.book === 'LONG_MONTHLY' ? 'M' : 'W'}</span>${statusBadge(t.status)}
+            </div>`).join('');
+        const posRows = group.map(t => positionRowHtml(t, 'sig-child bg-slate-50/70', `data-sig="${sigId}"`)).join('');
+
+        return `
+            <tr class="trade-row sig-row border-b border-gray-200 bg-indigo-50/50" data-sig="${sigId}" onclick="toggleSignal(this)">
+                <td class="px-4 py-3 text-center"><svg class="chevron w-3.5 h-3.5 text-indigo-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></td>
+                <td class="px-4 py-3 font-mono text-gray-500 text-[11px] whitespace-nowrap">${group.map(t => '#' + t.id).join(' · ')}</td>
+                <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${first.openedAt || '—'}</td>
+                <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${lastClosed || '—'}</td>
+                <td class="px-4 py-3">${dir ? directionBadge(dir) : '—'}</td>
+                <td class="px-4 py-3"><div class="flex flex-col gap-1">${statusCell}</div></td>
+                <td class="px-4 py-3">${result ? outcomeBadge(result) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-700">${entry != null ? fmt(entry) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-700">${exit != null ? fmt(exit) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${points != null ? fmt(points) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${expected != null ? '₹' + fmt(expected) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono ${pnlClass(actual)}">${actual != null ? '₹' + fmt(actual) : '—'}</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-400">—</td>
+                <td class="px-4 py-3 text-right font-mono text-gray-500">${charges != null ? '₹' + fmt(charges) : '—'}</td>
+                <td class="px-4 py-3"><div class="flex gap-1">${group.map(t => bookBadge(t.book)).join('')}</div></td>
+                <td class="px-4 py-3 text-gray-500 text-[11px]">${first.strategyName || '—'}</td>
+            </tr>
+            ${posRows}`;
+    }
+
+    function toggleSignal(rowEl) {
+        const sigId = rowEl.dataset.sig;
+        const posRows = document.querySelectorAll(`tr.sig-child[data-sig="${sigId}"]`);
+        if (!posRows.length) return;
+        const isOpen = posRows[0].classList.contains('open');
+        posRows.forEach(r => {
+            r.classList.toggle('open', !isOpen);
+            if (isOpen) {
+                document.querySelectorAll(`tr[data-parent="${r.dataset.tradeId}"]`)
+                    .forEach(l => l.classList.remove('open'));
+                const chev = r.querySelector('.chevron');
+                if (chev) chev.style.transform = '';
+            }
+        });
+        const chevron = rowEl.querySelector('.chevron');
+        if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
     }
 
     function renderSummary(trades) {

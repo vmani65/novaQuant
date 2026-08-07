@@ -41,6 +41,7 @@ public class PositionLogController {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", t.getId());
         m.put("book", t.getBook());
+        m.put("signalAt", t.getSignalAt());
         m.put("openedAt", t.getOpenedAt());
         m.put("closedAt", t.getClosedAt());
         m.put("direction", t.getDirection());
