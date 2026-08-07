@@ -41,6 +41,8 @@ public class LegOrder {
      * (trade-73 class, open side).
      */
     private Boolean openOrderMayBeLive;
+    /** Effective spread paid at entry vs the quote mid (points per unit), copied onto the persisted leg. */
+    private Double openSpreadPaid;
     private List<BulkOrderResponse> orderResponse;
 
     public LegOrder() {}

@@ -68,6 +68,8 @@ public class PositionLogController {
     private Map<String, Object> childToMap(BaseLegEntity c) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", c.getId());
+        m.put("openSpreadPaid", c.getOpenSpreadPaid());
+        m.put("closeSpreadPaid", c.getCloseSpreadPaid());
         m.put("exchangeSymbol", c.getExchangeSymbol());
         m.put("side", c.getSide());
         m.put("moneyness", c.getMoneyness());

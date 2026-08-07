@@ -936,6 +936,36 @@ public class PositionUtil {
     }
 
     /** Top-of-book {mid, halfSpread, bid, ask} from a quote, or null if depth is missing/unusable. */
+    /**
+     * Effective spread paid on a fill, in points per unit: how far the achieved average
+     * fill sits from the quote midpoint at order time, signed so paying up is positive
+     * (BUY above mid / SELL below mid; a negative value is price improvement).
+     * Measurement only — unlike midHalfSpread there is no wide-book gate, because an
+     * illiquid book is exactly what the monthly liquidity guard needs to see recorded.
+     * Null when depth or the fill is unusable.
+     */
+    public static Double effectiveSpreadPaid(Quote q, String fillSide, double avgFillPrice) {
+        if (q == null || q.depth == null
+            || q.depth.buy == null || q.depth.buy.isEmpty()
+            || q.depth.sell == null || q.depth.sell.isEmpty()
+            || avgFillPrice <= 0) return null;
+        double bid = q.depth.buy.get(0).getPrice();
+        double ask = q.depth.sell.get(0).getPrice();
+        if (bid <= 0 || ask <= 0 || ask < bid) return null;
+        double mid = (bid + ask) / 2.0;
+        return ComputeUtil.rnd(BUY.equals(fillSide) ? avgFillPrice - mid : mid - avgFillPrice);
+    }
+
+    /** Monthly liquidity guard: an excessive spread on a LONG_MONTHLY fill is loud — plan §3.3.2 says re-evaluate the book's economics at this size. */
+    public static void alertIfMonthlySpreadExcessive(String book, String instrument, String phase, Double spreadPaid) {
+        if (path.to._40c.nqCore.util.Constants.LONG_MONTHLY.equals(book)
+                && spreadPaid != null && spreadPaid > path.to._40c.nqCore.util.Constants.MONTHLY_SPREAD_ALERT_PTS) {
+            log.error("MONTHLY LIQUIDITY ALERT: {} {} paid {} pts/side vs mid (threshold {}) — "
+                    + "monthly spread cost at this size needs re-evaluation",
+                instrument, phase, spreadPaid, path.to._40c.nqCore.util.Constants.MONTHLY_SPREAD_ALERT_PTS);
+        }
+    }
+
     private static double[] midHalfSpread(Quote q) {
         if (q == null || q.depth == null
             || q.depth.buy == null || q.depth.buy.isEmpty()

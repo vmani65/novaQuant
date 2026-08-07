@@ -123,6 +123,8 @@ public class PositionOpeningService {
     	            }
     	            w.setOpenFilledQty(er.totalFilled());
     	            w.setOpenOrderMayBeLive(PositionUtil.closeOrderMayBeLive(er));
+    	            w.setOpenSpreadPaid(PositionUtil.effectiveSpreadPaid(
+    	                    quotes.get(w.getExchangeSymbol()), w.getSide(), er.weightedAvgFillPrice()));
     	            if (!er.fullyFilled()) {
     	                log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
     	                    w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
@@ -144,6 +146,8 @@ public class PositionOpeningService {
     		b.setPosition(pojo.getParentPosition());
     		b.setMoneyness(pojo.getMoneyness());
     		b.setOpenOrderId(pojo.getOpenOrderId());
+    		b.setOpenSpreadPaid(pojo.getOpenSpreadPaid());
+    		PositionUtil.alertIfMonthlySpreadExcessive(trade.getBook(), pojo.getInstrument(), "ENTRY", pojo.getOpenSpreadPaid());
     		int filledQty = pojo.getOpenFilledQty();
     		boolean mayStillFill = Boolean.TRUE.equals(pojo.getOpenOrderMayBeLive())
     				&& !Boolean.TRUE.equals(pojo.getOpenFullyFilled());

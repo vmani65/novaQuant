@@ -343,7 +343,27 @@ each book maps to exactly one calendar (SYNTH_WEEKLY→WEEKLY, LONG_MONTHLY→MO
 
 ---
 
-## 7. IMPLEMENTATION STATUS & PENDING BUILD PLAN (authoritative as of 2026-08-05 03:30)
+## 7. IMPLEMENTATION STATUS & PENDING BUILD PLAN (authoritative as of 2026-08-07)
+
+> **BUILD STATUS 2026-08-07 — phases 1-4 BUILT on feature/nQSynthAndMonthly, NOT deployed:**
+> - Phase 1 (calendars/config+UI): commit 69b0a65, with test coverage.
+> - Phase 2 (§7.1 items 1-8 ALL BUILT): commit 753b857 — SCOPE→BOOK rename, position.BOOK,
+>   book-scoped queries, per-book service methods (openWeekly/openMonthlyTrade etc.),
+>   signal fan-out (weekly-first, error-isolated), BOOK_CONFIG toggles (monthly seeds OFF),
+>   rollover+recenter hard-fenced to SYNTH_WEEKLY, PENDING_OPEN + PendingOpenReconciler.
+> - Phase 3 (§7.2 items 9-13 ALL BUILT): commit 73c6938 — MonthlyRollService (DTE≥10 auto-roll,
+>   daily 08:40 IST + pre-open + /api/monthly-roll-check, prefix from real tradingsymbol),
+>   LONG_MONTHLY expected = (qty/2)×points, WIN/LOSS from rupee PnL, capital chain shared but
+>   lot sizing weekly-only, trade log + equity curve book filters, NRML stats exclude monthly.
+> - Phase 4: item 16 (NIFTY27* filter) FIXED (expiry-horizon filter); item 15 (spread guard)
+>   BUILT — OPEN/CLOSE_SPREAD_PAID per leg + MONTHLY LIQUIDITY ALERT above 2 pts/side;
+>   item 14 DECIDED: single-leg PARTIAL keeps orphan-flatten in v1 (revisit with live data);
+>   item 17 (nqTicker monthly subscription) is external — still owed in the nqTicker app.
+> - Owner decisions (§7.4) locked 2026-08-07: LONG_MONTHLY = 2-lot increments; FULL auto-roll;
+>   recenter NONE; 9:15 open-buffer weekly-only. Evaluation window ≥1 month stands.
+> - Next: mock,test click-through → explicit "promote" → signals.db backup → deploy (§7.0 protocol).
+
+(Original plan below, kept for the record.)
 
 ### 7.0 Phase 1 — Calendars & books CONFIG + UI: BUILT, REVIEWED, ROLLED BACK FROM PROD
 

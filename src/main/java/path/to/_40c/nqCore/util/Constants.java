@@ -48,6 +48,8 @@ public class Constants {
 	public static final int LOT_SIZE = 65;
 	public static final int MAX_SIZE_PER_ORDER = 1755;
 	public static final double NIFTY_OPT_TICK = 0.05;
+	/** Monthly liquidity guard (plan §3.3.2): alert when a LONG_MONTHLY fill pays more than this many points per side vs mid. */
+	public static final double MONTHLY_SPREAD_ALERT_PTS = 2.0;
 
 	public static final String NA = "N/A";
 	

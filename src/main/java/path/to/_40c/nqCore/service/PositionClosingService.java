@@ -133,6 +133,8 @@ public class PositionClosingService {
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         w.setCloseOrderId(er.aggregateOrderIds());
                     }
+                    w.setCloseSpreadPaid(PositionUtil.effectiveSpreadPaid(q, oppositeTransaction, er.weightedAvgFillPrice()));
+                    PositionUtil.alertIfMonthlySpreadExcessive(tradeToClose.getBook(), w.getInstrument(), "EXIT", w.getCloseSpreadPaid());
                     if (er.fullyFilled()) {
                         w.setStatus(CLOSED);
                     } else if (PositionUtil.closeOrderMayBeLive(er)) {

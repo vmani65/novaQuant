@@ -377,18 +377,19 @@
                     <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-600">${c.quantity != null ? c.quantity : '—'}</td>
                     <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-500">${c.marginRequired != null ? '₹' + fmt(c.marginRequired) : '—'}</td>
                     <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.openCharges != null ? '₹' + fmt(c.openCharges) : '—'}</td>
-                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.closeCharges != null ? '₹' + fmt(c.closeCharges) : '—'}</td>
+                    <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-400">${c.closeCharges != null ? '₹' + fmt(c.closeCharges) : '—'}</td>
+                    <td class="py-2 pl-2 pr-3 text-right font-mono text-[11px] text-gray-400">${c.openSpreadPaid != null ? c.openSpreadPaid : '—'} / ${c.closeSpreadPaid != null ? c.closeSpreadPaid : '—'}</td>
                 </tr>`;
         }).join('');
 
         // One parent-table row spanning all 15 cols, containing its own mini-table
         return `
         <tr class="child-row" data-parent="${parentId}">
-            <td colspan="15" class="p-0 bg-slate-50">
+            <td colspan="16" class="p-0 bg-slate-50">
                 <div class="border-l-4 ${accentBorder} ml-8 mr-0">
                     <table class="w-full text-xs border-collapse table-fixed">
                         <colgroup>
-                            <col style="width:17%">
+                            <col style="width:14%">
                             <col style="width:7%">
                             <col style="width:5%">
                             <col style="width:7%">
@@ -402,10 +403,11 @@
                             <col style="width:6%">
                             <col style="width:6%">
                             <col style="width:6%">
+                            <col style="width:7%">
                         </colgroup>
                         <thead>
                             <tr class="${headerBg} border-b border-gray-200">
-                                <th colspan="14" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
+                                <th colspan="15" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
                                     ${legs.length} legs
                                 </th>
                             </tr>
@@ -423,7 +425,8 @@
                                 <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Qty</th>
                                 <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Margin</th>
                                 <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Open Brok</th>
-                                <th class="py-1.5 pl-2 pr-3 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Close Brok</th>
+                                <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Close Brok</th>
+                                <th class="py-1.5 pl-2 pr-3 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide" title="Effective spread paid vs mid at entry / exit (pts per unit)">Spread O/C</th>
                             </tr>
                         </thead>
                         <tbody>${legRows}</tbody>

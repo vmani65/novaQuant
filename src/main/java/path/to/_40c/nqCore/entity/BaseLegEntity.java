@@ -71,4 +71,16 @@ public abstract class BaseLegEntity extends BaseEntity {
 
     @Column(name = "SELL_INTENDED_PRICE")
     protected Double sellIntendedPrice;
+
+    /**
+     * Effective spread paid at ENTRY: avg fill vs the quote midpoint at order time, in
+     * points per unit, signed so paying up is positive. The monthly liquidity guard
+     * (plan §3.3.2) evaluates LONG_MONTHLY slippage against this.
+     */
+    @Column(name = "OPEN_SPREAD_PAID")
+    protected Double openSpreadPaid;
+
+    /** Effective spread paid at EXIT vs the quote midpoint, points per unit (positive = paid up). */
+    @Column(name = "CLOSE_SPREAD_PAID")
+    protected Double closeSpreadPaid;
 }
