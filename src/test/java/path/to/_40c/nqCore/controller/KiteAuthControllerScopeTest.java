@@ -34,6 +34,7 @@ import path.to._40c.nqCore.repo.LegTemplateRepository;
 import path.to._40c.nqCore.service.BookConfigService;
 import path.to._40c.nqCore.service.KiteAuthService;
 import path.to._40c.nqCore.service.LegTemplateCache;
+import path.to._40c.nqCore.service.MonthlySymbolService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
 
 /**
@@ -49,6 +50,7 @@ import path.to._40c.nqCore.service.WeeklySymbolService;
 class KiteAuthControllerScopeTest {
 
     private WeeklySymbolService weeklySymbolService;
+    private MonthlySymbolService monthlySymbolService;
     private LegTemplateRepository legTemplateRepository;
     private LegTemplateCache legTemplateCache;
     private BookConfigService bookConfigService;
@@ -57,48 +59,52 @@ class KiteAuthControllerScopeTest {
     @BeforeEach
     void setUp() {
         weeklySymbolService = mock(WeeklySymbolService.class);
+        monthlySymbolService = mock(MonthlySymbolService.class);
         legTemplateRepository = mock(LegTemplateRepository.class);
         legTemplateCache = mock(LegTemplateCache.class);
         bookConfigService = mock(BookConfigService.class);
         controller = new KiteAuthController(mock(KiteAuthDetailsRepository.class), mock(KiteAuthService.class),
-                weeklySymbolService, legTemplateRepository, legTemplateCache, mock(KiteGateway.class),
-                bookConfigService);
+                weeklySymbolService, monthlySymbolService, legTemplateRepository, legTemplateCache,
+                mock(KiteGateway.class), bookConfigService);
         when(legTemplateRepository.save(any(LegTemplate.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ---------------------------------------------------------------
-    // POST /symbol/save — calendar scope (WEEKLY | MONTHLY)
+    // POST /symbol/save — calendar scope routes to the calendar's own service
     // ---------------------------------------------------------------
 
     @Test
-    @DisplayName("symbol save rejects an unknown scope with 400 and never reaches the service")
+    @DisplayName("symbol save rejects an unknown scope with 400 and never reaches either service")
     void symbolSaveRejectsUnknownScope() {
         ResponseEntity<Map<String, Object>> resp = controller.save("26812", "26819", null, "DAILY");
 
         assertThat(resp.getStatusCode().value()).isEqualTo(400);
         assertThat(resp.getBody().get("success")).isEqualTo(false);
         assertThat((String) resp.getBody().get("message")).contains("scope must be WEEKLY or MONTHLY");
-        verify(weeklySymbolService, never()).saveSymbols(anyString(), anyString(), anyString(), any());
+        verify(weeklySymbolService, never()).saveSymbols(anyString(), anyString(), any());
+        verify(monthlySymbolService, never()).saveSymbols(anyString(), anyString(), any());
     }
 
     @Test
-    @DisplayName("symbol save normalizes case/whitespace on scope and trims the symbols")
-    void symbolSaveNormalizesScopeAndTrimsSymbols() {
+    @DisplayName("MONTHLY scope routes to MonthlySymbolService with trimmed symbols — weekly service untouched")
+    void symbolSaveRoutesMonthlyScope() {
         ResponseEntity<Map<String, Object>> resp = controller.save(" 26AUG ", " 26SEP ", null, " monthly ");
 
         assertThat(resp.getStatusCode().value()).isEqualTo(200);
         assertThat((String) resp.getBody().get("message")).isEqualTo("Monthly symbols saved.");
-        verify(weeklySymbolService).saveSymbols(MONTHLY, "26AUG", "26SEP", null);
+        verify(monthlySymbolService).saveSymbols("26AUG", "26SEP", null);
+        verify(weeklySymbolService, never()).saveSymbols(anyString(), anyString(), any());
     }
 
     @Test
-    @DisplayName("symbol save without a scope defaults to WEEKLY")
+    @DisplayName("missing scope defaults to WEEKLY and routes to WeeklySymbolService — monthly service untouched")
     void symbolSaveDefaultsToWeekly() {
         ResponseEntity<Map<String, Object>> resp = controller.save("26812", "26819", "2026-08-11", null);
 
         assertThat(resp.getStatusCode().value()).isEqualTo(200);
         assertThat((String) resp.getBody().get("message")).isEqualTo("Weekly symbols saved.");
-        verify(weeklySymbolService).saveSymbols(WEEKLY, "26812", "26819", "2026-08-11");
+        verify(weeklySymbolService).saveSymbols("26812", "26819", "2026-08-11");
+        verify(monthlySymbolService, never()).saveSymbols(anyString(), anyString(), any());
     }
 
     // ---------------------------------------------------------------

@@ -25,7 +25,7 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import path.to._40c.nqCore.entity.KiteAuthDetails;
 import path.to._40c.nqCore.entity.LegTemplate;
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.repo.LegTemplateRepository;
 import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 
@@ -40,6 +40,7 @@ import org.springframework.web.bind.annotation.*;
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.service.BookConfigService;
 import path.to._40c.nqCore.service.KiteAuthService;
+import path.to._40c.nqCore.service.MonthlySymbolService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
 import path.to._40c.nqCore.service.LegTemplateCache;
 
@@ -50,17 +51,20 @@ public class KiteAuthController {
     private final KiteAuthDetailsRepository repository;
     private final KiteAuthService kiteAuthService;
     private final WeeklySymbolService weeklySymbolService;
+    private final MonthlySymbolService monthlySymbolService;
     private final LegTemplateRepository legTemplateRepository;
     private final LegTemplateCache legTemplateCache;
     private final KiteGateway kiteGateway;
     private final BookConfigService bookConfigService;
 
     public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
-            WeeklySymbolService weeklySymbolService, LegTemplateRepository legTemplateRepository,
-            LegTemplateCache legTemplateCache, KiteGateway kiteGateway, BookConfigService bookConfigService) {
+            WeeklySymbolService weeklySymbolService, MonthlySymbolService monthlySymbolService,
+            LegTemplateRepository legTemplateRepository, LegTemplateCache legTemplateCache,
+            KiteGateway kiteGateway, BookConfigService bookConfigService) {
         this.repository = repository;
         this.kiteAuthService = kiteAuthService;
         this.weeklySymbolService = weeklySymbolService;
+        this.monthlySymbolService = monthlySymbolService;
         this.legTemplateRepository = legTemplateRepository;
         this.legTemplateCache = legTemplateCache;
         this.kiteGateway = kiteGateway;
@@ -107,7 +111,11 @@ public class KiteAuthController {
             return ResponseEntity.badRequest().body(Map.of("success", false,
                     "message", "scope must be WEEKLY or MONTHLY (got '" + scope + "')"));
         }
-        weeklySymbolService.saveSymbols(normalizedScope, thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
+        if (MONTHLY.equals(normalizedScope)) {
+            monthlySymbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
+        } else {
+            weeklySymbolService.saveSymbols(thisWeekSymbol.trim(), rolloverSymbol.trim(), rolloverDay);
+        }
         return ResponseEntity.ok(Map.of("success", true,
                 "message", (MONTHLY.equals(normalizedScope) ? "Monthly" : "Weekly") + " symbols saved."));
     }
@@ -158,7 +166,7 @@ public class KiteAuthController {
     public String showForm(Model model) {
     	model.addAttribute("symbols", weeklySymbolService.get().orElse(null));
         model.addAttribute("noSymbols", weeklySymbolService.isMissing());
-        Optional<WeeklySymbolConfig> monthly = weeklySymbolService.getMonthly();
+        Optional<SymbolConfig> monthly = monthlySymbolService.get();
         model.addAttribute("monthlySymbols", monthly.orElse(null));
         model.addAttribute("noMonthlySymbols", monthly.isEmpty());
         return "signalHome";

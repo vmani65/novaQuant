@@ -7,10 +7,11 @@ import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.entity.WeeklyLeg;
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.service.LegTemplateCache;
+import path.to._40c.nqCore.service.MonthlySymbolCache;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
@@ -39,13 +40,15 @@ import java.util.stream.Collectors;
 @Service
 @Slf4j
 public class ComputeUtil {
-    private final WeeklySymbolCache symbolCache;
+    private final WeeklySymbolCache weeklySymbolCache;
+    private final MonthlySymbolCache monthlySymbolCache;
     private final LegTemplateCache templateCache;
     private final TradeCapitalRepository tradeCapital;
 
-    public ComputeUtil(WeeklySymbolCache symbolCache, LegTemplateCache templateCache,
-            TradeCapitalRepository tradeCapital) {
-        this.symbolCache = symbolCache;
+    public ComputeUtil(WeeklySymbolCache weeklySymbolCache, MonthlySymbolCache monthlySymbolCache,
+            LegTemplateCache templateCache, TradeCapitalRepository tradeCapital) {
+        this.weeklySymbolCache = weeklySymbolCache;
+        this.monthlySymbolCache = monthlySymbolCache;
         this.templateCache = templateCache;
         this.tradeCapital = tradeCapital;
     }
@@ -57,7 +60,7 @@ public class ComputeUtil {
         boolean isLong = LONG.equals(trade.getDirection());
         int atm = roundNFToNearestATM(signalPrice);
         List<LegTemplate> templates = isLong ? templateCache.getLongLegs() : templateCache.getShortLegs();
-        String symbolPrefix = rollOver ? symbolCache.get().getRolloverSymbol() : symbolCache.get().getThisWeekSymbol();
+        String symbolPrefix = rollOver ? weeklySymbolCache.get().getRolloverSymbol() : weeklySymbolCache.get().getThisWeekSymbol();
         List<LegOrder> orders = templates.stream()
                 .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
                 .collect(Collectors.toList());
@@ -67,8 +70,8 @@ public class ComputeUtil {
 
 	/**
 	 * LONG_MONTHLY build: monthly leg templates + the monthly symbol slot's current
-	 * contract. No rollover variant — a monthly position exits on whatever contract it
-	 * entered (no mid-position rolling in v1; the DTE-based calendar roll is phase 3).
+	 * contract (kept DTE-correct by MonthlySymbolService). No rollover-prefix variant —
+	 * the monthly roll syncs the contract first, so the current slot IS the target.
 	 * Throws when the monthly book is unconfigured so the fan-out's per-book error
 	 * isolation fails ONLY this book, loudly, instead of trading a wrong instrument.
 	 */
@@ -81,7 +84,7 @@ public class ComputeUtil {
         if (templates.isEmpty())
             throw new IllegalStateException("LONG_MONTHLY has no " + (isLong ? LONG : SHORT)
                     + " leg templates configured — add monthly legs in the manifestation UI");
-        WeeklySymbolConfig monthlyCfg = symbolCache.getMonthly();
+        SymbolConfig monthlyCfg = monthlySymbolCache.get();
         if (monthlyCfg == null)
             throw new IllegalStateException("LONG_MONTHLY has no monthly symbol configured — save monthly symbols first");
         String symbolPrefix = monthlyCfg.getThisWeekSymbol();

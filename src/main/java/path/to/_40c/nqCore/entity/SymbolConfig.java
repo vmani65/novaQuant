@@ -19,7 +19,7 @@ import static path.to._40c.nqCore.util.Constants.WEEKLY;
 @Getter
 @Setter
 @ToString
-public class WeeklySymbolConfig {
+public class SymbolConfig {
 
     public static final long WEEKLY_ID  = 1L;
     public static final long MONTHLY_ID = 2L;
@@ -42,16 +42,16 @@ public class WeeklySymbolConfig {
     @Column(name = "scope")
     private String scope = WEEKLY;
 
-    public WeeklySymbolConfig() {}
+    public SymbolConfig() {}
 
-    public WeeklySymbolConfig(String thisWeekSymbol, String rolloverSymbol) {
+    public SymbolConfig(String thisWeekSymbol, String rolloverSymbol) {
         this.id              = WEEKLY_ID;
         this.thisWeekSymbol  = thisWeekSymbol;
         this.rolloverSymbol  = rolloverSymbol;
         this.scope           = WEEKLY;
     }
 
-    public WeeklySymbolConfig(long id, String scope, String thisWeekSymbol, String rolloverSymbol) {
+    public SymbolConfig(long id, String scope, String thisWeekSymbol, String rolloverSymbol) {
         this.id              = id;
         this.scope           = scope;
         this.thisWeekSymbol  = thisWeekSymbol;

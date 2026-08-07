@@ -7,12 +7,12 @@ import path.to._40c.nqCore.entity.SymbolConfig;
 import java.util.concurrent.atomic.AtomicReference;
 
 /**
- * In-memory slot for the WEEKLY calendar's symbol row (id=1) — the contracts the
- * SYNTH_WEEKLY book trades. Mirror of MonthlySymbolCache; each calendar owns exactly
+ * In-memory slot for the MONTHLY calendar's symbol row (id=2) — the contract the
+ * LONG_MONTHLY book trades. Mirror of WeeklySymbolCache; each calendar owns exactly
  * one cache with one slot.
  */
 @Component
-public class WeeklySymbolCache {
+public class MonthlySymbolCache {
     private final AtomicReference<SymbolConfig> ref = new AtomicReference<>();
 
     public SymbolConfig get() { return ref.get(); }

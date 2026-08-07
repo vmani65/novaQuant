@@ -25,10 +25,11 @@ import org.junit.jupiter.api.Test;
 
 import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.entity.Position;
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.service.LegTemplateCache;
+import path.to._40c.nqCore.service.MonthlySymbolCache;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 /**
@@ -47,6 +48,7 @@ class ComputeUtilBuildInstrumentScopeTest {
     private static final String MONTHLY_PREFIX = "26AUG";
 
     private WeeklySymbolCache symbolCache;
+    private MonthlySymbolCache monthlySymbolCache;
     private LegTemplateCache templateCache;
     private ComputeUtil computeUtil;
     private Position trade;
@@ -54,13 +56,14 @@ class ComputeUtilBuildInstrumentScopeTest {
     @BeforeEach
     void setUp() {
         symbolCache = mock(WeeklySymbolCache.class);
+        monthlySymbolCache = mock(MonthlySymbolCache.class);
         templateCache = mock(LegTemplateCache.class);
-        computeUtil = new ComputeUtil(symbolCache, templateCache, mock(TradeCapitalRepository.class));
+        computeUtil = new ComputeUtil(symbolCache, monthlySymbolCache, templateCache, mock(TradeCapitalRepository.class));
 
         when(symbolCache.get()).thenReturn(
-                new WeeklySymbolConfig(WeeklySymbolConfig.WEEKLY_ID, WEEKLY, WEEKLY_PREFIX, WEEKLY_ROLLOVER_PREFIX));
-        when(symbolCache.getMonthly()).thenReturn(
-                new WeeklySymbolConfig(WeeklySymbolConfig.MONTHLY_ID, MONTHLY, MONTHLY_PREFIX, "26SEP"));
+                new SymbolConfig(SymbolConfig.WEEKLY_ID, WEEKLY, WEEKLY_PREFIX, WEEKLY_ROLLOVER_PREFIX));
+        when(monthlySymbolCache.get()).thenReturn(
+                new SymbolConfig(SymbolConfig.MONTHLY_ID, MONTHLY, MONTHLY_PREFIX, "26SEP"));
         when(templateCache.getLongLegs()).thenReturn(List.of(
                 tpl(LONG, CE, BUY, SYNTH_WEEKLY, 10), tpl(LONG, PE, SELL, SYNTH_WEEKLY, 10)));
         when(templateCache.getShortLegs()).thenReturn(List.of(
@@ -90,7 +93,7 @@ class ComputeUtilBuildInstrumentScopeTest {
         assertThat(orders).extracting(LegOrder::getLots).containsOnly(10);
         verify(templateCache, never()).getMonthlyLongLegs();
         verify(templateCache, never()).getMonthlyShortLegs();
-        verify(symbolCache, never()).getMonthly();
+        verify(monthlySymbolCache, never()).get();
     }
 
     @Test
@@ -104,7 +107,7 @@ class ComputeUtilBuildInstrumentScopeTest {
                 "NFO:NIFTY" + WEEKLY_PREFIX + "24450" + PE,
                 "NFO:NIFTY" + WEEKLY_PREFIX + "24450" + CE);
         verify(templateCache, never()).getMonthlyShortLegs();
-        verify(symbolCache, never()).getMonthly();
+        verify(monthlySymbolCache, never()).get();
     }
 
     @Test
@@ -117,7 +120,7 @@ class ComputeUtilBuildInstrumentScopeTest {
         assertThat(orders).extracting(LegOrder::getExchangeSymbol).containsExactly(
                 "NFO:NIFTY" + WEEKLY_ROLLOVER_PREFIX + "24500" + CE,
                 "NFO:NIFTY" + WEEKLY_ROLLOVER_PREFIX + "24500" + PE);
-        verify(symbolCache, never()).getMonthly();
+        verify(monthlySymbolCache, never()).get();
     }
 
     // ---------------------------------------------------------------
@@ -166,7 +169,7 @@ class ComputeUtilBuildInstrumentScopeTest {
     @Test
     @DisplayName("monthly build with no monthly symbol config fails loudly")
     void monthlyBuildWithoutSymbolThrows() {
-        when(symbolCache.getMonthly()).thenReturn(null);
+        when(monthlySymbolCache.get()).thenReturn(null);
         trade.setDirection(LONG);
 
         assertThatThrownBy(() -> computeUtil.buildMonthlyInstrument("24501", trade))

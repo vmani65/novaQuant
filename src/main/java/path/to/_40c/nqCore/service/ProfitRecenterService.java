@@ -15,7 +15,7 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
 
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
+import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
@@ -288,7 +288,7 @@ public class ProfitRecenterService {
 
     /** True if today's weekly rollover already ran (so new legs should use rolloverSymbol). */
     private boolean isRolloverComplete() {
-        WeeklySymbolConfig cfg = weeklySymbolService.current();
+        SymbolConfig cfg = weeklySymbolService.current();
         return cfg != null && Boolean.TRUE.equals(cfg.getRolloverComplete());
     }
 }

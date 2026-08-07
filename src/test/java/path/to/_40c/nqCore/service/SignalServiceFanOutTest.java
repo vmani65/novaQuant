@@ -43,7 +43,7 @@ class SignalServiceFanOutTest {
     private PositionRolloverService rollOverService;
     private PostTradeService postTradeService;
     private BookConfigService bookConfig;
-    private MonthlyContractService monthlyContractService;
+    private MonthlySymbolService monthlySymbolService;
     private SignalService service;
 
     private final Position weeklyLive = livePosition(SYNTH_WEEKLY);
@@ -56,9 +56,9 @@ class SignalServiceFanOutTest {
         rollOverService = mock(PositionRolloverService.class);
         postTradeService = mock(PostTradeService.class);
         bookConfig = mock(BookConfigService.class);
-        monthlyContractService = mock(MonthlyContractService.class);
+        monthlySymbolService = mock(MonthlySymbolService.class);
         service = new SignalService(openingService, closingService, rollOverService, postTradeService,
-                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlyContractService);
+                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlySymbolService);
 
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
         when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(true);
@@ -153,13 +153,13 @@ class SignalServiceFanOutTest {
     @DisplayName("monthly opens run the DTE roll check first; a disabled monthly book never does")
     void monthlyOpenRunsRollCheckFirst() {
         service.handleTradeOpen("24500", CE, signal("longEntry"));
-        InOrder order = inOrder(monthlyContractService, openingService);
-        order.verify(monthlyContractService).syncTradedContract();
+        InOrder order = inOrder(monthlySymbolService, openingService);
+        order.verify(monthlySymbolService).syncTradedContract();
         order.verify(openingService).openMonthlyTrade(eq("24500"), eq(CE), any(Position.class));
 
         when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(false);
         service.handleFlip("24501", CE, signal("flip"));
-        verify(monthlyContractService).syncTradedContract();
+        verify(monthlySymbolService).syncTradedContract();
     }
 
     @Test
@@ -207,8 +207,8 @@ class SignalServiceFanOutTest {
         boolean ok = service.handleMonthlyRollOver("24500");
 
         assertThat(ok).isTrue();
-        InOrder order = inOrder(monthlyContractService, rollOverService);
-        order.verify(monthlyContractService).syncTradedContract();
+        InOrder order = inOrder(monthlySymbolService, rollOverService);
+        order.verify(monthlySymbolService).syncTradedContract();
         order.verify(rollOverService).rollOverMonthly("24500");
         verify(rollOverService, never()).rollOverWeekly(anyString());
 

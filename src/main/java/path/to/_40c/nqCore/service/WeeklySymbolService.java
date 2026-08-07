@@ -10,47 +10,49 @@ import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import static path.to._40c.nqCore.util.Constants.MONTHLY;
 import static path.to._40c.nqCore.util.Constants.WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
-import static path.to._40c.nqCore.entity.WeeklySymbolConfig.MONTHLY_ID;
-import static path.to._40c.nqCore.entity.WeeklySymbolConfig.WEEKLY_ID;
+import static path.to._40c.nqCore.entity.SymbolConfig.WEEKLY_ID;
 
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
-import path.to._40c.nqCore.repo.WeeklySymbolConfigRepository;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.repo.SymbolConfigRepository;
 
+/**
+ * Owns the WEEKLY calendar's symbol lifecycle — row id=1 and the weekly cache slot,
+ * nothing monthly. Mirror of MonthlySymbolService: each calendar's service answers
+ * "what contract do I trade" and "when does it advance" with its own mechanism.
+ * Weekly's mechanism is operator-driven: symbols + rolloverDay entered in the UI,
+ * promotion date-gated at the configured rollover day (14:47 trigger or the
+ * opportunistic checks in the signal path).
+ */
 @Service
 @Slf4j
 public class WeeklySymbolService {
-    private final WeeklySymbolConfigRepository repo;
+    private final SymbolConfigRepository repo;
     private final WeeklySymbolCache cache;
 
-    public WeeklySymbolService(WeeklySymbolConfigRepository repo, WeeklySymbolCache cache) {
+    public WeeklySymbolService(SymbolConfigRepository repo, WeeklySymbolCache cache) {
         this.repo = repo; this.cache = cache;
     }
 
     /**
-     * Upserts the row for one scope only (WEEKLY id=1, MONTHLY id=2), leaving the other
-     * scope's row untouched so the two sections of the Symbols UI save independently.
-     * Rollover-complete resets on every save: a freshly saved symbol pair means the
-     * configured roll is pending again.
+     * Upserts the weekly row (id=1). Rollover-complete resets on every save: a freshly
+     * saved symbol pair means the configured roll is pending again.
      */
     @Transactional
-    public void saveSymbols(String scope, String currentSymbol, String rolloverSymbol, String rolloverDay) {
-        String normalizedScope = MONTHLY.equalsIgnoreCase(scope) ? MONTHLY : WEEKLY;
-        long id = MONTHLY.equals(normalizedScope) ? MONTHLY_ID : WEEKLY_ID;
-        WeeklySymbolConfig cfg = repo.findById(id)
-                .orElseGet(() -> new WeeklySymbolConfig(id, normalizedScope, currentSymbol, rolloverSymbol));
-        cfg.setScope(normalizedScope);
+    public void saveSymbols(String currentSymbol, String rolloverSymbol, String rolloverDay) {
+        SymbolConfig cfg = repo.findById(WEEKLY_ID)
+                .orElseGet(() -> new SymbolConfig(WEEKLY_ID, WEEKLY, currentSymbol, rolloverSymbol));
+        cfg.setScope(WEEKLY);
         cfg.setThisWeekSymbol(currentSymbol);
         cfg.setRolloverSymbol(rolloverSymbol);
         cfg.setRolloverComplete(false);
         cfg.setRolloverDay(rolloverDay != null && !rolloverDay.isBlank()
                 ? LocalDate.parse(rolloverDay) : null);
-        WeeklySymbolConfig saved = repo.save(cfg);
-        if (MONTHLY.equals(normalizedScope)) cache.setMonthly(saved); else cache.set(saved);
-        log.info("Symbols saved | scope={} current={} rollover={} rolloverDay={}",
-                normalizedScope, currentSymbol, rolloverSymbol, cfg.getRolloverDay());
+        SymbolConfig saved = repo.save(cfg);
+        cache.set(saved);
+        log.info("Weekly symbols saved | current={} rollover={} rolloverDay={}",
+                currentSymbol, rolloverSymbol, cfg.getRolloverDay());
     }
 
     @Transactional
@@ -58,7 +60,7 @@ public class WeeklySymbolService {
         repo.findById(WEEKLY_ID).ifPresent(cfg -> {
             log.info("Promoting rollover symbol to this week: thisWeek {} -> {}", cfg.getThisWeekSymbol(), cfg.getRolloverSymbol());
             cfg.setThisWeekSymbol(cfg.getRolloverSymbol());
-            WeeklySymbolConfig saved = repo.save(cfg);
+            SymbolConfig saved = repo.save(cfg);
             cache.set(saved);
         });
     }
@@ -67,17 +69,13 @@ public class WeeklySymbolService {
     public void markRolloverComplete() {
         repo.findById(WEEKLY_ID).ifPresent(cfg -> {
             cfg.setRolloverComplete(true);
-            WeeklySymbolConfig saved = repo.save(cfg);
+            SymbolConfig saved = repo.save(cfg);
             cache.set(saved);
         });
     }
 
-    public Optional<WeeklySymbolConfig> get() {
+    public Optional<SymbolConfig> get() {
         return repo.findById(WEEKLY_ID);
-    }
-
-    public Optional<WeeklySymbolConfig> getMonthly() {
-        return repo.findById(MONTHLY_ID);
     }
 
     public boolean isMissing() {
@@ -85,15 +83,15 @@ public class WeeklySymbolService {
     }
 
     @Transactional(readOnly = true)
-    public WeeklySymbolConfig current() {
-        WeeklySymbolConfig c = cache.get();
+    public SymbolConfig current() {
+        SymbolConfig c = cache.get();
         if (c != null) return c;
         return repo.findById(WEEKLY_ID).orElse(null);
     }
 
     public void checkAndPromoteRolloverSymbol() {
         LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
-        WeeklySymbolConfig cfg = current();
+        SymbolConfig cfg = current();
         if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
         if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {
             log.info("Rollover day — already complete, skipping symbol promotion");
@@ -105,7 +103,7 @@ public class WeeklySymbolService {
     }
 
     /**
-     * Warms both scope slots and backfills the scope column on the pre-existing weekly
+     * Warms the weekly slot and backfills the scope column on the pre-existing weekly
      * row (created before the column existed, so it reads null after the DDL update).
      */
     @EventListener(ApplicationReadyEvent.class)
@@ -119,6 +117,5 @@ public class WeeklySymbolService {
             }
             cache.set(cfg);
         });
-        repo.findById(MONTHLY_ID).ifPresent(cache::setMonthly);
     }
 }

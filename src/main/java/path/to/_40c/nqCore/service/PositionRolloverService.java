@@ -40,7 +40,7 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  *
  * - rollOverWeekly: 14:47 expiry-day trigger; new legs use the weekly ROLLOVER symbol.
  * - rollOverMonthly: nqTicker-triggered (cadence logic lives there); new legs use the
- *   monthly symbol row's CURRENT contract, which MonthlyContractService keeps pointed
+ *   monthly symbol row's CURRENT contract, which MonthlySymbolService keeps pointed
  *   at the DTE-correct series — callers sync it before rolling. Closed legs are
  *   stamped with the book's futures-equivalent expected factor (qty/2) so capture
  *   stays on the same scale as the rest of LONG_MONTHLY accounting.
@@ -70,7 +70,7 @@ public class PositionRolloverService {
     /**
      * Monthly roll of the LONG_MONTHLY book — sell whatever is in hand, buy the same
      * structure at the current ATM on the latest monthly contract (per the symbol row,
-     * synced by MonthlyContractService before this is called). expectedFactor 0.5 keeps
+     * synced by MonthlySymbolService before this is called). expectedFactor 0.5 keeps
      * the closed segment's per-leg expected PnL on the futures-equivalent scale.
      */
     public void rollOverMonthly(String signalPrice) {

@@ -8,8 +8,8 @@ import org.springframework.web.bind.annotation.RestController;
 
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
-import path.to._40c.nqCore.entity.WeeklySymbolConfig;
-import path.to._40c.nqCore.service.MonthlyContractService;
+import path.to._40c.nqCore.entity.SymbolConfig;
+import path.to._40c.nqCore.service.MonthlySymbolService;
 import path.to._40c.nqCore.service.ProfitRecenterService;
 import path.to._40c.nqCore.service.SignalService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
@@ -24,14 +24,14 @@ public class RollOverTriggerController {
     private final SignalService          signalService;
     private final WeeklySymbolService          weeklySymbolService;
     private final ProfitRecenterService  profitRecenterService;
-    private final MonthlyContractService     monthlyContractService;
+    private final MonthlySymbolService     monthlySymbolService;
 
     public RollOverTriggerController(SignalService signalService, WeeklySymbolService weeklySymbolService,
-                                     ProfitRecenterService profitRecenterService, MonthlyContractService monthlyContractService) {
+                                     ProfitRecenterService profitRecenterService, MonthlySymbolService monthlySymbolService) {
         this.signalService         = signalService;
         this.weeklySymbolService         = weeklySymbolService;
         this.profitRecenterService = profitRecenterService;
-        this.monthlyContractService    = monthlyContractService;
+        this.monthlySymbolService    = monthlySymbolService;
     }
 
     /**
@@ -53,7 +53,7 @@ public class RollOverTriggerController {
         String sanitisedPrice = currentPrice.replace(",", "").trim();
         log.info("Weekly rollover trigger received | currentPrice={}", sanitisedPrice);
 
-        WeeklySymbolConfig cfg = weeklySymbolService.current();
+        SymbolConfig cfg = weeklySymbolService.current();
 
         if (cfg == null || cfg.getRolloverDay() == null) {
             log.info("RollOver skipped — no rollover day configured");
@@ -116,7 +116,8 @@ public class RollOverTriggerController {
     @GetMapping("/refreshSymbolCache")
     public void refreshSymbolCache() {
         weeklySymbolService.warmCache();
-        log.info("Symbol cache refreshed from DB");
+        monthlySymbolService.warmCache();
+        log.info("Symbol caches (weekly + monthly) refreshed from DB");
     }
 
     /**
@@ -145,6 +146,6 @@ public class RollOverTriggerController {
     @GetMapping("/monthly-roll-check")
     public void handleMonthlyRollCheck() {
         log.info("Manual monthly roll check requested");
-        monthlyContractService.syncTradedContract();
+        monthlySymbolService.syncTradedContract();
     }
 }

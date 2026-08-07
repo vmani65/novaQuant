@@ -45,7 +45,7 @@ class ComputeUtilBookAccountingTest {
     @BeforeEach
     void setUp() {
         capitalRepo = mock(TradeCapitalRepository.class);
-        computeUtil = new ComputeUtil(mock(WeeklySymbolCache.class), mock(LegTemplateCache.class), capitalRepo);
+        computeUtil = new ComputeUtil(mock(WeeklySymbolCache.class), mock(path.to._40c.nqCore.service.MonthlySymbolCache.class), mock(LegTemplateCache.class), capitalRepo);
     }
 
     // ---------------------------------------------------------------
