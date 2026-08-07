@@ -34,6 +34,13 @@ public class LegOrder {
     private String openOrderId;
     private Boolean openFullyFilled;
     private int openFilledQty;
+    /**
+     * True when the entry order finished the confirm budget in a NON-terminal broker state
+     * (OPEN/UNKNOWN) — the order may still fill at the broker. Drives the PENDING_OPEN leg
+     * status so a late fill becomes a tracked position instead of a phantom FAILED
+     * (trade-73 class, open side).
+     */
+    private Boolean openOrderMayBeLive;
     private List<BulkOrderResponse> orderResponse;
 
     public LegOrder() {}

@@ -1141,32 +1141,37 @@ public class PositionUtil {
         return orderParams;
     }
 
+    /**
+     * Latest LIVE position of the given book with only its LIVE legs loaded. Every caller
+     * names its book explicitly — a bookless "latest LIVE" lookup no longer exists, so one
+     * book's close/flip/recenter/rollover can never grab the other book's position.
+     */
     @Transactional
-    public Position findLiveTradesWithLiveOrderBooks() {
+    public Position findLiveTradesWithLiveOrderBooks(String book) {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
+        Position trades = positionRepository.findFirstByStatusAndBookOrderByIdDesc(LIVE, book);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
 
     /**
-     * Finds the latest PARTIAL position (an open where only some legs filled) with only its
-     * still-LIVE orphan legs loaded, so the closing path can flatten exactly what is held
-     * at the broker.
+     * Finds the given book's latest PARTIAL position (an open where only some legs filled)
+     * with only its still-LIVE orphan legs loaded, so the closing path can flatten exactly
+     * what is held at the broker.
      */
     @Transactional
-    public Position findPartialTradesWithLiveOrderBooks() {
+    public Position findPartialTradesWithLiveOrderBooks(String book) {
         Session session = entityManager.unwrap(Session.class);
         session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusOrderByIdDesc(PARTIAL);
+        Position trades = positionRepository.findFirstByStatusAndBookOrderByIdDesc(PARTIAL, book);
         session.disableFilter("liveOrderBooks");
         return trades;
     }
 
     @Transactional
-    public Position findLiveTradesWithAllOrderBooks() {
-        return positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
+    public Position findLiveTradesWithAllOrderBooks(String book) {
+        return positionRepository.findFirstByStatusAndBookOrderByIdDesc(LIVE, book);
     }
 
     private List<com.zerodhatech.models.Trade> fetchWithRetry(String orderId, String context) {

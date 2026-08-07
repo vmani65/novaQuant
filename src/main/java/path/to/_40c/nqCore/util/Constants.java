@@ -11,6 +11,7 @@ public class Constants {
 	public static final String FAILED = "FAILED";
 	public static final String PARTIAL = "PARTIAL";
 	public static final String PENDING_CLOSE = "PENDING_CLOSE";
+	public static final String PENDING_OPEN = "PENDING_OPEN";
 	
 	public static final String BUY = "BUY";
 	public static final String SELL = "SELL";
@@ -27,6 +28,9 @@ public class Constants {
 
 	public static final String WEEKLY = "WEEKLY";
 	public static final String MONTHLY = "MONTHLY";
+
+	public static final String SYNTH_WEEKLY = "SYNTH_WEEKLY";
+	public static final String LONG_MONTHLY = "LONG_MONTHLY";
 	
 	public static final String NFO = "NFO";
 	public static final String NFO_COLON = NFO+":";

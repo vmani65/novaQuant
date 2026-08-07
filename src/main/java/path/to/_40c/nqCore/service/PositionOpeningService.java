@@ -42,28 +42,24 @@ public class PositionOpeningService {
     public record OpenPrep(List<LegOrder> pojos, Map<String, Quote> quotes) {}
 
     /**
-     * Called by handleFlip's CompletableFuture concurrently with closeTrade.
+     * Called by the weekly flip path's CompletableFuture concurrently with the weekly close.
      * Builds instruments and fetches quotes for the open leg so both are ready
      * the moment the close completes (~100ms work vs ~500ms close execution).
      */
-    public OpenPrep prepareOpen(String signalPrice, String type, Position trade) {
-        trade.setEntrySpot(Double.valueOf(signalPrice));
-        trade.setBaselineSpot(Double.valueOf(signalPrice));
-        trade.setDirection(CE.equals(type) ? LONG : SHORT);
-        List<LegOrder> pojos = computeUtil.buildInstrument(signalPrice, trade, false);
+    public OpenPrep prepareWeeklyOpen(String signalPrice, String type, Position trade) {
+        stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+        List<LegOrder> pojos = computeUtil.buildWeeklyInstrument(signalPrice, trade, false);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(symbols);
         return new OpenPrep(pojos, quotes);
     }
 
     /**
-     * Standard open path used by handleTradeOpen — builds instruments and fetches quotes inline.
+     * SYNTH_WEEKLY open — weekly templates + weekly symbol, quotes fetched inline.
      */
-    public Position openTrade(String signalPrice, String type, Position trade) {
-    	trade.setEntrySpot(Double.valueOf(signalPrice));
-    	trade.setBaselineSpot(Double.valueOf(signalPrice));
-    	trade.setDirection(CE.equals(type) ? LONG : SHORT);
-    	List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, trade, false);
+    public Position openWeeklyTrade(String signalPrice, String type, Position trade) {
+    	stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+    	List<LegOrder> legOrder = computeUtil.buildWeeklyInstrument(signalPrice, trade, false);
     	String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
 	    log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
     	Map<String, Quote> quotes = positionUtil.getQuote(ltpIns);
@@ -71,14 +67,34 @@ public class PositionOpeningService {
     }
 
     /**
-     * Optimised flip path — skips buildInstrument and getQuote since both were
-     * pre-computed by prepareOpen while the close orders were executing on Zerodha.
+     * LONG_MONTHLY open — single bought leg on the monthly contract. No async prep
+     * variant: one leg's build+quote is cheap and the monthly flip closes inline.
+     * Throws IllegalStateException when the monthly book is unconfigured (fan-out
+     * isolates the failure to this book).
+     */
+    public Position openMonthlyTrade(String signalPrice, String type, Position trade) {
+        stampForOpen(trade, signalPrice, type, LONG_MONTHLY);
+        List<LegOrder> legOrder = computeUtil.buildMonthlyInstrument(signalPrice, trade);
+        String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
+        Map<String, Quote> quotes = positionUtil.getQuote(ltpIns);
+        return placeAndSave(trade, legOrder, quotes);
+    }
+
+    /**
+     * Optimised weekly flip path — skips buildWeeklyInstrument and getQuote since both
+     * were pre-computed by prepareWeeklyOpen while the close orders were executing on
+     * Zerodha. The book was stamped by prepareWeeklyOpen on the same trade instance.
      */
     public Position openTrade(String signalPrice, String type, Position trade, OpenPrep prep) {
+        stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+        return placeAndSave(trade, prep.pojos(), prep.quotes());
+    }
+
+    private void stampForOpen(Position trade, String signalPrice, String type, String book) {
+        trade.setBook(book);
         trade.setEntrySpot(Double.valueOf(signalPrice));
         trade.setBaselineSpot(Double.valueOf(signalPrice));
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
-        return placeAndSave(trade, prep.pojos(), prep.quotes());
     }
 
     private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
@@ -106,6 +122,7 @@ public class PositionOpeningService {
     	                w.setOpenOrderId(er.aggregateOrderIds());
     	            }
     	            w.setOpenFilledQty(er.totalFilled());
+    	            w.setOpenOrderMayBeLive(PositionUtil.closeOrderMayBeLive(er));
     	            if (!er.fullyFilled()) {
     	                log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
     	                    w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
@@ -128,7 +145,16 @@ public class PositionOpeningService {
     		b.setMoneyness(pojo.getMoneyness());
     		b.setOpenOrderId(pojo.getOpenOrderId());
     		int filledQty = pojo.getOpenFilledQty();
-    		if (filledQty > 0) {
+    		boolean mayStillFill = Boolean.TRUE.equals(pojo.getOpenOrderMayBeLive())
+    				&& !Boolean.TRUE.equals(pojo.getOpenFullyFilled());
+    		if (mayStillFill) {
+    			b.setLots(pojo.getLots());
+    			b.setQuantity(pojo.getLots() * LOT_SIZE);
+    			b.setStatus(PENDING_OPEN);
+    			log.error("[ENTRY] {} open order {} still working at broker (filled={}/{}) — leg PENDING_OPEN, "
+    					+ "reconciler will settle it from the tradebook",
+    				b.getInstrument(), b.getOpenOrderId(), filledQty, b.getQuantity());
+    		} else if (filledQty > 0) {
     			b.setLots(filledQty / LOT_SIZE);
     			b.setQuantity(filledQty);
     			b.setStatus(LIVE);
@@ -148,9 +174,14 @@ public class PositionOpeningService {
     	});
     	trade.setLegs(childOrderBook);
     	boolean allFullyFilled = legOrder.stream().allMatch(p -> Boolean.TRUE.equals(p.getOpenFullyFilled()));
+    	boolean anyPendingOpen = childOrderBook.stream().anyMatch(l -> PENDING_OPEN.equals(l.getStatus()));
     	boolean anyFilled = legOrder.stream().anyMatch(p -> p.getOpenFilledQty() > 0);
     	if (allFullyFilled) {
     		trade.setStatus(LIVE);
+    	} else if (anyPendingOpen) {
+    		trade.setStatus(PENDING_OPEN);
+            log.error("Position open not confirmed - an entry order is still working at the broker; "
+                    + "position PENDING_OPEN, reconciler will settle it from the tradebook");
         } else if (anyFilled) {
         	trade.setStatus(PARTIAL);
             log.error("ORPHAN: position opened PARTIALLY - filled legs will be closed on next signal. Legs: {}",

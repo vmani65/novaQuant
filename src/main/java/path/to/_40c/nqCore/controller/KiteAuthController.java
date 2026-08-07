@@ -14,10 +14,12 @@ import lombok.extern.slf4j.Slf4j;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.MONTHLY;
 import static path.to._40c.nqCore.util.Constants.PE;
 import static path.to._40c.nqCore.util.Constants.SELL;
 import static path.to._40c.nqCore.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
@@ -36,6 +38,7 @@ import org.springframework.http.MediaType;
 import org.springframework.web.bind.annotation.*;
 
 import path.to._40c.nqCore.gateway.KiteGateway;
+import path.to._40c.nqCore.service.BookConfigService;
 import path.to._40c.nqCore.service.KiteAuthService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
 import path.to._40c.nqCore.service.LegTemplateCache;
@@ -50,16 +53,18 @@ public class KiteAuthController {
     private final LegTemplateRepository legTemplateRepository;
     private final LegTemplateCache legTemplateCache;
     private final KiteGateway kiteGateway;
+    private final BookConfigService bookConfigService;
 
     public KiteAuthController(KiteAuthDetailsRepository repository, KiteAuthService kiteAuthService,
             WeeklySymbolService weeklySymbolService, LegTemplateRepository legTemplateRepository,
-            LegTemplateCache legTemplateCache, KiteGateway kiteGateway) {
+            LegTemplateCache legTemplateCache, KiteGateway kiteGateway, BookConfigService bookConfigService) {
         this.repository = repository;
         this.kiteAuthService = kiteAuthService;
         this.weeklySymbolService = weeklySymbolService;
         this.legTemplateRepository = legTemplateRepository;
         this.legTemplateCache = legTemplateCache;
         this.kiteGateway = kiteGateway;
+        this.bookConfigService = bookConfigService;
     }
 
     @PostMapping
@@ -160,6 +165,29 @@ public class KiteAuthController {
     }
 
     // ---------------------------------------------------------------
+    // Book enable/disable toggles — a disabled book opens no NEW
+    // positions; an open position is still managed to natural close.
+    // ---------------------------------------------------------------
+
+    @GetMapping("/api/books")
+    @ResponseBody
+    public Map<String, Boolean> listBooks() {
+        return bookConfigService.all();
+    }
+
+    @PostMapping("/api/books/{book}")
+    @ResponseBody
+    public ResponseEntity<Map<String, Object>> setBookEnabled(@PathVariable String book,
+            @RequestParam boolean enabled) {
+        try {
+            bookConfigService.setEnabled(book.trim().toUpperCase(), enabled);
+        } catch (IllegalArgumentException e) {
+            return ResponseEntity.badRequest().body(Map.of("success", false, "message", e.getMessage()));
+        }
+        return ResponseEntity.ok(Map.of("success", true, "books", bookConfigService.all()));
+    }
+
+    // ---------------------------------------------------------------
     // Leg-template CRUD — backs the "manifestation" UI for editing the
     // legs that fire on each LONG / SHORT signal. Cache refreshed after
     // every mutation so the next signal sees the new template.
@@ -186,7 +214,7 @@ public class KiteAuthController {
     @PutMapping("/api/leg-templates/{id}")
     @ResponseBody
     public ResponseEntity<Map<String, Object>> updateLegTemplate(@PathVariable Long id, @RequestBody LegTemplate body) {
-        String requestedScope = body.getScope();
+        String requestedBook = body.getBook();
         return legTemplateRepository.findById(id)
             .<ResponseEntity<Map<String, Object>>>map(existing -> {
                 Map<String, Object> err = validate(body);
@@ -196,9 +224,9 @@ public class KiteAuthController {
                 existing.setSide(body.getSide());
                 existing.setOffsetPts(body.getOffsetPts());
                 existing.setLots(body.getLots());
-                existing.setScope(requestedScope == null || requestedScope.isBlank()
-                        ? (existing.getScope() == null ? WEEKLY : existing.getScope())
-                        : body.getScope());
+                existing.setBook(requestedBook == null || requestedBook.isBlank()
+                        ? (existing.getBook() == null ? SYNTH_WEEKLY : existing.getBook())
+                        : body.getBook());
                 LegTemplate saved = legTemplateRepository.save(existing);
                 legTemplateCache.refreshCache();
                 log.info("Leg template updated: {}", saved);
@@ -232,9 +260,9 @@ public class KiteAuthController {
         if (t.getLots() == null || t.getLots() <= 0)
             return Map.of("success", false, "message", "lots must be > 0");
         if (t.getOffsetPts() == null) t.setOffsetPts(0);
-        if (t.getScope() == null || t.getScope().isBlank()) t.setScope(WEEKLY);
-        if (!WEEKLY.equals(t.getScope()) && !MONTHLY.equals(t.getScope()))
-            return Map.of("success", false, "message", "scope must be WEEKLY or MONTHLY");
+        if (t.getBook() == null || t.getBook().isBlank()) t.setBook(SYNTH_WEEKLY);
+        if (!SYNTH_WEEKLY.equals(t.getBook()) && !LONG_MONTHLY.equals(t.getBook()))
+            return Map.of("success", false, "message", "book must be SYNTH_WEEKLY or LONG_MONTHLY");
         return null;
     }
 }

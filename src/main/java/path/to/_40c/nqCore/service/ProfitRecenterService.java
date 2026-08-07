@@ -61,7 +61,9 @@ public class ProfitRecenterService {
     }
 
     /**
-     * Re-centres the live trade at the new ATM. Aborts (no orders) if the effective profit from the
+     * Re-centres the SYNTH_WEEKLY book's live trade at the new ATM — hard book fence from
+     * the two-book audit: without it a +500-pt trigger would close a LONG_MONTHLY leg and
+     * reopen it as a weekly. Aborts (no orders) if the effective profit from the
      * current baselineSpot is below RECENTER_MIN_PROFIT — a backstop against a corrupt/stale baseline,
      * bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked here.
      * On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
@@ -69,10 +71,10 @@ public class ProfitRecenterService {
      * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
      * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
-    public void realizeProfits(String currentPrice) {
-        Position trade = positionUtil.findLiveTradesWithLiveOrderBooks();
+    public void realizeProfitsWeekly(String currentPrice) {
+        Position trade = positionUtil.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY);
         if (trade == null) {
-            log.info("realizeProfits: no live trade — skipping.");
+            log.info("realizeProfits: no live SYNTH_WEEKLY trade — skipping.");
             return;
         }
         double newPrice = Double.parseDouble(currentPrice);
@@ -154,7 +156,7 @@ public class ProfitRecenterService {
         Instant openStart = Instant.now();
         weeklySymbolService.checkAndPromoteRolloverSymbol();
         boolean useRollover = isRolloverComplete();
-        List<LegOrder> newLegs = computeUtil.buildInstrument(currentPrice, trade, useRollover);
+        List<LegOrder> newLegs = computeUtil.buildWeeklyInstrument(currentPrice, trade, useRollover);
         log.info("realizeProfits: opening {} new legs (useRollover={})", newLegs.size(), useRollover);
 
         String[] openSymbols = newLegs.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
@@ -221,6 +223,17 @@ public class ProfitRecenterService {
                 saved.getId(), saved.getBankedPoints(), saved.getBaselineSpot());
 
         postTradeService.afterOpen(saved);
+    }
+
+    /**
+     * LONG_MONTHLY recenter — intentionally a no-op, by policy rather than omission:
+     * gamma convexity is the entire point of the bought monthly leg, and re-striking at
+     * +500 points would sell that convexity off. This method exists as the documented
+     * monthly counterpart of realizeProfitsWeekly so no trigger ever routes a monthly
+     * position through the weekly recenter.
+     */
+    public void realizeProfitsMonthly() {
+        log.info("realizeProfitsMonthly: no-op — LONG_MONTHLY never recenters (convexity is kept, not re-struck)");
     }
 
     /**

@@ -47,13 +47,13 @@ public class LegTemplate {
     private Integer lots;
 
     /**
-     * Expiry scope this leg belongs to: WEEKLY (synthetic strategy, the only scope the
-     * engine consumes today) or MONTHLY (option-buying strategy, config-only until wired).
-     * Nullable because rows predating the column read null after the DDL update;
-     * LegTemplateCache backfills null to WEEKLY at startup.
+     * Execution book this leg belongs to: SYNTH_WEEKLY (2-leg weekly synthetic) or
+     * LONG_MONTHLY (1-leg monthly option buying). Nullable because rows predating the
+     * column read null after the DDL update; LegTemplateCache backfills null to
+     * SYNTH_WEEKLY at startup (every pre-column row is a weekly synthetic leg).
      */
-    @Column(name = "SCOPE", length = 10)
-    private String scope;
+    @Column(name = "BOOK", length = 15)
+    private String book;
 
     public LegTemplate() {}
 

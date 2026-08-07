@@ -26,48 +26,78 @@ public class PositionClosingService {
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
     private final PendingCloseReconciler pendingCloseReconciler;
+    private final PendingOpenReconciler pendingOpenReconciler;
 
     public PositionClosingService(PositionRepository positionRepository, PositionUtil positionUtil,
-            ComputeUtil computeUtil, PendingCloseReconciler pendingCloseReconciler) {
+            ComputeUtil computeUtil, PendingCloseReconciler pendingCloseReconciler,
+            PendingOpenReconciler pendingOpenReconciler) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
         this.pendingCloseReconciler = pendingCloseReconciler;
+        this.pendingOpenReconciler = pendingOpenReconciler;
+    }
+
+    /** Closes the SYNTH_WEEKLY book's live position. See closeTrade for semantics. */
+    public Position closeWeeklyTrade(String signalPrice, Signal signal, boolean updateApiAction) {
+        return closeTrade(SYNTH_WEEKLY, signalPrice, signal, updateApiAction);
+    }
+
+    /** Closes the LONG_MONTHLY book's live position. See closeTrade for semantics. */
+    public Position closeMonthlyTrade(String signalPrice, Signal signal, boolean updateApiAction) {
+        return closeTrade(LONG_MONTHLY, signalPrice, signal, updateApiAction);
+    }
+
+    /** Flattens SYNTH_WEEKLY orphan legs, if any. See closeOrphanIfAny for semantics. */
+    public Position closeWeeklyOrphanIfAny(String signalPrice, Signal signal) {
+        return closeOrphanIfAny(SYNTH_WEEKLY, signalPrice, signal);
+    }
+
+    /** Flattens LONG_MONTHLY orphan legs, if any. See closeOrphanIfAny for semantics. */
+    public Position closeMonthlyOrphanIfAny(String signalPrice, Signal signal) {
+        return closeOrphanIfAny(LONG_MONTHLY, signalPrice, signal);
     }
 
     /**
-     * Closes the live position at signalPrice. exitSpot is the literal final-exit spot: the current
-     * open segment (baselineSpot -> exitSpot) is the last contribution to pointsPnl, while all prior
-     * re-strike segments are already accumulated in bankedPoints.
+     * Closes the given book's live position at signalPrice. exitSpot is the literal final-exit
+     * spot: the current open segment (baselineSpot -> exitSpot) is the last contribution to
+     * pointsPnl, while all prior re-strike segments are already accumulated in bankedPoints.
+     * Only positions stamped with this book are candidates — the other book's LIVE position
+     * is invisible here.
      */
-    public Position closeTrade(String signalPrice, Signal signal, boolean updateApiAction) {
+    private Position closeTrade(String book, String signalPrice, Signal signal, boolean updateApiAction) {
         pendingCloseReconciler.resolveBeforeSignal();
-        Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks();
+        pendingOpenReconciler.resolveBeforeSignal();
+        Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks(book);
         if (tradeToClose == null) {
-            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks();
+            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks(book);
             if (tradeToClose != null) {
-                log.warn("ORPHAN: no LIVE trade, but PARTIAL trade id={} has orphan legs — closing them now", tradeToClose.getId());
+                log.warn("ORPHAN: no LIVE {} trade, but PARTIAL trade id={} has orphan legs — closing them now",
+                        book, tradeToClose.getId());
             }
         }
         if(tradeToClose == null) {
-            log.info("No Live trades to close.");
+            log.info("No Live {} trades to close.", book);
             return null;
         }
         return doClose(tradeToClose, signalPrice, signal, updateApiAction);
     }
 
     /**
-     * Flattens the orphan legs of a PARTIAL position (an open where only some legs filled),
-     * if one exists. Called by entry-signal handling before a new position is opened, so a
-     * fresh open never coexists with untracked broker positions from a failed earlier open.
+     * Flattens the orphan legs of the given book's PARTIAL position (an open where only some
+     * legs filled), if one exists. Called by entry-signal handling before a new position is
+     * opened, so a fresh open never coexists with untracked broker positions from a failed
+     * earlier open of the same book.
      */
-    public Position closeOrphanIfAny(String signalPrice, Signal signal) {
+    private Position closeOrphanIfAny(String book, String signalPrice, Signal signal) {
         pendingCloseReconciler.resolveBeforeSignal();
-        Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks();
+        pendingOpenReconciler.resolveBeforeSignal();
+        Position partialTrade = positionUtil.findPartialTradesWithLiveOrderBooks(book);
         if (partialTrade == null) {
             return null;
         }
-        log.warn("ORPHAN: PARTIAL trade id={} found before new open — closing its orphan legs first", partialTrade.getId());
+        log.warn("ORPHAN: PARTIAL {} trade id={} found before new open — closing its orphan legs first",
+                book, partialTrade.getId());
         return doClose(partialTrade, signalPrice, signal, false);
     }
 

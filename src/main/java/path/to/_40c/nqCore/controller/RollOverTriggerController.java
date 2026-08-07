@@ -72,6 +72,8 @@ public class RollOverTriggerController {
     /**
      * Called by nQTicker ProfitRecenterConsumer when NIFTY profit >= 500 points.
      * Closes the current live legs and re-opens at the new ATM. Position stays LIVE.
+     * SYNTH_WEEKLY only — LONG_MONTHLY never recenters (its convexity is the point),
+     * so this trigger cannot touch a monthly position.
      *
      * Example: GET /api/realize-profits?currentPrice=24500.0
      */
@@ -79,7 +81,7 @@ public class RollOverTriggerController {
     public void handleRealizeProfits(@RequestParam String currentPrice) {
         String sanitisedPrice = currentPrice.replace(",", "").trim();
         log.info("Realize-profits trigger received from nQTicker | currentPrice={}", sanitisedPrice);
-        profitRecenterService.realizeProfits(sanitisedPrice);
+        profitRecenterService.realizeProfitsWeekly(sanitisedPrice);
         log.info("Realize-profits completed");
     }
 

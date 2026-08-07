@@ -8,11 +8,14 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.mockito.Mockito.doThrow;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LONG;
+import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.MONTHLY;
 import static path.to._40c.nqCore.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.WEEKLY;
 
 import java.util.Map;
@@ -28,24 +31,27 @@ import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.gateway.KiteGateway;
 import path.to._40c.nqCore.repo.KiteAuthDetailsRepository;
 import path.to._40c.nqCore.repo.LegTemplateRepository;
+import path.to._40c.nqCore.service.BookConfigService;
 import path.to._40c.nqCore.service.KiteAuthService;
 import path.to._40c.nqCore.service.LegTemplateCache;
 import path.to._40c.nqCore.service.WeeklySymbolService;
 
 /**
- * Covers the phase-1 scope handling on {@link KiteAuthController}: /symbol/save must reject
- * anything but WEEKLY/MONTHLY (normalizing case and whitespace first), and the leg-template
- * CRUD must thread scope through create/update without ever silently re-scoping a row. The
- * high-value case is the scope-less PUT: validate() mutates the request body's null scope to
- * WEEKLY as a side effect, so the controller snapshots the requested scope before validating —
- * dropping that snapshot would flip every MONTHLY leg back to WEEKLY on any edit from a stale
- * UI form, which is exactly the regression the review fix closed.
+ * Covers {@link KiteAuthController}'s two config dimensions: /symbol/save carries the
+ * CALENDAR (scope WEEKLY|MONTHLY — which contract series a symbol row describes), while
+ * the leg-template CRUD carries the BOOK (SYNTH_WEEKLY|LONG_MONTHLY — which execution
+ * book a leg belongs to). The high-value case is the book-less PUT: validate() mutates
+ * the request body's null book to SYNTH_WEEKLY as a side effect, so the controller
+ * snapshots the requested book before validating — dropping that snapshot would flip
+ * every LONG_MONTHLY leg back to SYNTH_WEEKLY on any edit from a stale UI form.
+ * Also covers the book enable/disable endpoints backing the UI toggles.
  */
 class KiteAuthControllerScopeTest {
 
     private WeeklySymbolService weeklySymbolService;
     private LegTemplateRepository legTemplateRepository;
     private LegTemplateCache legTemplateCache;
+    private BookConfigService bookConfigService;
     private KiteAuthController controller;
 
     @BeforeEach
@@ -53,13 +59,15 @@ class KiteAuthControllerScopeTest {
         weeklySymbolService = mock(WeeklySymbolService.class);
         legTemplateRepository = mock(LegTemplateRepository.class);
         legTemplateCache = mock(LegTemplateCache.class);
+        bookConfigService = mock(BookConfigService.class);
         controller = new KiteAuthController(mock(KiteAuthDetailsRepository.class), mock(KiteAuthService.class),
-                weeklySymbolService, legTemplateRepository, legTemplateCache, mock(KiteGateway.class));
+                weeklySymbolService, legTemplateRepository, legTemplateCache, mock(KiteGateway.class),
+                bookConfigService);
         when(legTemplateRepository.save(any(LegTemplate.class))).thenAnswer(inv -> inv.getArgument(0));
     }
 
     // ---------------------------------------------------------------
-    // POST /symbol/save
+    // POST /symbol/save — calendar scope (WEEKLY | MONTHLY)
     // ---------------------------------------------------------------
 
     @Test
@@ -94,13 +102,13 @@ class KiteAuthControllerScopeTest {
     }
 
     // ---------------------------------------------------------------
-    // Leg-template CRUD
+    // Leg-template CRUD — execution book (SYNTH_WEEKLY | LONG_MONTHLY)
     // ---------------------------------------------------------------
 
     @Test
-    @DisplayName("create persists a MONTHLY leg, discards any client-sent id, and refreshes the cache")
-    void createPersistsMonthlyScope() {
-        LegTemplate body = leg(LONG, CE, BUY, 20, MONTHLY);
+    @DisplayName("create persists a LONG_MONTHLY leg, discards any client-sent id, and refreshes the cache")
+    void createPersistsMonthlyBook() {
+        LegTemplate body = leg(LONG, CE, BUY, 20, LONG_MONTHLY);
         body.setId(99L);
 
         ResponseEntity<Map<String, Object>> resp = controller.createLegTemplate(body);
@@ -109,70 +117,70 @@ class KiteAuthControllerScopeTest {
         ArgumentCaptor<LegTemplate> saved = ArgumentCaptor.forClass(LegTemplate.class);
         verify(legTemplateRepository).save(saved.capture());
         assertThat(saved.getValue().getId()).isNull();
-        assertThat(saved.getValue().getScope()).isEqualTo(MONTHLY);
+        assertThat(saved.getValue().getBook()).isEqualTo(LONG_MONTHLY);
         verify(legTemplateCache).refreshCache();
     }
 
     @Test
-    @DisplayName("create without a scope defaults the row to WEEKLY")
-    void createDefaultsMissingScopeToWeekly() {
+    @DisplayName("create without a book defaults the row to SYNTH_WEEKLY")
+    void createDefaultsMissingBookToSynthWeekly() {
         ResponseEntity<Map<String, Object>> resp = controller.createLegTemplate(leg(LONG, CE, BUY, 10, null));
 
         assertThat(resp.getStatusCode().value()).isEqualTo(200);
         ArgumentCaptor<LegTemplate> saved = ArgumentCaptor.forClass(LegTemplate.class);
         verify(legTemplateRepository).save(saved.capture());
-        assertThat(saved.getValue().getScope()).isEqualTo(WEEKLY);
+        assertThat(saved.getValue().getBook()).isEqualTo(SYNTH_WEEKLY);
     }
 
     @Test
-    @DisplayName("create rejects an invalid scope with 400 and touches neither DB nor cache")
-    void createRejectsInvalidScope() {
-        ResponseEntity<Map<String, Object>> resp = controller.createLegTemplate(leg(LONG, CE, BUY, 10, "DAILY"));
+    @DisplayName("create rejects an invalid book with 400 and touches neither DB nor cache")
+    void createRejectsInvalidBook() {
+        ResponseEntity<Map<String, Object>> resp = controller.createLegTemplate(leg(LONG, CE, BUY, 10, "WEEKLY"));
 
         assertThat(resp.getStatusCode().value()).isEqualTo(400);
-        assertThat((String) resp.getBody().get("message")).contains("scope must be WEEKLY or MONTHLY");
+        assertThat((String) resp.getBody().get("message")).contains("book must be SYNTH_WEEKLY or LONG_MONTHLY");
         verify(legTemplateRepository, never()).save(any(LegTemplate.class));
         verify(legTemplateCache, never()).refreshCache();
     }
 
     @Test
-    @DisplayName("scope-less PUT preserves the row's existing MONTHLY scope (review fix)")
-    void updateWithoutScopePreservesExistingMonthly() {
-        LegTemplate existing = leg(LONG, CE, BUY, 1, MONTHLY);
+    @DisplayName("book-less PUT preserves the row's existing LONG_MONTHLY book (review fix)")
+    void updateWithoutBookPreservesExistingMonthly() {
+        LegTemplate existing = leg(LONG, CE, BUY, 1, LONG_MONTHLY);
         existing.setId(7L);
         when(legTemplateRepository.findById(7L)).thenReturn(Optional.of(existing));
 
         ResponseEntity<Map<String, Object>> resp = controller.updateLegTemplate(7L, leg(LONG, CE, BUY, 2, null));
 
         assertThat(resp.getStatusCode().value()).isEqualTo(200);
-        assertThat(existing.getScope()).isEqualTo(MONTHLY);
+        assertThat(existing.getBook()).isEqualTo(LONG_MONTHLY);
         assertThat(existing.getLots()).isEqualTo(2);
         verify(legTemplateRepository).save(existing);
         verify(legTemplateCache).refreshCache();
     }
 
     @Test
-    @DisplayName("scope-less PUT on a legacy null-scope row lands on WEEKLY")
-    void updateWithoutScopeOnLegacyRowDefaultsWeekly() {
+    @DisplayName("book-less PUT on a legacy null-book row lands on SYNTH_WEEKLY")
+    void updateWithoutBookOnLegacyRowDefaultsSynthWeekly() {
         LegTemplate existing = leg(LONG, CE, BUY, 10, null);
         existing.setId(3L);
         when(legTemplateRepository.findById(3L)).thenReturn(Optional.of(existing));
 
         controller.updateLegTemplate(3L, leg(LONG, CE, BUY, 10, ""));
 
-        assertThat(existing.getScope()).isEqualTo(WEEKLY);
+        assertThat(existing.getBook()).isEqualTo(SYNTH_WEEKLY);
     }
 
     @Test
-    @DisplayName("PUT with an explicit scope moves the leg between scopes")
-    void updateMovesLegBetweenScopes() {
-        LegTemplate existing = leg(LONG, CE, SELL, 10, WEEKLY);
+    @DisplayName("PUT with an explicit book moves the leg between books")
+    void updateMovesLegBetweenBooks() {
+        LegTemplate existing = leg(LONG, CE, SELL, 10, SYNTH_WEEKLY);
         existing.setId(5L);
         when(legTemplateRepository.findById(5L)).thenReturn(Optional.of(existing));
 
-        controller.updateLegTemplate(5L, leg(LONG, CE, BUY, 20, MONTHLY));
+        controller.updateLegTemplate(5L, leg(LONG, CE, BUY, 20, LONG_MONTHLY));
 
-        assertThat(existing.getScope()).isEqualTo(MONTHLY);
+        assertThat(existing.getBook()).isEqualTo(LONG_MONTHLY);
         assertThat(existing.getSide()).isEqualTo(BUY);
         assertThat(existing.getLots()).isEqualTo(20);
     }
@@ -182,7 +190,7 @@ class KiteAuthControllerScopeTest {
     void updateUnknownIdReturns404() {
         when(legTemplateRepository.findById(42L)).thenReturn(Optional.empty());
 
-        ResponseEntity<Map<String, Object>> resp = controller.updateLegTemplate(42L, leg(LONG, CE, BUY, 10, WEEKLY));
+        ResponseEntity<Map<String, Object>> resp = controller.updateLegTemplate(42L, leg(LONG, CE, BUY, 10, SYNTH_WEEKLY));
 
         assertThat(resp.getStatusCode().value()).isEqualTo(404);
         verify(legTemplateCache, never()).refreshCache();
@@ -201,9 +209,37 @@ class KiteAuthControllerScopeTest {
         verify(legTemplateCache).refreshCache();
     }
 
-    private static LegTemplate leg(String direction, String optionType, String side, int lots, String scope) {
+    // ---------------------------------------------------------------
+    // Book toggle endpoints
+    // ---------------------------------------------------------------
+
+    @Test
+    @DisplayName("book toggle normalizes the path variable and reports the new state map")
+    void bookToggleNormalizesAndReports() {
+        when(bookConfigService.all()).thenReturn(Map.of(SYNTH_WEEKLY, true, LONG_MONTHLY, true));
+
+        ResponseEntity<Map<String, Object>> resp = controller.setBookEnabled(" long_monthly ", true);
+
+        assertThat(resp.getStatusCode().value()).isEqualTo(200);
+        verify(bookConfigService).setEnabled(LONG_MONTHLY, true);
+        assertThat(resp.getBody().get("success")).isEqualTo(true);
+    }
+
+    @Test
+    @DisplayName("book toggle on an unknown book returns 400 with the service's message")
+    void bookToggleRejectsUnknownBook() {
+        doThrow(new IllegalArgumentException("book must be SYNTH_WEEKLY or LONG_MONTHLY (got 'WEEKLY')"))
+                .when(bookConfigService).setEnabled("WEEKLY", true);
+
+        ResponseEntity<Map<String, Object>> resp = controller.setBookEnabled("weekly", true);
+
+        assertThat(resp.getStatusCode().value()).isEqualTo(400);
+        assertThat((String) resp.getBody().get("message")).contains("SYNTH_WEEKLY or LONG_MONTHLY");
+    }
+
+    private static LegTemplate leg(String direction, String optionType, String side, int lots, String book) {
         LegTemplate t = new LegTemplate(direction, optionType, side, 0, lots);
-        t.setScope(scope);
+        t.setBook(book);
         return t;
     }
 }

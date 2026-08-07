@@ -10,7 +10,7 @@ import path.to._40c.nqCore.entity.LegTemplate;
 @Repository
 public interface LegTemplateRepository extends JpaRepository<LegTemplate, Long> {
 
-    List<LegTemplate> findByDirectionAndScope(String direction, String scope);
+    List<LegTemplate> findByDirectionAndBook(String direction, String book);
 
     List<LegTemplate> findAllByOrderByDirectionAscOptionTypeAscOffsetPtsAsc();
 }

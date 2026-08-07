@@ -41,6 +41,11 @@ public class PositionRolloverService {
     }
 
     /**
+     * Weekly expiry-day roll of the SYNTH_WEEKLY book ONLY — the hard fence from the
+     * two-book audit: without the book filter this would close a LONG_MONTHLY leg and
+     * reopen it as a weekly contract. LONG_MONTHLY never participates in the weekly
+     * roll; its own DTE-based calendar roll is rollOverMonthly (phase 3).
+     *
      * 1. Close the Live Position first.
      * 2. Proceed with opening new trades only if all closes succeeded.
      * 3. Open live trades. Create a childOrderBook and add to the Parent and Save
@@ -51,10 +56,10 @@ public class PositionRolloverService {
      * Each closed leg is stamped with expectedPnl = qty × the segment's spot points, the denominator
      * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      */
-    public void rollOver(String signalPrice) {
-        Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks();
+    public void rollOverWeekly(String signalPrice) {
+        Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY);
         if (tradeToRollOver != null) log.info("Live Position being rolled over is: {}", tradeToRollOver);
-        else log.info("No Live trades to rollover.");
+        else log.info("No Live SYNTH_WEEKLY trades to rollover.");
         if (tradeToRollOver != null) {
             Instant closeStart = Instant.now();
             String[] liveIns = tradeToRollOver.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
@@ -115,7 +120,7 @@ public class PositionRolloverService {
             tradeToRollOver.getLegs().forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * segment)));
             log.info("rollover re-strike | segment={}pts bankedPoints={} newBaseline={}",
                 Math.round(segment * 100.0) / 100.0, tradeToRollOver.getBankedPoints(), rolloverPrice);
-            List<LegOrder> legOrder = computeUtil.buildInstrument(signalPrice, tradeToRollOver, true);
+            List<LegOrder> legOrder = computeUtil.buildWeeklyInstrument(signalPrice, tradeToRollOver, true);
             String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
             log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));
             Map<String, Quote> quotesOfToOpenTrade = positionUtil.getQuote(ltpIns);
@@ -174,5 +179,16 @@ public class PositionRolloverService {
             log.info("Live Position after rollOver completed is: {}", liveTrade);
             postTradeService.afterOpen(liveTrade);
         }
+    }
+
+    /**
+     * LONG_MONTHLY calendar roll — intentionally NOT implemented in phase 2. A monthly
+     * position exits on whatever contract it entered (no mid-position rolling in v1);
+     * the DTE>=10 rule that promotes the traded monthly contract between positions is
+     * phase 3. This method exists as the documented monthly counterpart of
+     * rollOverWeekly so no caller ever routes a monthly roll through the weekly path.
+     */
+    public void rollOverMonthly() {
+        log.info("rollOverMonthly: no-op — LONG_MONTHLY holds its entry contract; DTE-based calendar roll arrives in phase 3");
     }
 }

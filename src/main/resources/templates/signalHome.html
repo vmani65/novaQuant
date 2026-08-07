@@ -406,12 +406,12 @@
         }
 
         // ==================== LEG TEMPLATES ====================
-        // Scope-aware manifestation: MONTHLY column on the left, WEEKLY on the right.
-        // Rows with a null scope (pre-migration) are treated as WEEKLY.
-        function legScope(l) { return l.scope === 'MONTHLY' ? 'MONTHLY' : 'WEEKLY'; }
+        // Book-aware manifestation: LONG_MONTHLY column on the left, SYNTH_WEEKLY on the
+        // right. Rows with a null book (pre-migration) are treated as SYNTH_WEEKLY.
+        function legBook(l) { return l.book === 'LONG_MONTHLY' ? 'LONG_MONTHLY' : 'SYNTH_WEEKLY'; }
 
-        function tbodyIdFor(direction, scope) {
-            if (scope === 'MONTHLY') return direction === 'LONG' ? 'monthlyLongLegsBody' : 'monthlyShortLegsBody';
+        function tbodyIdFor(direction, book) {
+            if (book === 'LONG_MONTHLY') return direction === 'LONG' ? 'monthlyLongLegsBody' : 'monthlyShortLegsBody';
             return direction === 'LONG' ? 'longLegsBody' : 'shortLegsBody';
         }
 
@@ -419,16 +419,16 @@
             fetch('/api/leg-templates')
                 .then(r => r.json())
                 .then(legs => {
-                    ['WEEKLY', 'MONTHLY'].forEach(scope => {
-                        const scoped = legs.filter(l => legScope(l) === scope);
-                        renderLegRows(tbodyIdFor('LONG', scope),  scoped.filter(l => l.direction === 'LONG'),  'LONG',  scope);
-                        renderLegRows(tbodyIdFor('SHORT', scope), scoped.filter(l => l.direction === 'SHORT'), 'SHORT', scope);
+                    ['SYNTH_WEEKLY', 'LONG_MONTHLY'].forEach(book => {
+                        const booked = legs.filter(l => legBook(l) === book);
+                        renderLegRows(tbodyIdFor('LONG', book),  booked.filter(l => l.direction === 'LONG'),  'LONG',  book);
+                        renderLegRows(tbodyIdFor('SHORT', book), booked.filter(l => l.direction === 'SHORT'), 'SHORT', book);
                     });
                 })
                 .catch(e => Utils.showMessage('legTemplatesMsg', 'Load error: ' + e, true));
         }
 
-        function renderLegRows(tbodyId, legs, direction, scope) {
+        function renderLegRows(tbodyId, legs, direction, book) {
             const tbody = document.getElementById(tbodyId);
             if (legs.length === 0) {
                 tbody.innerHTML = `<tr><td colspan="5" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No legs configured for ${direction}.</td></tr>`;
@@ -441,7 +441,7 @@
                     <td class="px-2 py-1.5 font-mono text-gray-700 text-center">${l.offsetPts > 0 ? '+' + l.offsetPts : l.offsetPts}</td>
                     <td class="px-2 py-1.5 font-mono font-semibold text-gray-900 text-center">${l.lots}</td>
                     <td class="px-2 py-1.5 text-center">
-                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots}, '${scope}')"
+                        <button onclick="editLegRow(${l.id}, '${l.direction}', '${l.optionType}', '${l.side}', ${l.offsetPts}, ${l.lots}, '${book}')"
                                 class="px-2 py-0.5 text-blue-600 hover:bg-blue-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Edit</button>
                         <button onclick="deleteLeg(${l.id})"
                                 class="px-2 py-0.5 text-rose-600 hover:bg-rose-50 rounded text-[11px] border-0 cursor-pointer bg-transparent">Delete</button>
@@ -449,8 +449,8 @@
                 </tr>`).join('');
         }
 
-        function showAddLegRow(direction, scope) {
-            const tbody = document.getElementById(tbodyIdFor(direction, scope));
+        function showAddLegRow(direction, book) {
+            const tbody = document.getElementById(tbodyIdFor(direction, book));
             // Remove any existing add/edit-form rows first
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             // Remove "no legs" placeholder if present
@@ -458,19 +458,19 @@
             if (placeholder) placeholder.parentElement.remove();
             const row = document.createElement('tr');
             row.className = 'leg-form-row bg-blue-50 border-t border-blue-100';
-            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1, scope);
+            row.innerHTML = legFormRowHtml(null, direction, 'CE', 'BUY', 0, 1, book);
             tbody.appendChild(row);
         }
 
-        function editLegRow(id, direction, optionType, side, offsetPts, lots, scope) {
-            const tbody = document.getElementById(tbodyIdFor(direction, scope));
+        function editLegRow(id, direction, optionType, side, offsetPts, lots, book) {
+            const tbody = document.getElementById(tbodyIdFor(direction, book));
             tbody.querySelectorAll('tr.leg-form-row').forEach(r => r.remove());
             const existing = tbody.querySelector(`tr[data-leg-id="${id}"]`);
             if (!existing) return;
-            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots, scope).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
+            existing.outerHTML = `<tr class="leg-form-row bg-blue-50 border-t border-blue-100" data-leg-id="${id}">${legFormRowHtml(id, direction, optionType, side, offsetPts, lots, book).replace(/^<tr[^>]*>|<\/tr>$/g, '')}</tr>`;
         }
 
-        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots, scope) {
+        function legFormRowHtml(id, direction, optionType, side, offsetPts, lots, book) {
             const optSel = ['CE', 'PE'].map(o => `<option value="${o}" ${o === optionType ? 'selected' : ''}>${o}</option>`).join('');
             const sideSel = ['BUY', 'SELL'].map(s => `<option value="${s}" ${s === side ? 'selected' : ''}>${s}</option>`).join('');
             return `
@@ -487,18 +487,18 @@
                     <input type="number" class="leg-lots w-16 px-2 py-1 border border-gray-200 rounded text-xs text-center font-mono" value="${lots}" min="1" />
                 </td>
                 <td class="px-2 py-1.5 text-center">
-                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}', '${scope}')"
+                    <button onclick="saveLeg(this, ${id === null ? 'null' : id}, '${direction}', '${book}')"
                             class="px-2 py-0.5 bg-blue-600 hover:bg-blue-700 text-white rounded text-[11px] border-0 cursor-pointer">Save</button>
                     <button onclick="loadLegTemplates()"
                             class="px-2 py-0.5 text-gray-500 hover:bg-gray-100 rounded text-[11px] border-0 cursor-pointer bg-transparent">Cancel</button>
                 </td>`;
         }
 
-        function saveLeg(btn, id, direction, scope) {
+        function saveLeg(btn, id, direction, book) {
             const row = btn.closest('tr');
             const body = {
                 direction,
-                scope,
+                book,
                 optionType: row.querySelector('.leg-opt').value,
                 side:       row.querySelector('.leg-side').value,
                 offsetPts:  parseInt(row.querySelector('.leg-offset').value) || 0,
@@ -517,6 +517,40 @@
                     }
                 })
                 .catch(e => Utils.showMessage('legTemplatesMsg', 'Error: ' + e, true));
+        }
+
+        // ==================== BOOK TOGGLES ====================
+        // A disabled book opens no NEW positions; an open position keeps being
+        // managed (exits / flip-closes) until its natural close, then goes dormant.
+        function renderBookToggle(book, enabled) {
+            const cb = document.getElementById('bookToggle' + book);
+            const state = document.getElementById('bookState' + book);
+            if (!cb || !state) return;
+            cb.checked = !!enabled;
+            state.textContent = enabled ? 'BOOK ON' : 'BOOK OFF';
+            state.className = 'text-[10px] font-semibold ' + (enabled ? 'text-emerald-600' : 'text-gray-400');
+        }
+
+        function loadBooks() {
+            fetch('/api/books')
+                .then(r => r.json())
+                .then(books => Object.entries(books).forEach(([book, enabled]) => renderBookToggle(book, enabled)))
+                .catch(e => Utils.showMessage('legTemplatesMsg', 'Book load error: ' + e, true));
+        }
+
+        function toggleBook(book, enabled) {
+            fetch(`/api/books/${book}?enabled=${enabled}`, { method: 'POST' })
+                .then(r => r.json())
+                .then(res => {
+                    if (res.success) {
+                        Object.entries(res.books).forEach(([b, en]) => renderBookToggle(b, en));
+                        Utils.showMessage('legTemplatesMsg', `${book} ${enabled ? 'ENABLED' : 'DISABLED'}.`, false);
+                    } else {
+                        Utils.showMessage('legTemplatesMsg', res.message || 'Toggle failed', true);
+                        loadBooks();
+                    }
+                })
+                .catch(e => { Utils.showMessage('legTemplatesMsg', 'Toggle error: ' + e, true); loadBooks(); });
         }
 
         function deleteLeg(id) {
@@ -750,6 +784,7 @@
             LivePositions.load();
             loadCapitalData();
             loadLegTemplates();
+            loadBooks();
             EquityCurve.loadEquityCurve();
             NSECalendar.renderUpcoming();
             // Set date in topbar
@@ -1360,11 +1395,17 @@
                         <div class="grid grid-cols-1 lg:grid-cols-2 gap-8">
                             <!-- MONTHLY column (left) -->
                             <div class="space-y-6">
-                                <div class="text-[11px] font-bold text-violet-700 uppercase tracking-widest border-b border-violet-100 pb-2">Monthly</div>
+                                <div class="flex items-center justify-between border-b border-violet-100 pb-2">
+                                    <div class="text-[11px] font-bold text-violet-700 uppercase tracking-widest">Monthly <span class="normal-case tracking-normal font-mono text-gray-400">LONG_MONTHLY</span></div>
+                                    <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
+                                        <span id="bookStateLONG_MONTHLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
+                                        <input type="checkbox" id="bookToggleLONG_MONTHLY" onchange="toggleBook('LONG_MONTHLY', this.checked)" class="accent-violet-600 w-4 h-4 cursor-pointer">
+                                    </label>
+                                </div>
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
-                                        <button onclick="showAddLegRow('LONG', 'MONTHLY')"
+                                        <button onclick="showAddLegRow('LONG', 'LONG_MONTHLY')"
                                                 class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
                                     </div>
                                     <div class="border border-gray-100 rounded-lg overflow-hidden">
@@ -1385,7 +1426,7 @@
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
-                                        <button onclick="showAddLegRow('SHORT', 'MONTHLY')"
+                                        <button onclick="showAddLegRow('SHORT', 'LONG_MONTHLY')"
                                                 class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
                                     </div>
                                     <div class="border border-gray-100 rounded-lg overflow-hidden">
@@ -1406,11 +1447,17 @@
                             </div>
                             <!-- WEEKLY column (right) -->
                             <div class="space-y-6">
-                                <div class="text-[11px] font-bold text-blue-700 uppercase tracking-widest border-b border-blue-100 pb-2">Weekly</div>
+                                <div class="flex items-center justify-between border-b border-blue-100 pb-2">
+                                    <div class="text-[11px] font-bold text-blue-700 uppercase tracking-widest">Weekly <span class="normal-case tracking-normal font-mono text-gray-400">SYNTH_WEEKLY</span></div>
+                                    <label class="flex items-center gap-2 cursor-pointer" title="Disabled: no new positions; an open position is still managed to its natural close.">
+                                        <span id="bookStateSYNTH_WEEKLY" class="text-[10px] font-semibold text-gray-400">BOOK OFF</span>
+                                        <input type="checkbox" id="bookToggleSYNTH_WEEKLY" onchange="toggleBook('SYNTH_WEEKLY', this.checked)" class="accent-blue-600 w-4 h-4 cursor-pointer">
+                                    </label>
+                                </div>
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="text-[12px] font-semibold text-emerald-600">▲ LONG Direction</div>
-                                        <button onclick="showAddLegRow('LONG', 'WEEKLY')"
+                                        <button onclick="showAddLegRow('LONG', 'SYNTH_WEEKLY')"
                                                 class="px-3 py-1 bg-emerald-50 hover:bg-emerald-100 text-emerald-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
                                     </div>
                                     <div class="border border-gray-100 rounded-lg overflow-hidden">
@@ -1431,7 +1478,7 @@
                                 <div>
                                     <div class="flex items-center justify-between mb-2">
                                         <div class="text-[12px] font-semibold text-rose-500">▼ SHORT Direction</div>
-                                        <button onclick="showAddLegRow('SHORT', 'WEEKLY')"
+                                        <button onclick="showAddLegRow('SHORT', 'SYNTH_WEEKLY')"
                                                 class="px-3 py-1 bg-rose-50 hover:bg-rose-100 text-rose-700 text-xs font-medium rounded-md border-0 cursor-pointer">+ Add Leg</button>
                                     </div>
                                     <div class="border border-gray-100 rounded-lg overflow-hidden">

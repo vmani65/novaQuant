@@ -252,6 +252,7 @@
                             <th class="px-4 py-3 text-right font-semibold text-gray-500">Actual P&amp;L</th>
                             <th class="px-4 py-3 text-right font-semibold text-gray-500">Diff%</th>
                             <th class="px-4 py-3 text-right font-semibold text-gray-500">Brokerage</th>
+                            <th class="px-4 py-3 text-left font-semibold text-gray-500">Book</th>
                             <th class="px-4 py-3 text-left font-semibold text-gray-500">Strategy</th>
                         </tr>
                     </thead>
@@ -325,6 +326,12 @@
         if (dir === 'LONG')  return badge('▲ LONG', 'badge-long');
         if (dir === 'SHORT') return badge('▼ SHORT', 'badge-short');
         return badge(dir, 'badge-closed');
+    }
+
+    function bookBadge(book) {
+        if (book === 'LONG_MONTHLY')
+            return `<span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-violet-50 text-violet-700">MONTHLY</span>`;
+        return `<span class="text-[10px] font-semibold px-2 py-0.5 rounded bg-blue-50 text-blue-700">WEEKLY</span>`;
     }
 
     function txnBadge(type) {
@@ -423,7 +430,7 @@
     function renderTrades(trades) {
         const tbody = document.getElementById('tradeBody');
         if (!trades || trades.length === 0) {
-            tbody.innerHTML = `<tr><td colspan="15" class="text-center py-10 text-gray-400 text-xs">No trades found</td></tr>`;
+            tbody.innerHTML = `<tr><td colspan="16" class="text-center py-10 text-gray-400 text-xs">No trades found</td></tr>`;
             return;
         }
 
@@ -451,6 +458,7 @@
                     <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
                     <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
                     <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
+                    <td class="px-4 py-3">${bookBadge(t.book)}</td>
                     <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
                 </tr>
                 ${childRows}`;

@@ -13,6 +13,7 @@ import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.PENDING_CLOSE;
 import static path.to._40c.nqCore.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 
 import java.util.List;
 import java.util.Map;
@@ -63,7 +64,7 @@ class PositionClosingServicePendingCloseTest {
         util = mock(PositionUtil.class);
         ComputeUtil compute = mock(ComputeUtil.class);
         reconciler = mock(PendingCloseReconciler.class);
-        service = new PositionClosingService(repo, util, compute, reconciler);
+        service = new PositionClosingService(repo, util, compute, reconciler, mock(PendingOpenReconciler.class));
 
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
         when(compute.getDtTimeNow()).thenReturn("04-08-2026 09:15:04.328");
@@ -73,7 +74,7 @@ class PositionClosingServicePendingCloseTest {
         position = new Position();
         position.setStatus(LIVE);
         position.setLegs(List.of(peLeg, ceLeg));
-        when(util.findLiveTradesWithLiveOrderBooks()).thenReturn(position);
+        when(util.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY)).thenReturn(position);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + CE, new Quote(), "NFO:" + PE, new Quote()));
 
         // PE exit fills fully; the CE exit is the incident leg, scripted per test.
@@ -87,7 +88,7 @@ class PositionClosingServicePendingCloseTest {
         when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString()))
                 .thenReturn(new ExecResult("CE-CLOSE-1", 0, QTY, 0.0, false, "OPEN"));
 
-        Position closed = service.closeTrade("24665.50", signal(), true);
+        Position closed = service.closeWeeklyTrade("24665.50", signal(), true);
 
         assertThat(closed.getStatus()).isEqualTo(PENDING_CLOSE);
         assertThat(closed.getClosedAt()).as("closedAt must stay unset until the close settles").isNull();
@@ -102,7 +103,7 @@ class PositionClosingServicePendingCloseTest {
         when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString()))
                 .thenReturn(new ExecResult("", 0, QTY, 0.0, false, Constants.ORDER_REJECTED));
 
-        Position closed = service.closeTrade("24665.50", signal(), true);
+        Position closed = service.closeWeeklyTrade("24665.50", signal(), true);
 
         assertThat(closed.getStatus()).isEqualTo(FAILED);
         assertThat(closed.getClosedAt()).isNotNull();

@@ -7,6 +7,7 @@ import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.entity.WeeklyLeg;
+import path.to._40c.nqCore.entity.WeeklySymbolConfig;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.service.LegTemplateCache;
@@ -48,8 +49,9 @@ public class ComputeUtil {
         this.tradeCapital = tradeCapital;
     }
 
-	public List<LegOrder> buildInstrument(String signalPrice, Position trade, boolean rollOver) {
-        log.info("Starting to build instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
+	/** SYNTH_WEEKLY build: weekly leg templates + weekly symbol slot (rollover-aware). */
+	public List<LegOrder> buildWeeklyInstrument(String signalPrice, Position trade, boolean rollOver) {
+        log.info("Starting to build weekly instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
                  signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null, rollOver);
         boolean isLong = LONG.equals(trade.getDirection());
         int atm = roundNFToNearestATM(signalPrice);
@@ -58,7 +60,34 @@ public class ComputeUtil {
         List<LegOrder> orders = templates.stream()
                 .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
                 .collect(Collectors.toList());
-        log.info("Built leg orders: size={}, rollOver={}, details={}", orders.size(), rollOver, orders);
+        log.info("Built weekly leg orders: size={}, rollOver={}, details={}", orders.size(), rollOver, orders);
+        return orders;
+    }
+
+	/**
+	 * LONG_MONTHLY build: monthly leg templates + the monthly symbol slot's current
+	 * contract. No rollover variant — a monthly position exits on whatever contract it
+	 * entered (no mid-position rolling in v1; the DTE-based calendar roll is phase 3).
+	 * Throws when the monthly book is unconfigured so the fan-out's per-book error
+	 * isolation fails ONLY this book, loudly, instead of trading a wrong instrument.
+	 */
+	public List<LegOrder> buildMonthlyInstrument(String signalPrice, Position trade) {
+        log.info("Starting to build monthly instrument: signalPrice={}, tradeId={}, signalType={}",
+                 signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null);
+        boolean isLong = LONG.equals(trade.getDirection());
+        int atm = roundNFToNearestATM(signalPrice);
+        List<LegTemplate> templates = isLong ? templateCache.getMonthlyLongLegs() : templateCache.getMonthlyShortLegs();
+        if (templates.isEmpty())
+            throw new IllegalStateException("LONG_MONTHLY has no " + (isLong ? LONG : SHORT)
+                    + " leg templates configured — add monthly legs in the manifestation UI");
+        WeeklySymbolConfig monthlyCfg = symbolCache.getMonthly();
+        if (monthlyCfg == null)
+            throw new IllegalStateException("LONG_MONTHLY has no monthly symbol configured — save monthly symbols first");
+        String symbolPrefix = monthlyCfg.getThisWeekSymbol();
+        List<LegOrder> orders = templates.stream()
+                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
+                .collect(Collectors.toList());
+        log.info("Built monthly leg orders: size={}, details={}", orders.size(), orders);
         return orders;
     }
 

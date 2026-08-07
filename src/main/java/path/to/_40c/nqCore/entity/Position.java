@@ -15,6 +15,7 @@ import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.Filter;
 import path.to._40c.nqCore.controller.SignalController;
+import path.to._40c.nqCore.util.Constants;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 import static path.to._40c.nqCore.util.Constants.INPUT_FORMATS;
@@ -50,6 +51,16 @@ public class Position extends BaseEntity {
 
     @Column(name = "STRATEGY_ID")
     private String strategyId = "RIDETHETIDE";
+
+    /**
+     * Execution book that owns this position: SYNTH_WEEKLY (2-leg weekly synthetic) or
+     * LONG_MONTHLY (1-leg monthly buying). Every book-scoped query filters on this, so a
+     * signal fanned out to both books can never close the other book's position. Defaults
+     * to SYNTH_WEEKLY; the monthly open path overrides it before save. Legacy null rows
+     * are backfilled to SYNTH_WEEKLY at startup (BookBackfill).
+     */
+    @Column(name = "BOOK")
+    private String book = Constants.SYNTH_WEEKLY;
 
     @Column(name = "ACCOUNT")
     private String account = "ZERODHAVINOTH";

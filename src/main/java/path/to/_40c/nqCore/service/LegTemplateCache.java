@@ -12,15 +12,15 @@ import path.to._40c.nqCore.entity.LegTemplate;
 import path.to._40c.nqCore.repo.LegTemplateRepository;
 
 import static path.to._40c.nqCore.util.Constants.LONG;
-import static path.to._40c.nqCore.util.Constants.MONTHLY;
+import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.SHORT;
-import static path.to._40c.nqCore.util.Constants.WEEKLY;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 
 /**
- * In-memory cache of LegTemplate rows grouped by scope and direction.
- * getLongLegs()/getShortLegs() stay the WEEKLY accessors so ComputeUtil.buildInstrument
- * keeps trading exactly the weekly synthetic; MONTHLY rows are held in their own slots
- * and are not consumed by the engine until the monthly strategy is wired in.
+ * In-memory cache of LegTemplate rows grouped by book and direction.
+ * getLongLegs()/getShortLegs() are the SYNTH_WEEKLY accessors so the weekly synthetic
+ * keeps trading exactly its own template; LONG_MONTHLY rows are held in their own slots
+ * and consumed only by the monthly build path.
  * Refresh on app startup and after any CRUD operation on leg_template.
  */
 @Service
@@ -39,7 +39,7 @@ public class LegTemplateCache {
 
     @PostConstruct
     public void init() {
-        backfillNullScopes();
+        backfillNullBooks();
         refreshCache();
     }
 
@@ -50,24 +50,26 @@ public class LegTemplateCache {
     public List<LegTemplate> getMonthlyShortLegs() { return monthlyShortLegs.get(); }
 
     public void refreshCache() {
-        longLegs.set(Collections.unmodifiableList(repository.findByDirectionAndScope(LONG, WEEKLY)));
-        shortLegs.set(Collections.unmodifiableList(repository.findByDirectionAndScope(SHORT, WEEKLY)));
-        monthlyLongLegs.set(Collections.unmodifiableList(repository.findByDirectionAndScope(LONG, MONTHLY)));
-        monthlyShortLegs.set(Collections.unmodifiableList(repository.findByDirectionAndScope(SHORT, MONTHLY)));
+        longLegs.set(Collections.unmodifiableList(repository.findByDirectionAndBook(LONG, SYNTH_WEEKLY)));
+        shortLegs.set(Collections.unmodifiableList(repository.findByDirectionAndBook(SHORT, SYNTH_WEEKLY)));
+        monthlyLongLegs.set(Collections.unmodifiableList(repository.findByDirectionAndBook(LONG, LONG_MONTHLY)));
+        monthlyShortLegs.set(Collections.unmodifiableList(repository.findByDirectionAndBook(SHORT, LONG_MONTHLY)));
     }
 
     /**
-     * Rows created before the SCOPE column existed read null after the DDL update; they
-     * are all weekly synthetic legs, so stamp them WEEKLY once at startup. Without this,
-     * the scoped queries would return empty and the engine would build zero-leg positions.
+     * Rows created before the BOOK column existed read null after the DDL update; they
+     * are all weekly synthetic legs, so stamp them SYNTH_WEEKLY once at startup. Without
+     * this, the book-scoped queries would return empty and the engine would build
+     * zero-leg positions. Note: a DB carrying the short-lived SCOPE column (phase-1 test
+     * DBs only — never deployed) is NOT auto-migrated; monthly rows must be re-entered.
      */
-    private void backfillNullScopes() {
+    private void backfillNullBooks() {
         List<LegTemplate> all = repository.findAll();
-        List<LegTemplate> nullScoped = all.stream().filter(t -> t.getScope() == null).toList();
-        if (!nullScoped.isEmpty()) {
-            nullScoped.forEach(t -> t.setScope(WEEKLY));
-            repository.saveAll(nullScoped);
-            log.info("Backfilled scope=WEEKLY on {} pre-existing leg_template rows", nullScoped.size());
+        List<LegTemplate> nullBooked = all.stream().filter(t -> t.getBook() == null).toList();
+        if (!nullBooked.isEmpty()) {
+            nullBooked.forEach(t -> t.setBook(SYNTH_WEEKLY));
+            repository.saveAll(nullBooked);
+            log.info("Backfilled book=SYNTH_WEEKLY on {} pre-existing leg_template rows", nullBooked.size());
         }
     }
 }
