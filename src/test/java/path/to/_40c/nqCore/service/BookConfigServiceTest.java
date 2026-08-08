@@ -10,7 +10,6 @@ import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 
 import java.util.ArrayList;
 import java.util.List;
-import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;

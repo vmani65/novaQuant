@@ -18,6 +18,7 @@ import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.time.Instant;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.time.ZoneId;
 import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
@@ -78,12 +79,88 @@ public class PositionUtil {
     @org.springframework.beans.factory.annotation.Value("${order.execution.use-limit-walk:false}")
     private boolean useLimitWalk;
 
+    /**
+     * PATIENT execution config (PATIENT_EXECUTION_PLAN.md §3 / §5). Raw strings are parsed and
+     * validated once in initPatientConfig; invalid config logs an error and disables patient mode
+     * rather than failing startup. All values default to the plan's §5 table; patient mode itself
+     * defaults OFF.
+     */
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.enabled:false}")
+    private boolean patientEnabled;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.step-delays-ms:20000,60000,120000,240000,420000,600000}")
+    private String patientStepDelaysRaw;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.concession-fractions:0.0,0.2,0.4,0.6,0.8,1.0}")
+    private String patientConcessionFractionsRaw;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.max-concession-pts:2.0}")
+    private double patientMaxConcessionPts;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.max-concession-pct:0.5}")
+    private double patientMaxConcessionPct;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.sane-spread-pct:2.0}")
+    private double patientSaneSpreadPct;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.cutoff:15:10}")
+    private String patientCutoffRaw;
+    @org.springframework.beans.factory.annotation.Value("${order.execution.patient.deadline-action:REST}")
+    private String patientDeadlineAction;
+
+    private long[]    patientStepDelaysMs;
+    private double[]  patientConcessionFractions;
+    private LocalTime patientCutoff;
+    private boolean   patientConfigValid;
+
     public PositionUtil(KiteGateway kiteGateway, KiteOrderStream orderStream,
                         PositionRepository positionRepository, EntityManager entityManager) {
         this.kiteGateway = kiteGateway;
         this.orderStream = orderStream;
         this.positionRepository = positionRepository;
         this.entityManager = entityManager;
+    }
+
+    /**
+     * Parses and validates the patient-mode config strings. Delays must be positive and strictly
+     * increasing, fractions the same length within [0,1] and non-decreasing, cutoff a valid HH:mm.
+     * Any violation disables patient mode (logged loudly) instead of throwing — a bad tuning value
+     * must never take order placement down with it. Package-visible so tests can invoke it after
+     * setting the raw fields by reflection (no Spring context in the JUnit suite).
+     */
+    @jakarta.annotation.PostConstruct
+    void initPatientConfig() {
+        try {
+            long[] delays = Arrays.stream(patientStepDelaysRaw.split("\\s*,\\s*"))
+                    .mapToLong(Long::parseLong).toArray();
+            double[] fracs = Arrays.stream(patientConcessionFractionsRaw.split("\\s*,\\s*"))
+                    .mapToDouble(Double::parseDouble).toArray();
+            LocalTime cutoff = LocalTime.parse(patientCutoffRaw);
+            boolean ok = delays.length > 0 && delays.length == fracs.length;
+            for (int i = 0; ok && i < delays.length; i++) {
+                if (delays[i] <= 0 || (i > 0 && delays[i] <= delays[i - 1])) ok = false;
+                if (fracs[i] < 0.0 || fracs[i] > 1.0 || (i > 0 && fracs[i] < fracs[i - 1])) ok = false;
+            }
+            if (!ok) {
+                throw new IllegalArgumentException(
+                        "step-delays-ms and concession-fractions must be same-length, delays strictly increasing, fractions in [0,1] non-decreasing");
+            }
+            patientStepDelaysMs = delays;
+            patientConcessionFractions = fracs;
+            patientCutoff = cutoff;
+            patientConfigValid = true;
+        } catch (Exception e) {
+            patientConfigValid = false;
+            log.error("PATIENT execution config invalid — patient mode DISABLED: {}", e.getMessage());
+        }
+    }
+
+    /**
+     * True when a PATIENT request will actually be honored: flag on, config valid, and the IST
+     * cutoff not yet passed. PositionCloseService consults this for routing; placeAggressiveOrder
+     * re-checks it so a stale caller decision can never start a patient loop after cutoff.
+     */
+    public boolean patientModeAvailable() {
+        return patientEnabled && patientConfigValid && !pastPatientCutoff();
+    }
+
+    /** True once IST wall-clock reaches the patient cutoff (default 15:10) — see plan §3.6. */
+    private boolean pastPatientCutoff() {
+        return patientCutoff == null || !LocalTime.now(ZoneId.of(ZONE_ID)).isBefore(patientCutoff);
     }
 
     /** Capture fill prices for legs that don't already have them. Idempotent. */
@@ -515,21 +592,41 @@ public class PositionUtil {
     }
 
     /**
+     * Order pipeline shared by entries and exits — AGGRESSIVE-mode convenience overload.
+     * Every pre-existing call site uses this signature, so legacy behavior is untouched.
+     */
+    public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel) {
+        return placeAggressiveOrder(q, ins, txn, qty, contextLabel, ExecMode.AGGRESSIVE);
+    }
+
+    /**
      * Order pipeline shared by entries and exits.
      *
-     * Routes by size and config:
-     *   qty ≥ MAX_SIZE_PER_ORDER → Kite broker-side auto-slice (MARKET per slice)
-     *   useLimitWalk=true        → graduated LIMIT (mid → walk → MARKET fallback), saves spread
-     *   default                  → pure MARKET protection=1 (legacy behavior)
+     * Routes by size, mode and config:
+     *   qty ≥ MAX_SIZE_PER_ORDER   → Kite broker-side auto-slice (MARKET per slice)
+     *   mode=PATIENT + available   → patient fair-anchored LIMIT (minutes-scale, no MARKET
+     *                                fallback on wide spreads) — PATIENT_EXECUTION_PLAN.md §3
+     *   useLimitWalk=true          → graduated LIMIT (mid → walk → MARKET fallback), saves spread
+     *   default                    → pure MARKET protection=1 (legacy behavior)
      *
-     * Either way, the final fallback is MARKET, so this method never leaves a leg un-hedged.
+     * A PATIENT request degrades to the aggressive path when patientModeAvailable() is false
+     * (flag off, invalid config, or past the IST cutoff), so callers never need a fallback branch.
      *
      * Logging: every line emitted while a leg executes carries an MDC tag
      * "&lt;context&gt;:&lt;instrument&gt; | " for attribution, and the leg's step-by-step story is
      * flushed as one contiguous multi-line INFO block when the leg finishes (ERROR block
      * if it dies mid-flight), so parallel legs never interleave their summaries.
      */
-    public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel) {
+    public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel, ExecMode mode) {
+        return placeAggressiveOrder(q, ins, txn, qty, contextLabel, mode, 0L);
+    }
+
+    /**
+     * Full-control overload: maxWaitMs is a hard wall-clock cap on a PATIENT order (0 = the full
+     * configured schedule). The interleaved monthly flip uses it to hand each close slice its
+     * share of the flip window (PATIENT_EXECUTION_PLAN.md §4.2); the aggressive paths ignore it.
+     */
+    public ExecResult placeAggressiveOrder(Quote q, String ins, String txn, int qty, String contextLabel, ExecMode mode, long maxWaitMs) {
         MDC.put(MDC_LEG_KEY, contextLabel + ":" + ins + " | ");
         ExecTrace trace = new ExecTrace();
         ExecResult result = null;
@@ -539,11 +636,19 @@ public class PositionUtil {
                     log.warn("qty={} >= MAX_SIZE_PER_ORDER — using auto-slice MARKET path", qty);
                     trace.record("qty %d >= MAX_SIZE_PER_ORDER -> auto-slice MARKET", qty);
                     return autoSliceFallback(ins, txn, qty, contextLabel);
-                } else if (useLimitWalk) {
-                    return placeGraduatedLimit(q, ins, txn, qty, contextLabel);
-                } else {
-                    return placeMarketCore(ins, txn, qty, contextLabel);
                 }
+                if (mode == ExecMode.PATIENT) {
+                    if (patientModeAvailable()) {
+                        return placePatientLimit(q, ins, txn, qty, contextLabel, maxWaitMs);
+                    }
+                    log.info("PATIENT requested but unavailable (enabled={}, configValid={}, cutoffPassed={}) — aggressive path",
+                            patientEnabled, patientConfigValid, pastPatientCutoff());
+                    trace.record("PATIENT unavailable -> aggressive path");
+                }
+                if (useLimitWalk) {
+                    return placeGraduatedLimit(q, ins, txn, qty, contextLabel);
+                }
+                return placeMarketCore(ins, txn, qty, contextLabel);
             });
             return result;
         } finally {
@@ -682,42 +787,54 @@ public class PositionUtil {
             if (orderStream != null) orderStream.cancel(resp.orderId);
             return new ExecResult(resp.orderId, finalAr.filledQty(), qty, finalAr.avgFillPrice(), true, ORDER_COMPLETE);
         }
-        if (orderStream != null) orderStream.cancel(resp.orderId);
-        kiteGateway.cancelOrder(resp.orderId, Constants.VARIETY_REGULAR);
+        return cancelAndTopUp(resp.orderId, ins, txn, qty, contextLabel, "walk exhausted");
+    }
 
-        AttemptResult confirmed = confirmTerminalFill(resp.orderId);
+    /**
+     * Finishes an unfilled/partial working LIMIT the aggressive way: cancels it, confirms its TRUE
+     * settled fill via confirmTerminalFill (the cancel-vs-fill discipline from the 2026-06-19
+     * over-fill), then sizes a MARKET top-up from the confirmed remainder and returns the combined
+     * result. Extracted verbatim from the graduated walk's exhausted path so the patient loop's
+     * deadline-action=MARKET shares the identical over-fill guarantees. reason labels log/trace lines.
+     */
+    private ExecResult cancelAndTopUp(String orderId, String ins, String txn, int qty, String contextLabel, String reason) {
+        ExecTrace trace = EXEC_TRACE.get();
+        if (orderStream != null) orderStream.cancel(orderId);
+        kiteGateway.cancelOrder(orderId, Constants.VARIETY_REGULAR);
+
+        AttemptResult confirmed = confirmTerminalFill(orderId);
         int filledByLimit  = confirmed.filledQty();
         double limitAvg    = filledByLimit > 0 ? confirmed.avgFillPrice() : 0.0;
         if (!isTerminal(confirmed.status())) {
             log.error("LIMIT {} not confirmed terminal after cancel (status={}, filled={}/{}) — sizing "
-                    + "top-up from last-known fill; residual over-fill risk", resp.orderId,
+                    + "top-up from last-known fill; residual over-fill risk", orderId,
                     confirmed.status(), filledByLimit, qty);
             trace.record("cancel NOT confirmed terminal (status=%s) — top-up sized from filled=%d (over-fill risk)",
                     confirmed.status(), filledByLimit);
         }
 
         int remaining = Math.max(0, qty - filledByLimit);
-        log.warn("LIMIT walk exhausted, cancelled with confirmed fill {}/{} — MARKET for remaining qty={}",
-                filledByLimit, qty, remaining);
+        log.warn("LIMIT {}, cancelled with confirmed fill {}/{} — MARKET for remaining qty={}",
+                reason, filledByLimit, qty, remaining);
         if (remaining == 0) {
             if (filledByLimit > qty) {
                 log.error("OVER-FILL: LIMIT {} settled {}/{} (exceeds requested) — no top-up placed; position "
-                        + "oversized by {}, manual review required", resp.orderId, filledByLimit, qty, filledByLimit - qty);
+                        + "oversized by {}, manual review required", orderId, filledByLimit, qty, filledByLimit - qty);
                 trace.record("OVER-FILL filled=%d > requested=%d -> no top-up", filledByLimit, qty);
             } else {
-                trace.record("FILLED %d/%d avg=%s via LIMIT (walk exhausted, confirmed after cancel)", filledByLimit, qty, limitAvg);
+                trace.record("FILLED %d/%d avg=%s via LIMIT (%s, confirmed after cancel)", filledByLimit, qty, limitAvg, reason);
             }
-            return new ExecResult(resp.orderId, filledByLimit, qty, limitAvg, filledByLimit >= qty,
+            return new ExecResult(orderId, filledByLimit, qty, limitAvg, filledByLimit >= qty,
                     filledByLimit > qty ? "OVERFILL" : ORDER_COMPLETE);
         }
-        trace.record("walk exhausted -> cancelled LIMIT (confirmed filled=%d), MARKET for remaining %d", filledByLimit, remaining);
+        trace.record("%s -> cancelled LIMIT (confirmed filled=%d), MARKET for remaining %d", reason, filledByLimit, remaining);
         ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel);
 
         int combined  = filledByLimit + mkt.totalFilled();
         double avg    = combined > 0
                 ? (filledByLimit * limitAvg + mkt.totalFilled() * mkt.weightedAvgFillPrice()) / combined
                 : 0.0;
-        String ids    = filledByLimit > 0 ? resp.orderId + ", " + mkt.aggregateOrderIds() : mkt.aggregateOrderIds();
+        String ids    = filledByLimit > 0 ? orderId + ", " + mkt.aggregateOrderIds() : mkt.aggregateOrderIds();
         if (combined > qty) {
             log.error("OVER-FILL: {} settled {}/{} (LIMIT {} + MARKET {}) — position oversized by {}, "
                     + "manual review/unwind required", ins, combined, qty, filledByLimit, mkt.totalFilled(), combined - qty);
@@ -726,6 +843,187 @@ public class PositionUtil {
         boolean full  = combined >= qty;
         return new ExecResult(ids, combined, qty, avg, full,
                 combined > qty ? "OVERFILL" : (full ? ORDER_COMPLETE : (combined > 0 ? "PARTIAL" : "FAILED")));
+    }
+
+    // ─── PATIENT execution (PATIENT_EXECUTION_PLAN.md §3) ──────────────────────────
+    /** Longest single wait inside the patient loop, so a passing cutoff interrupts promptly. */
+    private static final long PATIENT_WAIT_CHUNK_MS = 5000L;
+
+    /**
+     * Fair price for a thin book (plan §3.2). Sane spread (≤ saneSpreadPct of mid) → trust the
+     * midpoint, exactly like the walk. Wide spread → the mid of a 440/490 book is noise, so use
+     * the last traded price CLAMPED into the current bid..ask (a stale LTP must never price
+     * outside the live book). Unusable depth degrades to raw LTP; no price at all → null, which
+     * tells the caller patient mode cannot run. Deliberately has NO wide-book rejection — a wide
+     * book is the reason patient mode exists, never a reason to bail to MARKET.
+     */
+    private static Double fairAnchor(Quote q, double saneSpreadPct) {
+        if (q == null) return null;
+        if (q.depth == null || q.depth.buy == null || q.depth.buy.isEmpty()
+                || q.depth.sell == null || q.depth.sell.isEmpty()) {
+            return q.lastPrice > 0 ? q.lastPrice : null;
+        }
+        double bid = q.depth.buy.get(0).getPrice();
+        double ask = q.depth.sell.get(0).getPrice();
+        if (bid <= 0 || ask <= 0 || ask < bid) {
+            return q.lastPrice > 0 ? q.lastPrice : null;
+        }
+        double mid = (bid + ask) / 2.0;
+        double spreadPct = (ask - bid) / mid * 100.0;
+        if (spreadPct <= saneSpreadPct) return mid;
+        if (q.lastPrice <= 0) return mid;
+        return Math.min(ask, Math.max(bid, q.lastPrice));
+    }
+
+    /**
+     * Patient fair-anchored LIMIT (plan §3.3): rest at fair, re-anchor and concede slowly across
+     * the configured minutes-scale schedule, capped at max(max-concession-pts, fair ×
+     * max-concession-pct) — enforced against BOTH the live fair and the original anchor, so a
+     * garbage quote can never walk the price unboundedly while a genuinely moved fair is still
+     * followed within the cap band. No MARKET fallback on wide spreads; unfilled at deadline (or
+     * past the IST cutoff) applies deadline-action:
+     *   REST   (default) — leave the LIMIT resting; the returned non-terminal ExecResult keeps the
+     *          orderId so closeOrderMayBeLive() holds, the leg goes PENDING_CLOSE and the
+     *          reconciler owns it (§3.5). No new status machinery.
+     *   MARKET — cancelAndTopUp: the walk-exhausted cancel→confirm→top-up discipline verbatim.
+     * The only aggressive fallback is the degenerate no-price-at-all case (quote-less leg cannot
+     * be priced patiently); placement failure returns PLACE_FAILED without ever going MARKET.
+     */
+    private ExecResult placePatientLimit(Quote q, String ins, String txn, int qty, String contextLabel, long maxWaitMs) {
+        ExecTrace trace = EXEC_TRACE.get();
+        boolean isBuy = BUY.equals(txn);
+        Quote fresh = refreshQuote(ins);
+        Quote ref = fresh != null ? fresh : q;
+        Double anchor = fairAnchor(ref, patientSaneSpreadPct);
+        if (anchor == null) {
+            log.warn("PATIENT: no usable quote or LTP — degrading to aggressive path");
+            trace.record("PATIENT no usable quote/ltp -> aggressive path");
+            return useLimitWalk ? placeGraduatedLimit(q, ins, txn, qty, contextLabel)
+                                : placeMarketCore(ins, txn, qty, contextLabel);
+        }
+        final double anchor0 = anchor;
+        final double cap = Math.max(patientMaxConcessionPts, anchor0 * patientMaxConcessionPct / 100.0);
+        trace.quote("PATIENT anchor=%s cap=%s ltp=%s", Math.round(anchor0 * 1000.0) / 1000.0,
+                Math.round(cap * 1000.0) / 1000.0, ref.lastPrice);
+
+        OrderParams params = buildAggressiveOrderParams();
+        params.orderType       = Constants.ORDER_TYPE_LIMIT;
+        params.validity        = Constants.VALIDITY_DAY;
+        params.transactionType = txn;
+        params.tradingsymbol   = ins;
+        params.quantity        = qty;
+        params.price           = roundToTick(anchor0, NIFTY_OPT_TICK);
+
+        OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
+        if (resp == null || resp.orderId == null) {
+            resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
+        }
+        if (resp == null || resp.orderId == null) {
+            log.error("PATIENT LIMIT placeOrder null twice — PLACE_FAILED (no MARKET fallback in patient mode)");
+            trace.record("PATIENT LIMIT place failed twice -> PLACE_FAILED");
+            return new ExecResult("", 0, qty, 0.0, false, "PLACE_FAILED");
+        }
+        log.info("PATIENT LIMIT @ {} placed orderId={} (anchor={} cap={})", params.price, resp.orderId, anchor0, cap);
+        trace.record("PATIENT LIMIT @ %s placed orderId=%s", params.price, resp.orderId);
+
+        final boolean wsHealthy = orderStream != null && orderStream.isHealthy();
+        CompletableFuture<Order> awaitFut = wsHealthy ? orderStream.awaitTerminal(resp.orderId) : null;
+
+        long t0 = System.currentTimeMillis();
+        long hardDeadline = maxWaitMs > 0 ? t0 + maxWaitMs : Long.MAX_VALUE;
+        double lastPx = params.price;
+        double lastFair = anchor0;
+        boolean cutoffBail = false;
+        for (int step = 0; step < patientStepDelaysMs.length; step++) {
+            awaitFut = patientAwaitUntil(awaitFut, Math.min(t0 + patientStepDelaysMs[step], hardDeadline));
+            AttemptResult ar = peekOrderState(resp.orderId);
+            if (ar.filledQty() >= qty && isTerminal(ar.status())) {
+                trace.record("PATIENT FILLED %d/%d avg=%s (step %d, slipVsAnchor=%s)", ar.filledQty(), qty,
+                        ar.avgFillPrice(), step,
+                        ComputeUtil.rnd(isBuy ? ar.avgFillPrice() - anchor0 : anchor0 - ar.avgFillPrice()));
+                if (orderStream != null) orderStream.cancel(resp.orderId);
+                return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
+            }
+            if (pastPatientCutoff()) {
+                cutoffBail = true;
+                trace.record("PATIENT cutoff reached at step %d -> deadline action", step);
+                break;
+            }
+            if (System.currentTimeMillis() >= hardDeadline) {
+                trace.record("PATIENT slice budget (%dms) exhausted at step %d -> deadline action", maxWaitMs, step);
+                break;
+            }
+            Double fairNow = fairAnchor(refreshQuote(ins), patientSaneSpreadPct);
+            if (fairNow != null) lastFair = fairNow;
+            double frac = patientConcessionFractions[step];
+            double target = isBuy ? Math.min(lastFair + cap * frac, anchor0 + cap)
+                                  : Math.max(lastFair - cap * frac, anchor0 - cap);
+            double newPx = roundToTick(target, NIFTY_OPT_TICK);
+            if (newPx != lastPx) {
+                boolean mod = kiteGateway.modifyOrder(resp.orderId, newPx, qty, Constants.VARIETY_REGULAR);
+                trace.record("PATIENT step%d -> %s (fair=%s frac=%s) filled %d/%d%s", step, newPx,
+                        Math.round(lastFair * 1000.0) / 1000.0, frac, ar.filledQty(), qty, mod ? "" : " (modify FAILED)");
+                lastPx = newPx;
+            } else {
+                trace.record("PATIENT step%d holds @ %s filled %d/%d", step, lastPx, ar.filledQty(), qty);
+            }
+            if (awaitFut != null) awaitFut = orderStream.awaitTerminal(resp.orderId);
+        }
+
+        AttemptResult ar = peekOrderState(resp.orderId);
+        if (ar.filledQty() >= qty && isTerminal(ar.status())) {
+            trace.record("PATIENT FILLED %d/%d avg=%s (final check)", ar.filledQty(), qty, ar.avgFillPrice());
+            if (orderStream != null) orderStream.cancel(resp.orderId);
+            return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), true, ORDER_COMPLETE);
+        }
+        if ("MARKET".equalsIgnoreCase(patientDeadlineAction)) {
+            log.warn("PATIENT {} unfilled ({}/{}) at {} — deadline-action MARKET", ins, ar.filledQty(), qty,
+                    cutoffBail ? "cutoff" : "deadline");
+            return cancelAndTopUp(resp.orderId, ins, txn, qty, contextLabel, "patient deadline");
+        }
+        if (orderStream != null) orderStream.cancel(resp.orderId);
+        String st = ar.status() != null ? ar.status() : "UNKNOWN";
+        if (isTerminal(st)) {
+            boolean any = ar.filledQty() > 0;
+            log.error("PATIENT {} order {} went terminal-unfilled ({}, filled {}/{}) before deadline handling",
+                    ins, resp.orderId, st, ar.filledQty(), qty);
+            trace.record("PATIENT terminal short of qty: %s filled %d/%d", st, ar.filledQty(), qty);
+            return new ExecResult(any ? resp.orderId : "", ar.filledQty(), qty,
+                    any ? ar.avgFillPrice() : 0.0, false, any ? "PARTIAL" : st);
+        }
+        log.warn("PATIENT {} REST: LIMIT {} left resting @ {} with filled {}/{} (status={}) — "
+                + "PENDING machinery owns it from here", ins, resp.orderId, lastPx, ar.filledQty(), qty, st);
+        trace.record("PATIENT %s -> REST (filled %d/%d status=%s, resting @ %s)",
+                cutoffBail ? "cutoff" : "deadline", ar.filledQty(), qty, st, lastPx);
+        return new ExecResult(resp.orderId, ar.filledQty(), qty, ar.avgFillPrice(), false, st);
+    }
+
+    /**
+     * Waits until the given step deadline in ≤5s chunks, so an IST cutoff passing mid-wait is
+     * noticed within one chunk. Uses the WS terminal-event future when available (returns as soon
+     * as the event fires — the caller's REST peek stays the source of truth) and degrades to
+     * sleep-polling for the remainder of the attempt on any WS error, mirroring the graduated
+     * walk's D₂ behavior. Returns the (possibly nulled) future for the caller to re-arm.
+     */
+    private CompletableFuture<Order> patientAwaitUntil(CompletableFuture<Order> awaitFut, long deadlineMs) {
+        while (true) {
+            long waitMs = deadlineMs - System.currentTimeMillis();
+            if (waitMs <= 0 || pastPatientCutoff()) return awaitFut;
+            long chunk = Math.min(waitMs, PATIENT_WAIT_CHUNK_MS);
+            if (awaitFut != null) {
+                try {
+                    awaitFut.get(chunk, java.util.concurrent.TimeUnit.MILLISECONDS);
+                    return awaitFut;
+                } catch (java.util.concurrent.TimeoutException te) {
+                    continue;
+                } catch (Exception e) {
+                    log.warn("PATIENT WS await error: {} — sleep-poll for the rest of this attempt", e.getMessage());
+                    awaitFut = null;
+                }
+            } else {
+                sleepMillis(chunk);
+            }
+        }
     }
 
     // ─── Cancel-confirmation (closes the cancel-vs-fill over-fill race) ─────────────

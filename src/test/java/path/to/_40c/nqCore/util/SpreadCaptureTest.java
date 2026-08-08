@@ -137,8 +137,9 @@ class SpreadCaptureTest {
         monthly.setLegs(List.of(leg));
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(monthly);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + INS, quote(219.5, 220.5)));
-        // closing a bought leg SELLs: fill 219.6 vs mid 220.0 → paid 0.4 on the way out
-        when(util.placeAggressiveOrder(any(), eq(INS), eq(SELL), anyInt(), anyString()))
+        // closing a bought leg SELLs: fill 219.6 vs mid 220.0 → paid 0.4 on the way out.
+        // A LIVE LONG_MONTHLY signal close must route PATIENT, so the mode is asserted here.
+        when(util.placeAggressiveOrder(any(), eq(INS), eq(SELL), anyInt(), anyString(), eq(ExecMode.PATIENT)))
                 .thenReturn(new ExecResult("M-CLOSE-1", 130, 130, 219.6, true, Constants.ORDER_COMPLETE));
 
         closing.closeMonthlyTrade("24600", new Signal("RIDETHETIDE", "longExit", "CE", "", "24600"), true);

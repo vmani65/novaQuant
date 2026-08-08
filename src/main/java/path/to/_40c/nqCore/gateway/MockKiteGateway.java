@@ -1,7 +1,6 @@
 package path.to._40c.nqCore.gateway;
 
 import java.util.ArrayList;
-import java.util.Collections;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
@@ -35,6 +34,7 @@ import com.zerodhatech.models.OrderResponse;
 import com.zerodhatech.models.Quote;
 import com.zerodhatech.models.User;
 
+import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_CANCELLED;
 import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_COMPLETE;
 
 /**
@@ -54,6 +54,69 @@ public class MockKiteGateway implements KiteGateway {
 
     /** Execution price recorded per mock order ID; replayed by getOrderTrades for consistency. */
     private final ConcurrentHashMap<String, Double> executionPrices = new ConcurrentHashMap<>();
+
+    /**
+     * Full per-order state (qty, side, price, lifecycle) so getOrderHistory / getOrderTrades echo
+     * the REAL requested quantity instead of the historical hardcoded 65 — multi-lot and sliced
+     * flows (PATIENT_EXECUTION_PLAN.md §7.1) are untestable without it. Unknown ids keep the
+     * legacy 65-qty fallback so nothing placed outside placeOrder changes behavior.
+     */
+    private final ConcurrentHashMap<String, MockOrderState> orders = new ConcurrentHashMap<>();
+
+    /**
+     * Fill behavior for newly placed orders (mock.fill-mode): INSTANT (default, legacy behavior),
+     * NEVER (orders rest OPEN until cancelled — drives the patient REST → PENDING_CLOSE
+     * click-through), or AFTER_MODIFIES:n (fills once modifyOrder has been called n times —
+     * walks the patient concession schedule visibly before filling).
+     */
+    @org.springframework.beans.factory.annotation.Value("${mock.fill-mode:INSTANT}")
+    private String fillModeRaw;
+    private volatile FillMode fillMode = FillMode.INSTANT;
+    private volatile int fillAfterModifies = 0;
+
+    private enum FillMode { INSTANT, NEVER, AFTER_MODIFIES }
+
+    /** Lifecycle of one mock order: OPEN → COMPLETE (fill) or CANCELLED. */
+    private static final class MockOrderState {
+        final String symbol;
+        final String txn;
+        final int qty;
+        volatile double execPrice;
+        volatile String status;
+        volatile int modifies;
+
+        MockOrderState(String symbol, String txn, int qty, double execPrice, String status) {
+            this.symbol = symbol;
+            this.txn = txn;
+            this.qty = qty;
+            this.execPrice = execPrice;
+            this.status = status;
+        }
+    }
+
+    /** Parses mock.fill-mode at startup; invalid values degrade to INSTANT. */
+    @jakarta.annotation.PostConstruct
+    void initFillMode() {
+        setFillMode(fillModeRaw);
+    }
+
+    /** Runtime hook for E2E scripting: "INSTANT", "NEVER", or "AFTER_MODIFIES:2". */
+    public void setFillMode(String raw) {
+        try {
+            String s = raw == null ? "INSTANT" : raw.trim().toUpperCase();
+            if (s.startsWith("AFTER_MODIFIES")) {
+                fillAfterModifies = Integer.parseInt(s.substring(s.indexOf(':') + 1).trim());
+                fillMode = FillMode.AFTER_MODIFIES;
+            } else {
+                fillMode = FillMode.valueOf(s);
+            }
+            log.info("[MOCK] fill-mode = {}{}", fillMode,
+                    fillMode == FillMode.AFTER_MODIFIES ? ":" + fillAfterModifies : "");
+        } catch (Exception e) {
+            fillMode = FillMode.INSTANT;
+            log.error("[MOCK] invalid mock.fill-mode '{}' — using INSTANT", raw);
+        }
+    }
 
     /** Mock WS counterpart — used by placeOrder to inject synthetic fill events that
      *  drive PositionUtil.placeGraduatedLimit's D₂ WS-await path. */
@@ -107,12 +170,22 @@ public class MockKiteGateway implements KiteGateway {
     public List<Order> getOrderHistory(String orderId) {
         Order o = new Order();
         o.orderId = orderId;
-        o.status = ORDER_COMPLETE;
-        Double execPrice = executionPrices.get(orderId);
-        o.averagePrice = execPrice != null ? String.valueOf(execPrice) : "0";
-        o.filledQuantity = "65";
-        o.quantity = "65";
-        o.pendingQuantity = "0";
+        MockOrderState st = orders.get(orderId);
+        if (st != null) {
+            boolean complete = ORDER_COMPLETE.equals(st.status);
+            o.status = st.status;
+            o.averagePrice = complete ? String.valueOf(st.execPrice) : "0";
+            o.filledQuantity = complete ? String.valueOf(st.qty) : "0";
+            o.quantity = String.valueOf(st.qty);
+            o.pendingQuantity = complete ? "0" : String.valueOf(st.qty);
+        } else {
+            o.status = ORDER_COMPLETE;
+            Double execPrice = executionPrices.get(orderId);
+            o.averagePrice = execPrice != null ? String.valueOf(execPrice) : "0";
+            o.filledQuantity = "65";
+            o.quantity = "65";
+            o.pendingQuantity = "0";
+        }
         log.info("[MOCK] getOrderHistory: orderId={} → status={} filled={}/{}",
                 orderId, o.status, o.filledQuantity, o.quantity);
         return List.of(o);
@@ -121,17 +194,24 @@ public class MockKiteGateway implements KiteGateway {
     @Override
     public OrderResponse placeOrder(OrderParams params, String variety) {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
-        double execPrice = applySlippage(params.price, params.transactionType);
+        double base = params.price != null && params.price > 0 ? params.price
+                : calcOptionLTP(params.tradingsymbol, niftySpot);
+        double execPrice = applySlippage(base, params.transactionType);
         executionPrices.put(orderId, execPrice);
-        log.info("[MOCK] placeOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
+        boolean instant = fillMode == FillMode.INSTANT;
+        orders.put(orderId, new MockOrderState(params.tradingsymbol, params.transactionType,
+                params.quantity, execPrice, instant ? ORDER_COMPLETE : "OPEN"));
+        log.info("[MOCK] placeOrder: symbol={} type={} qty={} price={} execPrice={} mode={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
-                params.price, execPrice, orderId);
+                params.price, execPrice, fillMode, orderId);
         OrderResponse response = new OrderResponse();
         response.orderId = orderId;
         // D₂: inject a synthetic terminal-fill event so the WS-await path completes
         // within ~50ms, mirroring real Kite WS behavior.
-        orderStream.scheduleSyntheticFill(orderId, params.tradingsymbol,
-                params.transactionType, params.quantity, execPrice);
+        if (instant) {
+            orderStream.scheduleSyntheticFill(orderId, params.tradingsymbol,
+                    params.transactionType, params.quantity, execPrice);
+        }
         return response;
     }
 
@@ -165,21 +245,42 @@ public class MockKiteGateway implements KiteGateway {
     @Override
     public boolean modifyOrder(String orderId, double newPrice, int newQty, String variety) {
         executionPrices.put(orderId, newPrice);
+        MockOrderState st = orders.get(orderId);
+        if (st != null) {
+            st.execPrice = newPrice;
+            st.modifies++;
+            if (fillMode == FillMode.AFTER_MODIFIES && "OPEN".equals(st.status)
+                    && st.modifies >= fillAfterModifies) {
+                st.status = ORDER_COMPLETE;
+                orderStream.scheduleSyntheticFill(orderId, st.symbol, st.txn, st.qty, st.execPrice);
+                log.info("[MOCK] modifyOrder: orderId={} FILLED after {} modifies @ {}", orderId, st.modifies, newPrice);
+            }
+        }
         log.info("[MOCK] modifyOrder: orderId={} newPrice={} newQty={}", orderId, newPrice, newQty);
         return true;
     }
 
     @Override
     public boolean cancelOrder(String orderId, String variety) {
-        log.info("[MOCK] cancelOrder: orderId={}", orderId);
+        MockOrderState st = orders.get(orderId);
+        if (st != null && "OPEN".equals(st.status)) {
+            st.status = ORDER_CANCELLED;
+            log.info("[MOCK] cancelOrder: orderId={} → CANCELLED (was OPEN, nothing filled)", orderId);
+        } else {
+            log.info("[MOCK] cancelOrder: orderId={} (no-op, status={})", orderId, st != null ? st.status : "unknown");
+        }
         return true;
     }
 
     @Override
     public List<BulkOrderResponse> placeAutoSliceOrder(OrderParams params, String variety) {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
-        double execPrice = applySlippage(params.price, params.transactionType);
+        double base = params.price != null && params.price > 0 ? params.price
+                : calcOptionLTP(params.tradingsymbol, niftySpot);
+        double execPrice = applySlippage(base, params.transactionType);
         executionPrices.put(orderId, execPrice);
+        orders.put(orderId, new MockOrderState(params.tradingsymbol, params.transactionType,
+                params.quantity, execPrice, ORDER_COMPLETE));
         log.info("[MOCK] placeAutoSliceOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, orderId);
@@ -293,12 +394,24 @@ public class MockKiteGateway implements KiteGateway {
 
     @Override
     public List<com.zerodhatech.models.Trade> getOrderTrades(String singleOrderId) {
-        double execPrice = executionPrices.getOrDefault(singleOrderId, 120.50);
+        MockOrderState st = orders.get(singleOrderId);
+        if (st != null && !ORDER_COMPLETE.equals(st.status)) {
+            log.info("[MOCK] getOrderTrades: orderId={} status={} → no trades", singleOrderId, st.status);
+            return List.of();
+        }
         com.zerodhatech.models.Trade trade = new com.zerodhatech.models.Trade();
         trade.orderId = singleOrderId;
-        trade.averagePrice = String.valueOf(execPrice);
-        trade.quantity = "65";
-        log.info("[MOCK] getOrderTrades: orderId={} → averagePrice={}", singleOrderId, execPrice);
+        if (st != null) {
+            trade.averagePrice = String.valueOf(st.execPrice);
+            trade.quantity = String.valueOf(st.qty);
+            trade.tradingSymbol = st.symbol;
+            trade.transactionType = st.txn;
+        } else {
+            trade.averagePrice = String.valueOf(executionPrices.getOrDefault(singleOrderId, 120.50));
+            trade.quantity = "65";
+        }
+        log.info("[MOCK] getOrderTrades: orderId={} → qty={} averagePrice={}",
+                singleOrderId, trade.quantity, trade.averagePrice);
         return List.of(trade);
     }
 

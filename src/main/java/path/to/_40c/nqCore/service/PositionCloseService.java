@@ -16,6 +16,7 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.ExecMode;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -80,7 +81,8 @@ public class PositionCloseService {
             log.info("No Live {} trades to close.", book);
             return null;
         }
-        return doClose(tradeToClose, signalPrice, signal, updateApiAction);
+        boolean liveClose = LIVE.equals(tradeToClose.getStatus());
+        return doClose(tradeToClose, signalPrice, signal, updateApiAction, liveClose);
     }
 
     /**
@@ -98,10 +100,30 @@ public class PositionCloseService {
         }
         log.warn("ORPHAN: PARTIAL {} trade id={} found before new open — closing its orphan legs first",
                 book, partialTrade.getId());
-        return doClose(partialTrade, signalPrice, signal, false);
+        return doClose(partialTrade, signalPrice, signal, false, false);
     }
 
-    private Position doClose(Position tradeToClose, String signalPrice, Signal signal, boolean updateApiAction) {
+    /**
+     * Execution-mode routing (PATIENT_EXECUTION_PLAN.md §3.1): a signal-driven close of a LIVE
+     * LONG_MONTHLY position requests PATIENT — thin monthly books deserve minutes of fair-priced
+     * resting over crossing the spread. Everything else stays AGGRESSIVE: the weekly book (liquid
+     * ATM), orphan flattens (they run immediately before a new open — speed beats spread), and the
+     * PARTIAL fallback inside closeTrade (semantically an orphan flatten). Availability (flag,
+     * config validity, IST cutoff) is re-checked inside placeAggressiveOrder, which silently
+     * degrades PATIENT to the aggressive path — intent is decided here, availability there.
+     */
+    private static ExecMode closeMode(Position tradeToClose, boolean patientEligible) {
+        return patientEligible && LONG_MONTHLY.equals(tradeToClose.getBook())
+                ? ExecMode.PATIENT : ExecMode.AGGRESSIVE;
+    }
+
+    private Position doClose(Position tradeToClose, String signalPrice, Signal signal, boolean updateApiAction,
+            boolean patientEligible) {
+        ExecMode mode = closeMode(tradeToClose, patientEligible);
+        if (mode == ExecMode.PATIENT) {
+            log.info("PATIENT close requested for {} trade id={} (signal-driven LIVE close)",
+                    tradeToClose.getBook(), tradeToClose.getId());
+        }
         double closePrice = Double.parseDouble(signalPrice);
         tradeToClose.setExitSpot(Math.round(closePrice * 100.0) / 100.0);
         log.info("Live Position being closed is: {}", tradeToClose);
@@ -129,25 +151,8 @@ public class PositionCloseService {
                         w.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(q, w.getInstrument(), oppositeTransaction, w.getQuantity(), "EXIT");
-                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-                        w.setCloseOrderId(er.aggregateOrderIds());
-                    }
-                    w.setCloseSpreadPaid(PositionUtil.effectiveSpreadPaid(q, oppositeTransaction, er.weightedAvgFillPrice()));
-                    PositionUtil.alertIfMonthlySpreadExcessive(tradeToClose.getBook(), w.getInstrument(), "EXIT", w.getCloseSpreadPaid());
-                    if (er.fullyFilled()) {
-                        w.setStatus(CLOSED);
-                    } else if (PositionUtil.closeOrderMayBeLive(er)) {
-                        w.setStatus(PENDING_CLOSE);
-                        log.error("[EXIT] {} ({} qty) close order {} still working at broker (term={}, filled={}/{}) — "
-                                + "leg PENDING_CLOSE, reconciler will settle it from the tradebook",
-                            w.getInstrument(), w.getQuantity(), er.aggregateOrderIds(), er.terminalStatus(),
-                            er.totalFilled(), er.totalRequested());
-                    } else {
-                        w.setStatus(FAILED);
-                        log.error("[EXIT] {} ({} qty) NOT fully closed: filled={}/{} term={}",
-                            w.getInstrument(), w.getQuantity(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
-                    }
+                    ExecResult er = positionUtil.placeAggressiveOrder(q, w.getInstrument(), oppositeTransaction, w.getQuantity(), "EXIT", mode);
+                    applyCloseResult(tradeToClose, w, q, oppositeTransaction, er);
                 } catch (Exception e) {
                     log.error("Exception closing order for {} ({} qty): {}",
                         w.getInstrument(), w.getQuantity(), e.getMessage(), e);
@@ -156,6 +161,42 @@ public class PositionCloseService {
             }, PositionUtil.LEG_EXEC))
             .toList();
         CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).join();
+        return finalizeClose(tradeToClose, signal, updateApiAction);
+    }
+
+    /**
+     * Records one leg's close-execution outcome: order ids, spread paid, liquidity alert, and the
+     * CLOSED / PENDING_CLOSE / FAILED leg status. Extracted from doClose's placement lambda so the
+     * interleaved monthly flip (MonthlyFlipService) can feed its aggregate slice result through
+     * the identical bookkeeping. Package-visible for that single caller.
+     */
+    void applyCloseResult(Position tradeToClose, WeeklyLeg w, Quote q, String oppositeTransaction, ExecResult er) {
+        if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+            w.setCloseOrderId(er.aggregateOrderIds());
+        }
+        w.setCloseSpreadPaid(PositionUtil.effectiveSpreadPaid(q, oppositeTransaction, er.weightedAvgFillPrice()));
+        PositionUtil.alertIfMonthlySpreadExcessive(tradeToClose.getBook(), w.getInstrument(), "EXIT", w.getCloseSpreadPaid());
+        if (er.fullyFilled()) {
+            w.setStatus(CLOSED);
+        } else if (PositionUtil.closeOrderMayBeLive(er)) {
+            w.setStatus(PENDING_CLOSE);
+            log.error("[EXIT] {} ({} qty) close order {} still working at broker (term={}, filled={}/{}) — "
+                    + "leg PENDING_CLOSE, reconciler will settle it from the tradebook",
+                w.getInstrument(), w.getQuantity(), er.aggregateOrderIds(), er.terminalStatus(),
+                er.totalFilled(), er.totalRequested());
+        } else {
+            w.setStatus(FAILED);
+            log.error("[EXIT] {} ({} qty) NOT fully closed: filled={}/{} term={}",
+                w.getInstrument(), w.getQuantity(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
+        }
+    }
+
+    /**
+     * Resolves the position status from its legs (all CLOSED → CLOSED, any PENDING_CLOSE →
+     * PENDING_CLOSE with closedAt deferred, else FAILED), stamps the signal action when asked,
+     * and saves. Extracted from doClose's tail; shared with MonthlyFlipService.
+     */
+    Position finalizeClose(Position tradeToClose, Signal signal, boolean updateApiAction) {
         if(updateApiAction) {
             tradeToClose.setLastSignalAction(signal.action);
             tradeToClose.setLastSignalLeg(signal.signalType);

@@ -12,7 +12,6 @@ import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CLOSED;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
-import static path.to._40c.nqCore.util.Constants.SELL;
 import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 
 import java.util.List;
@@ -30,6 +29,7 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.ExecMode;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -68,7 +68,7 @@ class PositionCloseServiceBookIsolationTest {
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(monthlyLive);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of(
                 "NFO:" + WEEKLY_CE, new Quote(), "NFO:" + MONTHLY_CE, new Quote()));
-        when(util.placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString()))
+        when(util.placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString(), any(ExecMode.class)))
                 .thenReturn(new ExecResult("X-1", 650, 650, 100.0, true, Constants.ORDER_COMPLETE));
     }
 
@@ -106,7 +106,7 @@ class PositionCloseServiceBookIsolationTest {
 
         assertThat(closed).isNull();
         assertThat(weeklyLive.getStatus()).isEqualTo(LIVE);
-        verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString());
+        verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString(), any(ExecMode.class));
     }
 
     @Test

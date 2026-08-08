@@ -43,6 +43,7 @@ public class SignalService {
 	private final WeeklySymbolService weeklySymbolService;
 	private final BookConfigService bookConfigService;
 	private final MonthlySymbolService monthlySymbolService;
+	private final MonthlyFlipService monthlyFlipService;
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
@@ -52,7 +53,8 @@ public class SignalService {
 	public SignalService(PositionOpenService openingService, PositionCloseService closingService,
 			PositionRolloverService rollOverService, PostTradeService postTradeService,
 			PositionRepository positionRepository, WeeklySymbolService weeklySymbolService,
-			BookConfigService bookConfigService, MonthlySymbolService monthlySymbolService) {
+			BookConfigService bookConfigService, MonthlySymbolService monthlySymbolService,
+			MonthlyFlipService monthlyFlipService) {
 		this.openingService = openingService;
 		this.closingService = closingService;
 		this.rollOverService = rollOverService;
@@ -61,6 +63,7 @@ public class SignalService {
 		this.weeklySymbolService = weeklySymbolService;
 		this.bookConfigService = bookConfigService;
 		this.monthlySymbolService = monthlySymbolService;
+		this.monthlyFlipService = monthlyFlipService;
 	}
 
 	/**
@@ -226,10 +229,25 @@ public class SignalService {
 	 * LONG_MONTHLY flip: sequential close-then-open — a single bought leg's build+quote
 	 * is cheap, so the weekly path's async prep is not worth the moving parts here.
 	 * Same PENDING_CLOSE settle-before-re-entry rule as the weekly flip.
+	 *
+	 * When the interleaved flip is available (its flag + live patient mode,
+	 * PATIENT_EXECUTION_PLAN.md §4), MonthlyFlipService replaces this body with the sliced
+	 * close-confirm-open loop; a null outcome (unexpected position shape) falls back here.
 	 */
 	private void flipMonthly(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
 	   monthlySymbolService.syncTradedContract();
+	   if (monthlyFlipService.interleaveAvailable()) {
+	       MonthlyFlipService.FlipOutcome outcome = monthlyFlipService.flip(signalPrice, type, signal);
+	       if (outcome != null) {
+	           log.info("[PERFORMANCE] flip LONG_MONTHLY (interleaved) | total={}ms",
+	                   Duration.between(start, Instant.now()).toMillis());
+	           postTradeService.afterOpen(outcome.opened());
+	           postTradeService.afterClose(outcome.closed());
+	           return;
+	       }
+	       log.warn("interleaved flip declined this position shape — legacy monthly flip path");
+	   }
 	   Position closedTrade = closingService.closeMonthlyTrade(signalPrice, signal, false);
 	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
 	       log.warn("flip: monthly close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());

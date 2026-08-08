@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.0.6</version>
+        <version>4.1.0</version>
         <relativePath/>
     </parent>
 
@@ -17,7 +17,7 @@
     <packaging>jar</packaging>
 
     <name>nqCore</name>
-    <description>Spring Boot 4.0.6 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
+    <description>Spring Boot 4.1.0 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
         <java.version>25</java.version>
@@ -124,6 +124,9 @@
                                 <exclude>path/to/_40c/nqCore/gateway/MockKiteGateway.java</exclude>
                                 <exclude>path/to/_40c/nqCore/gateway/MockKiteOrderStream.java</exclude>
                             </excludes>
+                            <testExcludes>
+                                <testExclude>path/to/_40c/nqCore/gateway/MockKiteGatewayFillModeTest.java</testExclude>
+                            </testExcludes>
                         </configuration>
                     </plugin>
                     <plugin>

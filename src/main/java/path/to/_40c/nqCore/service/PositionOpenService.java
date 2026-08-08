@@ -90,6 +90,41 @@ public class PositionOpenService {
         return placeAndSave(trade, prep.pojos(), prep.quotes());
     }
 
+    /**
+     * Monthly analogue of prepareWeeklyOpen, used by the interleaved flip
+     * (PATIENT_EXECUTION_PLAN.md §4): builds the target monthly leg and fetches its quote
+     * BEFORE any close order is placed, so an unconfigured book or dead quote feed aborts
+     * the flip while the held position is still intact. Stamps book/spots/direction on the
+     * trade exactly like the weekly prep.
+     */
+    public OpenPrep prepareMonthlyOpen(String signalPrice, String type, Position trade) {
+        stampForOpen(trade, signalPrice, type, LONG_MONTHLY);
+        List<LegOrder> pojos = computeUtil.buildMonthlyInstrument(signalPrice, trade);
+        String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
+        Map<String, Quote> quotes = positionUtil.getQuote(symbols);
+        return new OpenPrep(pojos, quotes);
+    }
+
+    /**
+     * Persists a position whose entry orders were executed by the caller (the interleaved
+     * monthly flip places its own slice orders and hands ONE aggregate ExecResult per leg).
+     * Runs the exact same result-recording, materialization and status rules as placeAndSave —
+     * trim-to-filled on partials, PENDING_OPEN on possibly-live orders, PARTIAL/FAILED position
+     * statuses — so a flip-opened position is indistinguishable from a normally-opened one.
+     * Legs without a result entry (keyed by exchange symbol) are treated as never-placed FAILED.
+     */
+    public Position savePreparedOpen(Position trade, OpenPrep prep, Map<String, ExecResult> resultsByExchangeSymbol) {
+        prep.pojos().forEach(w -> {
+            ExecResult er = resultsByExchangeSymbol.get(w.getExchangeSymbol());
+            if (er != null) {
+                recordOpenResult(w, prep.quotes().get(w.getExchangeSymbol()), er);
+            } else {
+                log.error("savePreparedOpen: no ExecResult for {} — leg will be FAILED", w.getExchangeSymbol());
+            }
+        });
+        return materializeAndSave(trade, prep.pojos(), prep.quotes());
+    }
+
     private void stampForOpen(Position trade, String signalPrice, String type, String book) {
         trade.setBook(book);
         trade.setEntrySpot(Double.valueOf(signalPrice));
@@ -98,7 +133,6 @@ public class PositionOpenService {
     }
 
     private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
-    	List<WeeklyLeg> childOrderBook = new ArrayList<>();
     	if (quotes.isEmpty()) {
     	    log.error("Quote map is empty — aborting trade open for all instruments");
     	    trade.setLegs(legOrder.stream().map(pojo -> {
@@ -118,26 +152,46 @@ public class PositionOpenService {
     	        int totalQty = w.getLots() * LOT_SIZE;
     	        try {
     	            ExecResult er = positionUtil.placeAggressiveOrder(quotes.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, "ENTRY");
-    	            if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-    	                w.setOpenOrderId(er.aggregateOrderIds());
-    	            }
-    	            w.setOpenFilledQty(er.totalFilled());
-    	            w.setOpenOrderMayBeLive(PositionUtil.closeOrderMayBeLive(er));
-    	            w.setOpenSpreadPaid(PositionUtil.effectiveSpreadPaid(
-    	                    quotes.get(w.getExchangeSymbol()), w.getSide(), er.weightedAvgFillPrice()));
-    	            if (!er.fullyFilled()) {
-    	                log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
-    	                    w.getInstrument(), totalQty, er.totalFilled(), er.totalRequested(), er.terminalStatus());
-    	                w.setOpenFullyFilled(false);
-    	            } else {
-    	                w.setOpenFullyFilled(true);
-    	            }
+    	            recordOpenResult(w, quotes.get(w.getExchangeSymbol()), er);
     	        } catch (Exception e) {
     	            log.error("Exception placing order for {} ({} qty): {}", w.getInstrument(), totalQty, e.getMessage(), e);
     	        }
     	    }, PositionUtil.LEG_EXEC))
     	    .toList();
     	CompletableFuture.allOf(futs.toArray(new CompletableFuture[0])).join();
+    	return materializeAndSave(trade, legOrder, quotes);
+    }
+
+    /**
+     * Records one leg's execution outcome onto its LegOrder pojo: order ids, filled qty,
+     * possibly-still-live flag, spread paid vs the order-time mid, and the fully-filled marker.
+     * Extracted from placeAndSave's placement lambda so the interleaved flip can feed an
+     * externally-executed aggregate ExecResult through the identical bookkeeping.
+     */
+    private static void recordOpenResult(LegOrder w, Quote q, ExecResult er) {
+        if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
+            w.setOpenOrderId(er.aggregateOrderIds());
+        }
+        w.setOpenFilledQty(er.totalFilled());
+        w.setOpenOrderMayBeLive(PositionUtil.closeOrderMayBeLive(er));
+        w.setOpenSpreadPaid(PositionUtil.effectiveSpreadPaid(q, w.getSide(), er.weightedAvgFillPrice()));
+        if (!er.fullyFilled()) {
+            log.error("[ENTRY] {} ({} qty) NOT fully filled: filled={}/{} term={}",
+                w.getInstrument(), w.getLots() * LOT_SIZE, er.totalFilled(), er.totalRequested(), er.terminalStatus());
+            w.setOpenFullyFilled(false);
+        } else {
+            w.setOpenFullyFilled(true);
+        }
+    }
+
+    /**
+     * Materializes WeeklyLeg rows from the recorded LegOrder outcomes and resolves per-leg and
+     * position statuses (LIVE trim-to-filled / PENDING_OPEN / PARTIAL / FAILED), then saves.
+     * Extracted verbatim from placeAndSave's tail; shared by the normal open paths and
+     * savePreparedOpen.
+     */
+    private Position materializeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
+    	List<WeeklyLeg> childOrderBook = new ArrayList<>();
     	legOrder.forEach(pojo -> {
     		WeeklyLeg b = new WeeklyLeg();
     		b.setInstrument(pojo.getInstrument());

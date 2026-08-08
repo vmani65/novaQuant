@@ -57,8 +57,10 @@ class SignalServiceFanOutTest {
         postTradeService = mock(PostTradeService.class);
         bookConfig = mock(BookConfigService.class);
         monthlySymbolService = mock(MonthlySymbolService.class);
+        // interleaveAvailable() defaults to false on the mock, so fan-out tests exercise the legacy paths.
         service = new SignalService(openingService, closingService, rollOverService, postTradeService,
-                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlySymbolService);
+                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlySymbolService,
+                mock(MonthlyFlipService.class));
 
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
         when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(true);

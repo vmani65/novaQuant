@@ -93,12 +93,12 @@ class PositionUtilOverfillTest {
         //  1-3) walk steps:           OPEN 65 → OPEN 130 → OPEN 130
         //   4)  post-walk peek:       OPEN 195   (the stale snapshot the bug trusted)
         //   5)  post-cancel confirm:  CANCELLED 520   (the TRUE settled fill)
-        when(gw.getOrderHistory("LIMIT1")).thenReturn(
-                List.of(order(OPEN, 65,  97.95)),
-                List.of(order(OPEN, 130, 97.97)),
-                List.of(order(OPEN, 130, 97.97)),
-                List.of(order(OPEN, 195, 97.98)),
-                List.of(order(Constants.ORDER_CANCELLED, 520, 98.10)));
+        when(gw.getOrderHistory("LIMIT1"))
+                .thenReturn(List.of(order(OPEN, 65,  97.95)))
+                .thenReturn(List.of(order(OPEN, 130, 97.97)))
+                .thenReturn(List.of(order(OPEN, 130, 97.97)))
+                .thenReturn(List.of(order(OPEN, 195, 97.98)))
+                .thenReturn(List.of(order(Constants.ORDER_CANCELLED, 520, 98.10)));
 
         // The MARKET top-up fills exactly what it is asked for (broker fills MARKET fully).
         // With the fix it is asked for 130 and fills 130.
@@ -142,12 +142,12 @@ class PositionUtilOverfillTest {
     @Test
     @DisplayName("no MARKET top-up when the cancelled LIMIT turns out fully filled")
     void noTopUpWhenCancelledLimitTurnsOutFullyFilled() {
-        when(gw.getOrderHistory("LIMIT1")).thenReturn(
-                List.of(order(OPEN, 200, 97.95)),
-                List.of(order(OPEN, 400, 97.97)),
-                List.of(order(OPEN, 500, 97.99)),
-                List.of(order(OPEN, 600, 98.00)),                          // stale snapshot
-                List.of(order(Constants.ORDER_CANCELLED, 650, 98.05)));    // actually fully filled
+        when(gw.getOrderHistory("LIMIT1"))
+                .thenReturn(List.of(order(OPEN, 200, 97.95)))
+                .thenReturn(List.of(order(OPEN, 400, 97.97)))
+                .thenReturn(List.of(order(OPEN, 500, 97.99)))
+                .thenReturn(List.of(order(OPEN, 600, 98.00)))                          // stale snapshot
+                .thenReturn(List.of(order(Constants.ORDER_CANCELLED, 650, 98.05)));    // actually fully filled
 
         ExecResult res = util.placeAggressiveOrder(
                 quote(97.80, 98.05), "NIFTY2662324050CE", Constants.TRANSACTION_TYPE_BUY, QTY, "ENTRY");
@@ -201,12 +201,12 @@ class PositionUtilOverfillTest {
         when(gw.getQuote(any())).thenReturn(java.util.Map.of("NFO:NIFTY2662324050CE", quote(119.90, 120.10)));
 
         // LIMIT never fills (it's chasing); walk exhausts → cancel → MARKET completes the leg.
-        when(gw.getOrderHistory("LIMIT1")).thenReturn(
-                List.of(order(OPEN, 0, 0.0)),
-                List.of(order(OPEN, 0, 0.0)),
-                List.of(order(OPEN, 0, 0.0)),
-                List.of(order(OPEN, 0, 0.0)),
-                List.of(order(Constants.ORDER_CANCELLED, 0, 0.0)));
+        when(gw.getOrderHistory("LIMIT1"))
+                .thenReturn(List.of(order(OPEN, 0, 0.0)))
+                .thenReturn(List.of(order(OPEN, 0, 0.0)))
+                .thenReturn(List.of(order(OPEN, 0, 0.0)))
+                .thenReturn(List.of(order(OPEN, 0, 0.0)))
+                .thenReturn(List.of(order(Constants.ORDER_CANCELLED, 0, 0.0)));
         when(gw.getOrderHistory("MARKET1")).thenReturn(
                 List.of(order(Constants.ORDER_COMPLETE, QTY, 120.35)));
 

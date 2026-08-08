@@ -30,6 +30,7 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.ExecMode;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -77,15 +78,16 @@ class PositionCloseServicePendingCloseTest {
         when(util.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY)).thenReturn(position);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + CE, new Quote(), "NFO:" + PE, new Quote()));
 
-        // PE exit fills fully; the CE exit is the incident leg, scripted per test.
-        when(util.placeAggressiveOrder(any(), eq(PE), eq(SELL), anyInt(), anyString()))
+        // PE exit fills fully; the CE exit is the incident leg, scripted per test. Weekly signal
+        // closes must stay AGGRESSIVE under the patient-mode routing, so the mode is asserted here.
+        when(util.placeAggressiveOrder(any(), eq(PE), eq(SELL), anyInt(), anyString(), eq(ExecMode.AGGRESSIVE)))
                 .thenReturn(new ExecResult("PE-CLOSE-1", QTY, QTY, 153.5, true, Constants.ORDER_COMPLETE));
     }
 
     @Test
     @DisplayName("exit order still OPEN at broker after confirm budget → PENDING_CLOSE with orderId retained, not FAILED")
     void unconfirmedWorkingCloseBecomesPendingCloseNotFailed() {
-        when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString()))
+        when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString(), eq(ExecMode.AGGRESSIVE)))
                 .thenReturn(new ExecResult("CE-CLOSE-1", 0, QTY, 0.0, false, "OPEN"));
 
         Position closed = service.closeWeeklyTrade("24665.50", signal(), true);
@@ -100,7 +102,7 @@ class PositionCloseServicePendingCloseTest {
     @Test
     @DisplayName("definitively REJECTED exit still fails terminally — PENDING_CLOSE is only for possibly-live orders")
     void rejectedCloseStillFailsTerminally() {
-        when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString()))
+        when(util.placeAggressiveOrder(any(), eq(CE), eq(BUY), anyInt(), anyString(), eq(ExecMode.AGGRESSIVE)))
                 .thenReturn(new ExecResult("", 0, QTY, 0.0, false, Constants.ORDER_REJECTED));
 
         Position closed = service.closeWeeklyTrade("24665.50", signal(), true);

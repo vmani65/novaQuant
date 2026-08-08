@@ -13,10 +13,8 @@ import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LONG;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
-import static path.to._40c.nqCore.util.Constants.MONTHLY;
 import static path.to._40c.nqCore.util.Constants.SELL;
 import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
-import static path.to._40c.nqCore.util.Constants.WEEKLY;
 
 import java.util.Map;
 import java.util.Optional;
