@@ -8,11 +8,9 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
-import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -38,12 +36,17 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  * position, so the weekly expiry-day roll can never touch a monthly position and the
  * monthly roll can never touch the weekly synthetic.
  *
- * - rollOverWeekly: 14:47 expiry-day trigger; new legs use the weekly ROLLOVER symbol.
- * - rollOverMonthly: nqTicker-triggered (cadence logic lives there); new legs use the
- *   monthly symbol row's CURRENT contract, which MonthlySymbolService keeps pointed
- *   at the DTE-correct series — callers sync it before rolling. Closed legs are
- *   stamped with the book's futures-equivalent expected factor (qty/2) so capture
- *   stays on the same scale as the rest of LONG_MONTHLY accounting.
+ * Both books roll the same way: the caller syncs the book's symbol row first (weekly:
+ * date-gated promotion on rollover day; monthly: DTE rule), then this service moves the
+ * position onto whatever the CURRENT slot says. The no-churn guard makes a trigger fire
+ * safe on any day — a position already on the current contract is a logged no-op, so
+ * only a genuine contract change ever closes and re-buys.
+ *
+ * - rollOverWeekly: 14:47 trigger via SignalService.handleWeeklyRollOver.
+ * - rollOverMonthly: nqTicker-triggered (cadence logic lives there) via
+ *   SignalService.handleMonthlyRollOver. Closed legs are stamped with the book's
+ *   futures-equivalent expected factor (qty/2) so capture stays on the same scale as
+ *   the rest of LONG_MONTHLY accounting.
  */
 @Service
 @Slf4j
@@ -61,10 +64,14 @@ public class PositionRolloverService {
         this.postTradeService = postTradeService;
     }
 
-    /** Weekly expiry-day roll of the SYNTH_WEEKLY book — new legs on the weekly rollover symbol. */
+    /**
+     * Weekly roll of the SYNTH_WEEKLY book — sell whatever is in hand, buy the same
+     * structure at the current ATM on the current weekly contract (per the symbol row,
+     * promoted by WeeklySymbolService.syncTradedContract before this is called).
+     */
     public void rollOverWeekly(String signalPrice) {
-        rollOverBook(SYNTH_WEEKLY, signalPrice, 1.0,
-                trade -> computeUtil.buildWeeklyInstrument(signalPrice, trade, true));
+        rollOverBook(SYNTH_WEEKLY, signalPrice, 1.0, computeUtil.weeklyContractPrefix(),
+                trade -> computeUtil.buildWeeklyInstrument(signalPrice, trade));
     }
 
     /**
@@ -74,7 +81,7 @@ public class PositionRolloverService {
      * the closed segment's per-leg expected PnL on the futures-equivalent scale.
      */
     public void rollOverMonthly(String signalPrice) {
-        rollOverBook(LONG_MONTHLY, signalPrice, 0.5,
+        rollOverBook(LONG_MONTHLY, signalPrice, 0.5, computeUtil.monthlyContractPrefix(),
                 trade -> computeUtil.buildMonthlyInstrument(signalPrice, trade));
     }
 
@@ -88,26 +95,27 @@ public class PositionRolloverService {
      * with expectedPnl = qty × expectedFactor × the segment's spot points, the denominator
      * calcPnL later uses for that leg's pnlCapturePct (its share of the segment move).
      *
-     * No-churn guard: if the target legs are exactly the instruments already held (same
-     * contract, same strikes), the roll is skipped — closing and re-buying the identical
-     * position would only pay the spread twice.
+     * No-churn guard: a roll happens ONLY when the held legs sit on a different contract
+     * than the current slot (targetPrefix). Same contract — even with the ATM drifted —
+     * is a no-op: rolling means moving to the new contract, never re-striking on the
+     * current one (the weekly recenter is a separate flow; LONG_MONTHLY never recenters
+     * by policy). This is what makes the daily trigger fire safe on non-roll days.
      */
-    private void rollOverBook(String book, String signalPrice, double expectedFactor,
+    private void rollOverBook(String book, String signalPrice, double expectedFactor, String targetPrefix,
                               Function<Position, List<LegOrder>> legBuilder) {
         Position tradeToRollOver = positionUtil.findLiveTradesWithLiveOrderBooks(book);
         if (tradeToRollOver == null) {
             log.info("No Live {} trades to rollover.", book);
             return;
         }
-        log.info("Live {} Position being rolled over is: {}", book, tradeToRollOver);
-        List<LegOrder> legOrder = legBuilder.apply(tradeToRollOver);
-        Set<String> targetIns = legOrder.stream().map(LegOrder::getInstrument).collect(Collectors.toSet());
-        Set<String> heldIns = tradeToRollOver.getLegs().stream().map(WeeklyLeg::getInstrument).collect(Collectors.toSet());
-        if (targetIns.equals(heldIns)) {
-            log.warn("Rollover {} skipped — position already holds the target contracts at this ATM ({}); nothing to roll",
-                    book, targetIns);
+        if (targetPrefix != null && tradeToRollOver.getLegs().stream()
+                .allMatch(leg -> leg.getInstrument().startsWith(targetPrefix))) {
+            log.info("Rollover {} skipped — position already on the current contract {}; nothing to roll",
+                    book, targetPrefix);
             return;
         }
+        log.info("Live {} Position being rolled over is: {}", book, tradeToRollOver);
+        List<LegOrder> legOrder = legBuilder.apply(tradeToRollOver);
 
         Instant closeStart = Instant.now();
         String[] liveIns = tradeToRollOver.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);

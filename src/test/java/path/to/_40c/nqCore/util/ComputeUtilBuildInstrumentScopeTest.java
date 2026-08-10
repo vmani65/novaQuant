@@ -83,7 +83,7 @@ class ComputeUtilBuildInstrumentScopeTest {
     void weeklyLongUsesWeeklySlotsOnly() {
         trade.setDirection(LONG);
 
-        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24501", trade, false);
+        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24501", trade);
 
         assertThat(orders).hasSize(2);
         assertThat(orders).extracting(LegOrder::getExchangeSymbol).containsExactly(
@@ -101,7 +101,7 @@ class ComputeUtilBuildInstrumentScopeTest {
     void weeklyShortUsesWeeklyShortTemplates() {
         trade.setDirection(SHORT);
 
-        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24474", trade, false);
+        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24474", trade);
 
         assertThat(orders).extracting(LegOrder::getExchangeSymbol).containsExactly(
                 "NFO:NIFTY" + WEEKLY_PREFIX + "24450" + PE,
@@ -111,16 +111,48 @@ class ComputeUtilBuildInstrumentScopeTest {
     }
 
     @Test
-    @DisplayName("weekly rollover build switches to the weekly rollover prefix, still never the monthly slot")
-    void weeklyRolloverUsesWeeklyRolloverPrefix() {
+    @DisplayName("weekly build always trades the CURRENT slot — the rollover slot is bookkeeping, promoted by syncTradedContract before any roll")
+    void weeklyBuildNeverReadsTheRolloverSlot() {
         trade.setDirection(LONG);
 
-        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24500", trade, true);
+        List<LegOrder> orders = computeUtil.buildWeeklyInstrument("24500", trade);
 
-        assertThat(orders).extracting(LegOrder::getExchangeSymbol).containsExactly(
-                "NFO:NIFTY" + WEEKLY_ROLLOVER_PREFIX + "24500" + CE,
-                "NFO:NIFTY" + WEEKLY_ROLLOVER_PREFIX + "24500" + PE);
-        verify(monthlySymbolCache, never()).get();
+        assertThat(orders).extracting(LegOrder::getExchangeSymbol).allMatch(s -> s.contains(WEEKLY_PREFIX));
+        assertThat(orders).extracting(LegOrder::getExchangeSymbol).noneMatch(s -> s.contains(WEEKLY_ROLLOVER_PREFIX));
+    }
+
+    @Test
+    @DisplayName("weekly build with no weekly templates fails loudly instead of opening a legless position")
+    void weeklyBuildWithoutTemplatesThrows() {
+        when(templateCache.getLongLegs()).thenReturn(List.of());
+        trade.setDirection(LONG);
+
+        assertThatThrownBy(() -> computeUtil.buildWeeklyInstrument("24501", trade))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no LONG leg templates");
+    }
+
+    @Test
+    @DisplayName("weekly build with no weekly symbol config fails loudly")
+    void weeklyBuildWithoutSymbolThrows() {
+        when(symbolCache.get()).thenReturn(null);
+        trade.setDirection(LONG);
+
+        assertThatThrownBy(() -> computeUtil.buildWeeklyInstrument("24501", trade))
+                .isInstanceOf(IllegalStateException.class)
+                .hasMessageContaining("no weekly symbol");
+    }
+
+    @Test
+    @DisplayName("contract prefixes expose each book's CURRENT contract for the roll guard, null-safe when unconfigured")
+    void contractPrefixesComeFromTheCurrentSlots() {
+        assertThat(computeUtil.weeklyContractPrefix()).isEqualTo("NIFTY" + WEEKLY_PREFIX);
+        assertThat(computeUtil.monthlyContractPrefix()).isEqualTo("NIFTY" + MONTHLY_PREFIX);
+
+        when(symbolCache.get()).thenReturn(null);
+        when(monthlySymbolCache.get()).thenReturn(null);
+        assertThat(computeUtil.weeklyContractPrefix()).isNull();
+        assertThat(computeUtil.monthlyContractPrefix()).isNull();
     }
 
     // ---------------------------------------------------------------

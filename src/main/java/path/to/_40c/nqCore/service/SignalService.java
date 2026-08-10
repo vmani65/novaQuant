@@ -87,7 +87,7 @@ public class SignalService {
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant overallStart = Instant.now();
-	   checkAndPromoteRolloverSymbol();
+	   weeklySymbolService.syncTradedContract();
 	   Instant weeklyStart = Instant.now();
 	   runIsolated(SYNTH_WEEKLY, "flip", () -> {
 	       if (bookConfigService.isEnabled(SYNTH_WEEKLY)) flipWeekly(signalPrice, type, signal);
@@ -174,7 +174,7 @@ public class SignalService {
 	   log.info("[PERFORMANCE] close LONG_MONTHLY | exec={}ms", monthlyMs);
 	   log.info("[PERFORMANCE] close OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
 	           weeklyMs, monthlyMs, Duration.between(start, Instant.now()).toMillis());
-	   checkAndPromoteRolloverSymbol();
+	   weeklySymbolService.syncTradedContract();
 	   postTradeService.afterClose(weeklyClosed);
 	   postTradeService.afterClose(monthlyClosed);
 	   return true;
@@ -186,7 +186,7 @@ public class SignalService {
 	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
 	   Position closedTrade = closingService.closeWeeklyTrade(signalPrice, signal, true);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
-	   checkAndPromoteRolloverSymbol();
+	   weeklySymbolService.syncTradedContract();
 	   postTradeService.afterClose(closedTrade);
 	}
 
@@ -321,13 +321,24 @@ public class SignalService {
 	   }
 	}
 
-	private void checkAndPromoteRolloverSymbol() {
-	   weeklySymbolService.checkAndPromoteRolloverSymbol();
-	}
-
-	/** 14:47 expiry-day trigger — rolls the SYNTH_WEEKLY book only (hard fence). */
-	public boolean handleRollOver(String signalPrice) {
-	   rollOverService.rollOverWeekly(signalPrice);
+	/**
+	 * 14:47 weekly-roll trigger — mirror of handleMonthlyRollOver: syncs the traded
+	 * weekly contract first (date-gated promotion, so the symbol row advances on expiry
+	 * day even if the position roll fails and the trade stream continues on the new
+	 * contract), then rolls the SYNTH_WEEKLY book's position onto it (sell in-hand, buy
+	 * current ATM on the current contract). Monthly book untouched. Failures are logged,
+	 * never thrown — a broken roll trigger must not take the endpoint down.
+	 */
+	public boolean handleWeeklyRollOver(String signalPrice) {
+	   Instant start = Instant.now();
+	   try {
+	       weeklySymbolService.syncTradedContract();
+	       rollOverService.rollOverWeekly(signalPrice);
+	   } catch (Exception e) {
+	       log.error("[BOOK-ISOLATED] SYNTH_WEEKLY rollover failed: {}", e.getMessage(), e);
+	       return false;
+	   }
+	   log.info("[PERFORMANCE] rollover SYNTH_WEEKLY trigger | total={}ms", Duration.between(start, Instant.now()).toMillis());
 	   return true;
 	}
 

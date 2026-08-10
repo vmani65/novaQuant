@@ -33,7 +33,8 @@ import path.to._40c.nqCore.repo.PositionRepository;
  * - an exception inside one book's execution never blocks the other book;
  * - toggles gate NEW positions only — a disabled book still receives exits, and a flip
  *   on a disabled book degrades to close-only (manage to natural close, open nothing);
- * - the weekly rollover trigger reaches rollOverWeekly and nothing monthly.
+ * - both roll triggers are mirror twins: sync the book's symbol row first, then roll
+ *   that book only, isolating any failure.
  * All broker work is behind mocked opening/closing services — this is pure orchestration.
  */
 class SignalServiceFanOutTest {
@@ -43,6 +44,7 @@ class SignalServiceFanOutTest {
     private PositionRolloverService rollOverService;
     private PostTradeService postTradeService;
     private BookConfigService bookConfig;
+    private WeeklySymbolService weeklySymbolService;
     private MonthlySymbolService monthlySymbolService;
     private SignalService service;
 
@@ -56,10 +58,11 @@ class SignalServiceFanOutTest {
         rollOverService = mock(PositionRolloverService.class);
         postTradeService = mock(PostTradeService.class);
         bookConfig = mock(BookConfigService.class);
+        weeklySymbolService = mock(WeeklySymbolService.class);
         monthlySymbolService = mock(MonthlySymbolService.class);
         // interleaveAvailable() defaults to false on the mock, so fan-out tests exercise the legacy paths.
         service = new SignalService(openingService, closingService, rollOverService, postTradeService,
-                mock(PositionRepository.class), mock(WeeklySymbolService.class), bookConfig, monthlySymbolService,
+                mock(PositionRepository.class), weeklySymbolService, bookConfig, monthlySymbolService,
                 mock(MonthlyFlipService.class));
 
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
@@ -195,12 +198,19 @@ class SignalServiceFanOutTest {
     }
 
     @Test
-    @DisplayName("the 14:47 rollover trigger rolls the weekly book only")
-    void rolloverTriggerIsWeeklyOnly() {
-        service.handleRollOver("24500");
+    @DisplayName("the weekly rollover trigger syncs the traded contract first, rolls weekly only, and never throws")
+    void weeklyRolloverTriggerIsWeeklyOnly() {
+        boolean ok = service.handleWeeklyRollOver("24500");
 
-        verify(rollOverService).rollOverWeekly("24500");
+        assertThat(ok).isTrue();
+        InOrder order = inOrder(weeklySymbolService, rollOverService);
+        order.verify(weeklySymbolService).syncTradedContract();
+        order.verify(rollOverService).rollOverWeekly("24500");
         verify(rollOverService, never()).rollOverMonthly(anyString());
+
+        org.mockito.Mockito.doThrow(new IllegalStateException("weekly symbol missing"))
+                .when(rollOverService).rollOverWeekly(anyString());
+        assertThat(service.handleWeeklyRollOver("24501")).isFalse();
     }
 
     @Test

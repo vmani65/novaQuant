@@ -48,7 +48,7 @@ public class PositionOpenService {
      */
     public OpenPrep prepareWeeklyOpen(String signalPrice, String type, Position trade) {
         stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
-        List<LegOrder> pojos = computeUtil.buildWeeklyInstrument(signalPrice, trade, false);
+        List<LegOrder> pojos = computeUtil.buildWeeklyInstrument(signalPrice, trade);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(symbols);
         return new OpenPrep(pojos, quotes);
@@ -59,7 +59,7 @@ public class PositionOpenService {
      */
     public Position openWeeklyTrade(String signalPrice, String type, Position trade) {
     	stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
-    	List<LegOrder> legOrder = computeUtil.buildWeeklyInstrument(signalPrice, trade, false);
+    	List<LegOrder> legOrder = computeUtil.buildWeeklyInstrument(signalPrice, trade);
     	String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
 	    log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
     	Map<String, Quote> quotes = positionUtil.getQuote(ltpIns);

@@ -53,18 +53,31 @@ public class ComputeUtil {
         this.tradeCapital = tradeCapital;
     }
 
-	/** SYNTH_WEEKLY build: weekly leg templates + weekly symbol slot (rollover-aware). */
-	public List<LegOrder> buildWeeklyInstrument(String signalPrice, Position trade, boolean rollOver) {
-        log.info("Starting to build weekly instrument: signalPrice={}, tradeId={}, signalType={}, rollOver={}",
-                 signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null, rollOver);
+	/**
+	 * SYNTH_WEEKLY build: weekly leg templates + the weekly symbol slot's current
+	 * contract (advanced on rollover day by WeeklySymbolService.syncTradedContract;
+	 * callers that roll sync first, so the current slot IS the target — same rule as
+	 * the monthly build). Throws when the weekly book is unconfigured so the fan-out's
+	 * per-book error isolation fails ONLY this book, loudly, instead of trading a
+	 * wrong instrument.
+	 */
+	public List<LegOrder> buildWeeklyInstrument(String signalPrice, Position trade) {
+        log.info("Starting to build weekly instrument: signalPrice={}, tradeId={}, signalType={}",
+                 signalPrice, trade != null ? trade.getId() : null, trade != null ? trade.getDirection() : null);
         boolean isLong = LONG.equals(trade.getDirection());
         int atm = roundNFToNearestATM(signalPrice);
         List<LegTemplate> templates = isLong ? templateCache.getLongLegs() : templateCache.getShortLegs();
-        String symbolPrefix = rollOver ? weeklySymbolCache.get().getRolloverSymbol() : weeklySymbolCache.get().getThisWeekSymbol();
+        if (templates.isEmpty())
+            throw new IllegalStateException("SYNTH_WEEKLY has no " + (isLong ? LONG : SHORT)
+                    + " leg templates configured — add weekly legs in the manifestation UI");
+        SymbolConfig weeklyCfg = weeklySymbolCache.get();
+        if (weeklyCfg == null)
+            throw new IllegalStateException("SYNTH_WEEKLY has no weekly symbol configured — save weekly symbols first");
+        String symbolPrefix = weeklyCfg.getThisWeekSymbol();
         List<LegOrder> orders = templates.stream()
                 .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
                 .collect(Collectors.toList());
-        log.info("Built weekly leg orders: size={}, rollOver={}, details={}", orders.size(), rollOver, orders);
+        log.info("Built weekly leg orders: size={}, details={}", orders.size(), orders);
         return orders;
     }
 
@@ -93,6 +106,22 @@ public class ComputeUtil {
                 .collect(Collectors.toList());
         log.info("Built monthly leg orders: size={}, details={}", orders.size(), orders);
         return orders;
+    }
+
+	/**
+	 * Contract prefix (e.g. NIFTY26812) the next weekly build will trade, or null when
+	 * the weekly book is unconfigured. The rollover no-churn guard compares held legs
+	 * against this: legs already on this contract mean there is nothing to roll.
+	 */
+	public String weeklyContractPrefix() {
+        SymbolConfig cfg = weeklySymbolCache.get();
+        return cfg == null || cfg.getThisWeekSymbol() == null ? null : NIFTY + cfg.getThisWeekSymbol();
+    }
+
+	/** Monthly counterpart of weeklyContractPrefix (e.g. NIFTY26AUG), null when unconfigured. */
+	public String monthlyContractPrefix() {
+        SymbolConfig cfg = monthlySymbolCache.get();
+        return cfg == null || cfg.getThisWeekSymbol() == null ? null : NIFTY + cfg.getThisWeekSymbol();
     }
 
     public int roundNFToNearestATM(String price) {

@@ -46,8 +46,9 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
  *   capture percentages stay comparable across segments;
  * - a SELL of the in-hand leg and a BUY of the new contract, old leg CLOSED, new leg
  *   LIVE, position stays LIVE on the same row;
- * - no-churn guard: if the target instrument set equals what is already held, nothing
- *   trades (closing and re-buying the identical position would just pay the spread twice);
+ * - no-churn guard: a roll happens ONLY on a contract change — held legs already on the
+ *   current contract mean nothing trades, even when the ATM has drifted (re-striking on
+ *   the same contract would be a recenter, which LONG_MONTHLY never does by policy);
  * - a failed close aborts before any new position exists (never leave the book naked
  *   AND doubled).
  */
@@ -97,6 +98,7 @@ class PositionRolloverServiceMonthlyTest {
     @Test
     @DisplayName("monthly roll: sells in-hand leg, banks qty/2-scaled segment, buys latest contract at ATM, stays LIVE")
     void monthlyRollBanksAndReopensOnLatestContract() {
+        when(compute.monthlyContractPrefix()).thenReturn("NIFTY26SEP");
         when(compute.buildMonthlyInstrument(eq("24800"), any(Position.class)))
                 .thenReturn(List.of(legOrder(NEW_INS, 2)));
         when(util.placeAggressiveOrder(any(), eq(OLD_INS), eq(SELL), anyInt(), anyString()))
@@ -124,13 +126,13 @@ class PositionRolloverServiceMonthlyTest {
     }
 
     @Test
-    @DisplayName("no-churn guard: target instruments identical to in-hand instruments → nothing trades")
-    void identicalTargetSkipsRoll() {
-        when(compute.buildMonthlyInstrument(eq("24500"), any(Position.class)))
-                .thenReturn(List.of(legOrder(OLD_INS, 2)));
+    @DisplayName("no-churn guard: position already on the current contract → nothing trades, even with the ATM drifted 300 pts")
+    void sameContractSkipsRollEvenWhenAtmDrifted() {
+        when(compute.monthlyContractPrefix()).thenReturn("NIFTY26AUG");
 
-        service.rollOverMonthly("24500");
+        service.rollOverMonthly("24800");
 
+        verify(compute, never()).buildMonthlyInstrument(anyString(), any(Position.class));
         verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString());
         assertThat(heldLeg.getStatus()).isEqualTo(LIVE);
         assertThat(monthly.getBankedPoints()).isEqualTo(0.0);
@@ -140,6 +142,7 @@ class PositionRolloverServiceMonthlyTest {
     @Test
     @DisplayName("failed close aborts the roll — nothing banked, no new leg, no phantom position")
     void failedCloseAbortsBeforeOpen() {
+        when(compute.monthlyContractPrefix()).thenReturn("NIFTY26SEP");
         when(compute.buildMonthlyInstrument(eq("24800"), any(Position.class)))
                 .thenReturn(List.of(legOrder(NEW_INS, 2)));
         when(util.placeAggressiveOrder(any(), eq(OLD_INS), eq(SELL), anyInt(), anyString()))

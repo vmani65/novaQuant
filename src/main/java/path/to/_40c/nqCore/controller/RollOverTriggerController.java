@@ -6,16 +6,10 @@ import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
-import static path.to._40c.nqCore.util.Constants.ZONE_ID;
-
-import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.service.MonthlySymbolService;
 import path.to._40c.nqCore.service.ProfitRecenterService;
 import path.to._40c.nqCore.service.SignalService;
 import path.to._40c.nqCore.service.WeeklySymbolService;
-
-import java.time.LocalDate;
-import java.time.ZoneId;
 
 @RestController
 @RequestMapping("/api")
@@ -35,12 +29,13 @@ public class RollOverTriggerController {
     }
 
     /**
-     * WEEKLY roll trigger, fired by nQTicker at 14:47 IST on expiry day (formerly
-     * rollOverTrigger.afl on /api/rollover-trigger — that path stays mapped as a
-     * deprecated alias so an un-migrated caller can never silently miss a roll).
-     * Compares today's IST date against the configured rollover day; on match rolls the
-     * SYNTH_WEEKLY book only and marks the weekly roll complete. A LIVE monthly position
-     * is structurally invisible to this path.
+     * WEEKLY roll trigger, fired by nQTicker at 14:47 IST (formerly rollOverTrigger.afl
+     * on /api/rollover-trigger — that path stays mapped as a deprecated alias so an
+     * un-migrated caller can never silently miss a roll). Syncs the weekly symbol row
+     * first (promotion happens only on the configured rollover day, once), then rolls
+     * the SYNTH_WEEKLY book's position onto the current contract. The monthly book is
+     * structurally invisible to this path. Safe to fire on any day — a position already
+     * on the current contract is a logged no-op.
      *
      * Example: GET /api/rollover-weekly?currentPrice=22450.50
      */
@@ -52,31 +47,26 @@ public class RollOverTriggerController {
         }
         String sanitisedPrice = currentPrice.replace(",", "").trim();
         log.info("Weekly rollover trigger received | currentPrice={}", sanitisedPrice);
+        signalService.handleWeeklyRollOver(sanitisedPrice);
+        log.info("Weekly rollover trigger handled");
+    }
 
-        SymbolConfig cfg = weeklySymbolService.current();
-
-        if (cfg == null || cfg.getRolloverDay() == null) {
-            log.info("RollOver skipped — no rollover day configured");
-            return;
-        }
-
-        LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
-
-        if (!today.equals(cfg.getRolloverDay())) {
-            log.info("RollOver skipped — today={} does not match rollover day={}", today, cfg.getRolloverDay());
-            return;
-        }
-
-        if (Boolean.TRUE.equals(cfg.getRolloverComplete())) {
-            log.info("RollOver skipped — already completed for date={}", cfg.getRolloverDay());
-            return;
-        }
-
-        log.info("RollOver day matched — initiating rollover | date={} | currentPrice={}", today, sanitisedPrice);
-        signalService.handleRollOver(sanitisedPrice);
-        weeklySymbolService.promoteRolloverSymbol();
-        weeklySymbolService.markRolloverComplete();
-        log.info("RollOver completed — symbol promoted and marked complete");
+        /**
+     * MONTHLY roll trigger, to be fired by nQTicker (its cadence logic is not final yet;
+     * roughly once a month near the DTE threshold). Syncs the monthly symbol row to the
+     * DTE-correct contract, then rolls the LONG_MONTHLY book's position: sell whatever
+     * is in hand, buy the same structure at the current ATM on the latest contract. The
+     * weekly book is structurally invisible to this path. Safe to fire when nothing
+     * needs rolling — no position or an already-current position is a logged no-op.
+     *
+     * Example: GET /api/rollover-monthly?currentPrice=24500.0
+     */
+    @GetMapping("/rollover-monthly")
+    public void handleMonthlyRollOverTrigger(@RequestParam String currentPrice) {
+        String sanitisedPrice = currentPrice.replace(",", "").trim();
+        log.info("Monthly rollover trigger received | currentPrice={}", sanitisedPrice);
+        signalService.handleMonthlyRollOver(sanitisedPrice);
+        log.info("Monthly rollover trigger handled");
     }
 
     /**
@@ -118,24 +108,6 @@ public class RollOverTriggerController {
         weeklySymbolService.warmCache();
         monthlySymbolService.warmCache();
         log.info("Symbol caches (weekly + monthly) refreshed from DB");
-    }
-
-    /**
-     * MONTHLY roll trigger, to be fired by nQTicker (its cadence logic is not final yet;
-     * roughly once a month near the DTE threshold). Syncs the monthly symbol row to the
-     * DTE-correct contract, then rolls the LONG_MONTHLY book's position: sell whatever
-     * is in hand, buy the same structure at the current ATM on the latest contract. The
-     * weekly book is structurally invisible to this path. Safe to fire when nothing
-     * needs rolling — no position or an already-current position is a logged no-op.
-     *
-     * Example: GET /api/rollover-monthly?currentPrice=24500.0
-     */
-    @GetMapping("/rollover-monthly")
-    public void handleMonthlyRollOverTrigger(@RequestParam String currentPrice) {
-        String sanitisedPrice = currentPrice.replace(",", "").trim();
-        log.info("Monthly rollover trigger received | currentPrice={}", sanitisedPrice);
-        signalService.handleMonthlyRollOver(sanitisedPrice);
-        log.info("Monthly rollover trigger handled");
     }
 
     /**

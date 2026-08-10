@@ -4,13 +4,16 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static path.to._40c.nqCore.entity.SymbolConfig.MONTHLY_ID;
 import static path.to._40c.nqCore.entity.SymbolConfig.WEEKLY_ID;
 import static path.to._40c.nqCore.util.Constants.WEEKLY;
+import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.time.LocalDate;
+import java.time.ZoneId;
 import java.util.Optional;
 
 import org.junit.jupiter.api.BeforeEach;
@@ -77,6 +80,47 @@ class WeeklySymbolServiceTest {
         assertThat(existing.getRolloverComplete()).isFalse();
         assertThat(existing.getRolloverDay()).isNull();
         verify(repo).save(existing);
+    }
+
+    @Test
+    @DisplayName("syncTradedContract on the configured rollover day promotes exactly once — the latch blocks a re-fire")
+    void syncPromotesOnRolloverDayExactlyOnce() {
+        SymbolConfig weekly = new SymbolConfig(WEEKLY_ID, WEEKLY, "26812", "26819");
+        weekly.setRolloverDay(LocalDate.now(ZoneId.of(ZONE_ID)));
+        when(repo.findById(WEEKLY_ID)).thenReturn(Optional.of(weekly));
+
+        service.syncTradedContract();
+
+        assertThat(weekly.getThisWeekSymbol()).isEqualTo("26819");
+        assertThat(weekly.getRolloverComplete()).isTrue();
+
+        service.syncTradedContract();
+
+        verify(repo, times(2)).save(any(SymbolConfig.class));
+    }
+
+    @Test
+    @DisplayName("syncTradedContract off the rollover day is a no-op — the operator's current symbol keeps trading")
+    void syncIsNoOpOffRolloverDay() {
+        SymbolConfig weekly = new SymbolConfig(WEEKLY_ID, WEEKLY, "26812", "26819");
+        weekly.setRolloverDay(LocalDate.now(ZoneId.of(ZONE_ID)).plusDays(2));
+        when(repo.findById(WEEKLY_ID)).thenReturn(Optional.of(weekly));
+
+        service.syncTradedContract();
+
+        assertThat(weekly.getThisWeekSymbol()).isEqualTo("26812");
+        verify(repo, never()).save(any(SymbolConfig.class));
+    }
+
+    @Test
+    @DisplayName("syncTradedContract with no rollover day configured is a no-op")
+    void syncIsNoOpWithoutConfiguredDay() {
+        SymbolConfig weekly = new SymbolConfig(WEEKLY_ID, WEEKLY, "26812", "26819");
+        when(repo.findById(WEEKLY_ID)).thenReturn(Optional.of(weekly));
+
+        service.syncTradedContract();
+
+        verify(repo, never()).save(any(SymbolConfig.class));
     }
 
     @Test

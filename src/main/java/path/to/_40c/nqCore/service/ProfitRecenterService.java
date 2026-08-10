@@ -15,7 +15,6 @@ import org.springframework.stereotype.Service;
 
 import com.zerodhatech.models.Quote;
 
-import path.to._40c.nqCore.entity.SymbolConfig;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
@@ -27,8 +26,9 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 /**
  * Re-centres a live trade at the new ATM when profit >= 500 points: closes current LIVE legs,
  * banks the closed segment's points into bankedPoints and resets baselineSpot to the new strike,
- * opens new legs at the new ATM (using rolloverSymbol if the weekly rollover already happened
- * today, else thisWeekSymbol). Position stays LIVE. entrySpot is never mutated here.
+ * opens new legs at the new ATM on the current weekly contract (the symbol row is synced
+ * first, so a recenter on rollover day lands on the new contract). Position stays LIVE.
+ * entrySpot is never mutated here.
  *
  * Per-segment close/open prices are accumulated independently so calcPnL can sum across
  * recenters; calcTradeOutcome adds bankedPoints to the current segment's (baseline - exit).
@@ -154,10 +154,9 @@ public class ProfitRecenterService {
                 Math.round(segment * 100.0) / 100.0, trade.getBankedPoints(), newPrice);
 
         Instant openStart = Instant.now();
-        weeklySymbolService.checkAndPromoteRolloverSymbol();
-        boolean useRollover = isRolloverComplete();
-        List<LegOrder> newLegs = computeUtil.buildWeeklyInstrument(currentPrice, trade, useRollover);
-        log.info("realizeProfits: opening {} new legs (useRollover={})", newLegs.size(), useRollover);
+        weeklySymbolService.syncTradedContract();
+        List<LegOrder> newLegs = computeUtil.buildWeeklyInstrument(currentPrice, trade);
+        log.info("realizeProfits: opening {} new legs", newLegs.size());
 
         String[] openSymbols = newLegs.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotesOpen = positionUtil.getQuote(openSymbols);
@@ -286,9 +285,4 @@ public class ProfitRecenterService {
         });
     }
 
-    /** True if today's weekly rollover already ran (so new legs should use rolloverSymbol). */
-    private boolean isRolloverComplete() {
-        SymbolConfig cfg = weeklySymbolService.current();
-        return cfg != null && Boolean.TRUE.equals(cfg.getRolloverComplete());
-    }
 }

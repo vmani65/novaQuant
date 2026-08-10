@@ -83,7 +83,7 @@ class PositionOpenServiceBookTest {
         assertThat(saved.getDirection()).isEqualTo(LONG);
         assertThat(saved.getStatus()).isEqualTo(LIVE);
         assertThat(saved.getLegs()).hasSize(2);
-        verify(compute).buildWeeklyInstrument(eq("24500"), any(Position.class), eq(false));
+        verify(compute).buildWeeklyInstrument(eq("24500"), any(Position.class));
         verify(compute, never()).buildMonthlyInstrument(anyString(), any(Position.class));
     }
 
@@ -101,7 +101,7 @@ class PositionOpenServiceBookTest {
         assertThat(saved.getStatus()).isEqualTo(LIVE);
         assertThat(saved.getLegs()).hasSize(1);
         assertThat(saved.getLegs().get(0).getQuantity()).isEqualTo(2 * LOT_SIZE);
-        verify(compute, never()).buildWeeklyInstrument(anyString(), any(Position.class), eq(false));
+        verify(compute, never()).buildWeeklyInstrument(anyString(), any(Position.class));
     }
 
     @Test
@@ -164,7 +164,7 @@ class PositionOpenServiceBookTest {
 
     private void stubWeeklyPair() {
         List<LegOrder> pair = List.of(legOrder(CE_INS, BUY, 10), legOrder(PE_INS, SELL, 10));
-        when(compute.buildWeeklyInstrument(anyString(), any(Position.class), eq(false))).thenReturn(pair);
+        when(compute.buildWeeklyInstrument(anyString(), any(Position.class))).thenReturn(pair);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of(
                 "NFO:" + CE_INS, new Quote(), "NFO:" + PE_INS, new Quote()));
     }

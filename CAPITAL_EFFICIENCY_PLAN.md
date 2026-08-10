@@ -363,6 +363,23 @@ each book maps to exactly one calendar (SYNTH_WEEKLY→WEEKLY, LONG_MONTHLY→MO
 >   recenter NONE; 9:15 open-buffer weekly-only. Evaluation window ≥1 month stands.
 > - Next: mock,test click-through → explicit "promote" → signals.db backup → deploy (§7.0 protocol).
 
+> **ROLLOVER SYMMETRY RESTRUCTURE 2026-08-10 (owner-ordered, built on the same branch):**
+> weekly now rolls exactly like monthly — sync the symbol row FIRST, then roll the position
+> onto whatever the current slot says. WeeklySymbolService.syncTradedContract (renamed from
+> checkAndPromoteRolloverSymbol; date-gated promote + rolloverComplete latch) is weekly's
+> counterpart of monthly's DTE sync; SignalService.handleWeeklyRollOver mirrors
+> handleMonthlyRollOver (sync → roll, BOOK-ISOLATED catch, PERFORMANCE log); both trigger
+> endpoints are thin twins (all gating moved out of RollOverTriggerController; /api/rollover
+> in SignalController routes through the same handler and is no longer an ungated bypass).
+> buildWeeklyInstrument lost its rollOver-slot peek flag (always trades the CURRENT slot,
+> loud guards like monthly); the recenter's useRollover logic was dead in every reachable
+> state and is removed. No-churn guard is now CONTRACT-based (skip unless held legs are on
+> a different contract than the current slot) — a trigger fire on a non-roll day or with a
+> drifted ATM can never re-strike either book. Promotion runs BEFORE the roll, so the
+> symbol row advances on expiry day even if the roll fails (owner rule: the trade stream
+> must continue on the latest contract). 159/159 tests green; mock,test smoke-verified
+> (all 4 endpoints symmetric). NOT deployed.
+
 (Original plan below, kept for the record.)
 
 ### 7.0 Phase 1 — Calendars & books CONFIG + UI: BUILT, REVIEWED, ROLLED BACK FROM PROD

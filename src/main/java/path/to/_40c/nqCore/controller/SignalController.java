@@ -64,8 +64,7 @@ public class SignalController {
 
     @GetMapping("/rollover")
     public boolean handleRollOver(@RequestParam("signalPrice") String signalPrice) {
-        signalService.handleRollOver(signalPrice.replace(",", ""));
-        return true;
+        return signalService.handleWeeklyRollOver(signalPrice.replace(",", ""));
     }
 
     private void handleSignal(Action action, String signalType, String currentPrice, String strategyName, String time) {

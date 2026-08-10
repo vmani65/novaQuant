@@ -48,7 +48,16 @@ public class WeeklySymbolService extends SymbolService {
         });
     }
 
-    public void checkAndPromoteRolloverSymbol() {
+    /**
+     * Weekly counterpart of MonthlySymbolService.syncTradedContract — the WEEKLY
+     * calendar's contract-advance rule: on the operator-configured rollover day, promote
+     * rolloverSymbol into thisWeekSymbol exactly once (the rolloverComplete latch). Any
+     * other day, or an unconfigured day, is a no-op. Called by the signal paths, the
+     * recenter, and the 14:47 roll trigger BEFORE the position roll — so the symbol row
+     * always advances on expiry day even when the position roll itself fails, and every
+     * subsequent open lands on the new contract.
+     */
+    public synchronized void syncTradedContract() {
         LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
         SymbolConfig cfg = current();
         if (cfg == null || cfg.getRolloverDay() == null || !today.equals(cfg.getRolloverDay())) return;
