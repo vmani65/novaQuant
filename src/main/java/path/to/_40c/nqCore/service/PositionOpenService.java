@@ -174,10 +174,10 @@ public class PositionOpenService {
     /**
      * Records one leg's execution outcome onto its LegOrder pojo: order ids, filled qty,
      * possibly-still-live flag, spread paid vs the order-time mid, and the fully-filled marker.
-     * Extracted from placeAndSave's placement lambda so the interleaved flip can feed an
-     * externally-executed aggregate ExecResult through the identical bookkeeping.
+     * Extracted from placeAndSave's placement lambda so the interleaved flip and the rollover
+     * open (PositionRolloverService) feed their results through the identical bookkeeping.
      */
-    private static void recordOpenResult(LegOrder w, Quote q, ExecResult er) {
+    static void recordOpenResult(LegOrder w, Quote q, ExecResult er) {
         if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
             w.setOpenOrderId(er.aggregateOrderIds());
         }

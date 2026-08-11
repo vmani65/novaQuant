@@ -163,8 +163,8 @@ public class PositionCloseService {
     /**
      * Records one leg's close-execution outcome: order ids, spread paid, liquidity alert, and the
      * CLOSED / PENDING_CLOSE / FAILED leg status. Extracted from doClose's placement lambda so the
-     * interleaved monthly flip (MonthlyFlipService) can feed its aggregate slice result through
-     * the identical bookkeeping. Package-visible for that single caller.
+     * interleaved monthly flip (MonthlyFlipService) and the rollover close (PositionRolloverService)
+     * feed their results through the identical bookkeeping. Package-visible for those callers.
      */
     void applyCloseResult(Position tradeToClose, WeeklyLeg w, Quote q, String oppositeTransaction, ExecResult er) {
         if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {

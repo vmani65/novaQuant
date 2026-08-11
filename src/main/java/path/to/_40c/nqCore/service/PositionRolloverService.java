@@ -9,7 +9,6 @@ import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Function;
 
 import lombok.extern.slf4j.Slf4j;
@@ -57,13 +56,15 @@ public class PositionRolloverService {
     private final PositionUtil positionUtil;
     private final ComputeUtil computeUtil;
     private final PostTradeService postTradeService;
+    private final PositionCloseService closingService;
 
     public PositionRolloverService(PositionRepository positionRepository, PositionUtil positionUtil, ComputeUtil computeUtil,
-                                PostTradeService postTradeService) {
+                                PostTradeService postTradeService, PositionCloseService closingService) {
         this.positionRepository = positionRepository;
         this.positionUtil = positionUtil;
         this.computeUtil = computeUtil;
         this.postTradeService = postTradeService;
+        this.closingService = closingService;
     }
 
     /**
@@ -88,9 +89,15 @@ public class PositionRolloverService {
     }
 
     /**
-     * 1. Close the Live Position first.
-     * 2. Proceed with opening new trades only if all closes succeeded.
-     * 3. Open live trades. Create a childOrderBook and add to the Parent and Save
+     * 1. Close the Live Position first, through the SAME per-leg bookkeeping as a signal close
+     *    (applyCloseResult: CLOSED / PENDING_CLOSE / FAILED with closeOrderIds recorded).
+     * 2. Open the new legs only if every close confirmed CLOSED. An abort — close not confirmed,
+     *    or the open-side quote fetch failing after the closes executed — SAVES the row first:
+     *    the leg states and order ids survive, PENDING_CLOSE legs belong to the reconciler, and
+     *    a retried trigger can never re-sell a leg the broker already closed.
+     * 3. Open the new legs through the normal open bookkeeping (recordOpenResult): a working
+     *    order rests as PENDING_OPEN for the reconciler, a partial fill is trimmed to the filled
+     *    quantity (row promoted PARTIAL so the orphan sweep sees it), a no-fill is FAILED.
      *
      * Re-strike accounting is identical to a recenter: bank the closed segment's points into
      * bankedPoints and reset baselineSpot to the rollover spot. Each closed leg is stamped
@@ -128,8 +135,6 @@ public class PositionRolloverService {
             log.error("Quote map is empty for close leg — aborting rollover (auth missing or Kite error)");
             return;
         }
-        AtomicBoolean allClosesSucceeded = new AtomicBoolean(true);
-
         List<CompletableFuture<Void>> closeFuts = bookLegs.stream()
             .map(toClose -> CompletableFuture.runAsync(() -> {
                 log.debug("WeeklyLeg to rollover is: {}", toClose);
@@ -143,31 +148,24 @@ public class PositionRolloverService {
                 }
                 try {
                     ExecResult er = positionUtil.placeAggressiveOrder(q, toClose.getInstrument(), oppositeTransaction, toClose.getQuantity(), EXIT);
-                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-                        toClose.setCloseOrderId(er.aggregateOrderIds());
-                    }
-                    toClose.setCloseSpreadPaid(PositionUtil.effectiveSpreadPaid(q, oppositeTransaction, er.weightedAvgFillPrice()));
-                    PositionUtil.alertIfMonthlySpreadExcessive(book, toClose.getInstrument(), "ROLL-EXIT", toClose.getCloseSpreadPaid());
-                    if (er.fullyFilled()) {
-                        toClose.setStatus(CLOSED);
-                    } else {
-                        log.error("[EXIT] {} rollover close NOT fully filled: filled={}/{} term={}",
-                            toClose.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
-                        toClose.setStatus(FAILED);
-                        allClosesSucceeded.set(false);
-                    }
+                    closingService.applyCloseResult(tradeToRollOver, toClose, q, oppositeTransaction, er);
                 } catch (Exception e) {
                     log.error("Exception closing order during rollover for {}: {}", toClose.getInstrument(), e.getMessage(), e);
-                    allClosesSucceeded.set(false);
+                    toClose.setStatus(FAILED);
                 }
             }, PositionUtil.LEG_EXEC))
             .toList();
         CompletableFuture.allOf(closeFuts.toArray(new CompletableFuture[0])).join();
 
         long closeMs = Duration.between(closeStart, Instant.now()).toMillis();
-        if (!allClosesSucceeded.get()) {
-            log.error("Rollover aborted - not all positions closed successfully");
+        boolean allClosed = bookLegs.stream().allMatch(l -> CLOSED.equals(l.getStatus()));
+        if (!allClosed) {
+            tradeToRollOver.setStatus(LegScope.rollUpStatus(tradeToRollOver));
+            Position saved = positionRepository.save(tradeToRollOver);
+            log.error("Rollover {} aborted — not all held legs closed; leg states SAVED (row status={}): "
+                    + "PENDING_CLOSE legs belong to the reconciler, no re-open attempted, banking untouched", book, saved.getStatus());
             log.info("[PERFORMANCE] rollover {} | close={}ms | open=0ms | total={}ms (aborted)", book, closeMs, closeMs);
+            postTradeService.afterClose(saved);
             return;
         }
         positionUtil.setTradeExecPricesForRollOver(bookLegs, true, false);
@@ -184,9 +182,13 @@ public class PositionRolloverService {
         log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));
         Map<String, Quote> quotesOfToOpenTrade = positionUtil.getQuote(ltpIns);
         if (quotesOfToOpenTrade.isEmpty()) {
-            log.error("Quote map is empty for open leg — aborting rollover open (close already executed, manual intervention needed)");
+            tradeToRollOver.setStatus(LegScope.rollUpStatus(tradeToRollOver));
+            Position saved = positionRepository.save(tradeToRollOver);
+            log.error("Quote map is empty for open leg — rollover {} open aborted AFTER the closes executed; "
+                    + "closed leg states and banked points SAVED (row status={}), position must be re-opened manually", book, saved.getStatus());
             long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
             log.info("[PERFORMANCE] rollover {} | close={}ms | open={}ms | total={}ms (aborted at open quote)", book, closeMs, abortOpenMs, closeMs + abortOpenMs);
+            postTradeService.afterClose(saved);
             return;
         }
         List<CompletableFuture<Void>> openFuts = legOrder.stream()
@@ -195,17 +197,8 @@ public class PositionRolloverService {
                 int totalQty = w.getLots() * LOT_SIZE;
                 try {
                     ExecResult er = positionUtil.placeAggressiveOrder(quotesOfToOpenTrade.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, ENTRY);
-                    if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
-                        w.setOpenOrderId(er.aggregateOrderIds());
-                    }
-                    w.setOpenSpreadPaid(PositionUtil.effectiveSpreadPaid(
-                            quotesOfToOpenTrade.get(w.getExchangeSymbol()), w.getSide(), er.weightedAvgFillPrice()));
+                    PositionOpenService.recordOpenResult(w, quotesOfToOpenTrade.get(w.getExchangeSymbol()), er);
                     PositionUtil.alertIfMonthlySpreadExcessive(book, w.getInstrument(), "ROLL-ENTRY", w.getOpenSpreadPaid());
-                    w.setOpenFullyFilled(er.fullyFilled());
-                    if (!er.fullyFilled()) {
-                        log.error("[ENTRY] {} rollover open NOT fully filled: filled={}/{} term={}",
-                            w.getInstrument(), er.totalFilled(), er.totalRequested(), er.terminalStatus());
-                    }
                 } catch (Exception e) {
                     log.error("Exception opening order during rollover for {}: {}", w.getInstrument(), e.getMessage(), e);
                 }
@@ -225,9 +218,25 @@ public class PositionRolloverService {
             b.setOpenSpreadPaid(pojo.getOpenSpreadPaid());
             b.setPosition(pojo.getParentPosition());
             b.setMoneyness(pojo.getMoneyness());
-            b.setLots(pojo.getLots());
-            b.setQuantity(pojo.getLots() * LOT_SIZE);
-            b.setStatus(Boolean.TRUE.equals(pojo.getOpenFullyFilled()) ? LIVE : FAILED);
+            int filledQty = pojo.getOpenFilledQty();
+            boolean mayStillFill = Boolean.TRUE.equals(pojo.getOpenOrderMayBeLive())
+                    && !Boolean.TRUE.equals(pojo.getOpenFullyFilled());
+            if (mayStillFill) {
+                b.setLots(pojo.getLots());
+                b.setQuantity(pojo.getLots() * LOT_SIZE);
+                b.setStatus(PENDING_OPEN);
+                log.error("[ENTRY] {} roll-open order {} still working at broker (filled={}/{}) — leg PENDING_OPEN, "
+                        + "reconciler will settle it from the tradebook",
+                    b.getInstrument(), b.getOpenOrderId(), filledQty, b.getQuantity());
+            } else if (filledQty > 0) {
+                b.setLots(filledQty / LOT_SIZE);
+                b.setQuantity(filledQty);
+                b.setStatus(LIVE);
+            } else {
+                b.setLots(pojo.getLots());
+                b.setQuantity(pojo.getLots() * LOT_SIZE);
+                b.setStatus(FAILED);
+            }
             Quote q = quotesOfToOpenTrade.get(pojo.getExchangeSymbol());
             if (q != null) {
                 if (BUY.equals(pojo.getSide()))
@@ -239,7 +248,14 @@ public class PositionRolloverService {
         });
         tradeToRollOver.setLegs(childOrderBook);
         positionUtil.setTradeExecPricesForRollOver(childOrderBook, false, true);
-        tradeToRollOver.setStatus(LegScope.rollUpStatus(tradeToRollOver));
+        String rolledUp = LegScope.rollUpStatus(tradeToRollOver);
+        boolean allFullyFilled = legOrder.stream().allMatch(p -> Boolean.TRUE.equals(p.getOpenFullyFilled()));
+        boolean anyPendingOpen = childOrderBook.stream().anyMatch(l -> PENDING_OPEN.equals(l.getStatus()));
+        boolean anyFilled = legOrder.stream().anyMatch(p -> p.getOpenFilledQty() > 0);
+        if (anyFilled && !allFullyFilled && !anyPendingOpen && LIVE.equals(rolledUp)) {
+            rolledUp = PARTIAL;
+        }
+        tradeToRollOver.setStatus(rolledUp);
         var liveTrade = positionRepository.save(tradeToRollOver);
         log.info("Live {} Position after rollOver completed is: {}", book, liveTrade);
         if (LegScope.isTerminal(liveTrade)) {

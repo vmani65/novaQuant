@@ -68,13 +68,25 @@ leg-status queries. Row status is reporting + the post-close gate.
 
 ## Migration (startup, idempotent — no row merging ever needed)
 
-Monthly book never fired in prod (toggle OFF since deploy), and all history is one row per
-signal already (weekly-only). So:
+~~Monthly book never fired in prod~~ **STALE — monthly went live 2026-08-10**: prod holds
+PAIRED two-row signals (82/83 closed pair, 84/85 LIVE pair as of 2026-08-12). No row merging
+is needed even so — each legacy row keeps its own legs, the leg-scoped finders close each
+book's row independently, and afterClose steps the capital chain per row exactly as the
+two-row model did. The legacy monthly row's chain guard (null MONTHLY_BASELINE_SPOT →
+BASELINE_SPOT fallback) covers its accounting.
 1. Hibernate ddl-auto adds the new columns.
 2. LegBookBackfill (@PostConstruct, native SQL, replaces BookBackfill):
    `UPDATE WEEKLY_LEG SET BOOK = COALESCE((SELECT BOOK FROM POSITION p WHERE p.ID =
     WEEKLY_LEG.POSITION_ID), 'SYNTH_WEEKLY') WHERE BOOK IS NULL`
 3. Nothing else. Legacy rows keep their columns; null MONTHLY_* is guarded everywhere.
+
+**Verified 2026-08-12 on a byte copy of prod signals.db (LIVE pair included), mock profile:**
+DDL added the 4 columns; backfill stamped all 178 legs (leg book == parent book for every
+leg); a simulated shortExit closed the LIVE legacy pair end-to-end — row 84 closed via the
+weekly finder, row 85 via the monthly finder through the PATIENT path, both rows went
+terminal with correct pointsPnl (monthly's null-chain fallback produced 50.1 = weekly's),
+capital chain stepped twice sequentially (2738310.9 → 84 → 85) with no double-advance and
+no rows left non-terminal.
 
 ## Deliberate behavior changes (owner-visible)
 

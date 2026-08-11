@@ -77,7 +77,10 @@ class SharedContractWeekRolloverTest {
         util = mock(PositionUtil.class);
         compute = mock(ComputeUtil.class);
         postTrade = mock(PostTradeService.class);
-        service = new PositionRolloverService(repo, util, compute, postTrade);
+        PositionCloseService realCloser = new PositionCloseService(mock(PositionRepository.class),
+                mock(PositionUtil.class), mock(ComputeUtil.class),
+                mock(PendingCloseReconciler.class), mock(PendingOpenReconciler.class));
+        service = new PositionRolloverService(repo, util, compute, postTrade, realCloser);
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
 
         weeklyCe = leg(SHARED_CE, SYNTH_WEEKLY, BUY, WEEKLY_QTY, 10);

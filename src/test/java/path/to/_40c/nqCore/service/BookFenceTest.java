@@ -38,9 +38,16 @@ class BookFenceTest {
         util = mock(PositionUtil.class);
         PositionRepository repo = mock(PositionRepository.class);
         ComputeUtil compute = mock(ComputeUtil.class);
-        rolloverService = new PositionRolloverService(repo, util, compute, mock(PostTradeService.class));
+        rolloverService = new PositionRolloverService(repo, util, compute, mock(PostTradeService.class),
+                realCloseService());
         recenterService = new ProfitRecenterService(repo, util, compute,
                 mock(WeeklySymbolService.class), mock(PostTradeService.class));
+    }
+
+    /** Real close service (mocked deps) so the roll's per-leg close bookkeeping runs for real. */
+    private static PositionCloseService realCloseService() {
+        return new PositionCloseService(mock(PositionRepository.class), mock(PositionUtil.class),
+                mock(ComputeUtil.class), mock(PendingCloseReconciler.class), mock(PendingOpenReconciler.class));
     }
 
     @Test
