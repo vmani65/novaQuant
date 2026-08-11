@@ -81,14 +81,16 @@ public class MockKiteGateway implements KiteGateway {
         final String symbol;
         final String txn;
         final int qty;
+        final String tag;
         volatile double execPrice;
         volatile String status;
         volatile int modifies;
 
-        MockOrderState(String symbol, String txn, int qty, double execPrice, String status) {
+        MockOrderState(String symbol, String txn, int qty, String tag, double execPrice, String status) {
             this.symbol = symbol;
             this.txn = txn;
             this.qty = qty;
+            this.tag = tag;
             this.execPrice = execPrice;
             this.status = status;
         }
@@ -200,7 +202,7 @@ public class MockKiteGateway implements KiteGateway {
         executionPrices.put(orderId, execPrice);
         boolean instant = fillMode == FillMode.INSTANT;
         orders.put(orderId, new MockOrderState(params.tradingsymbol, params.transactionType,
-                params.quantity, execPrice, instant ? ORDER_COMPLETE : "OPEN"));
+                params.quantity, params.tag, execPrice, instant ? ORDER_COMPLETE : "OPEN"));
         log.info("[MOCK] placeOrder: symbol={} type={} qty={} price={} execPrice={} mode={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, fillMode, orderId);
@@ -273,6 +275,23 @@ public class MockKiteGateway implements KiteGateway {
     }
 
     @Override
+    public List<Order> getOrders() {
+        List<Order> book = new ArrayList<>();
+        orders.forEach((id, st) -> {
+            Order o = new Order();
+            o.orderId = id;
+            o.tradingSymbol = st.symbol;
+            o.transactionType = st.txn;
+            o.status = st.status;
+            o.quantity = String.valueOf(st.qty);
+            o.tag = st.tag;
+            book.add(o);
+        });
+        log.info("[MOCK] getOrders: {} orders in book", book.size());
+        return book;
+    }
+
+    @Override
     public List<BulkOrderResponse> placeAutoSliceOrder(OrderParams params, String variety) {
         String orderId = "MOCK-" + orderCounter.getAndIncrement();
         double base = params.price != null && params.price > 0 ? params.price
@@ -280,7 +299,7 @@ public class MockKiteGateway implements KiteGateway {
         double execPrice = applySlippage(base, params.transactionType);
         executionPrices.put(orderId, execPrice);
         orders.put(orderId, new MockOrderState(params.tradingsymbol, params.transactionType,
-                params.quantity, execPrice, ORDER_COMPLETE));
+                params.quantity, params.tag, execPrice, ORDER_COMPLETE));
         log.info("[MOCK] placeAutoSliceOrder: symbol={} type={} qty={} price={} execPrice={} → orderId={}",
                 params.tradingsymbol, params.transactionType, params.quantity,
                 params.price, execPrice, orderId);

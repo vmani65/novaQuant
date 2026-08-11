@@ -948,14 +948,15 @@ public class PositionUtil {
         params.tradingsymbol   = ins;
         params.quantity        = qty;
         params.price           = roundToTick(anchor0, NIFTY_OPT_TICK);
+        params.tag             = patientTag();
 
         OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
         if (resp == null || resp.orderId == null) {
-            resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
+            resp = recoverLostPatientPlace(params, trace);
         }
         if (resp == null || resp.orderId == null) {
-            log.error("PATIENT LIMIT placeOrder null twice — PLACE_FAILED (no MARKET fallback in patient mode)");
-            trace.record("PATIENT LIMIT place failed twice -> PLACE_FAILED");
+            log.error("PATIENT LIMIT placement unresolved — PLACE_FAILED (no MARKET fallback in patient mode)");
+            trace.record("PATIENT LIMIT place unresolved -> PLACE_FAILED");
             return new ExecResult("", 0, qty, 0.0, false, PLACE_FAILED);
         }
         log.info("PATIENT LIMIT @ {} placed orderId={} (anchor={} cap={})", params.price, resp.orderId, anchor0, cap);
@@ -1404,6 +1405,65 @@ public class PositionUtil {
         p.product  = Constants.PRODUCT_NRML;
         p.exchange = Constants.EXCHANGE_NFO;
         return p;
+    }
+
+    private static final java.util.concurrent.atomic.AtomicInteger PATIENT_TAG_SEQ = new java.util.concurrent.atomic.AtomicInteger();
+
+    /** Settle time before reading the order book after a lost place response, letting a broker-accepted order surface. */
+    private static final long PLACE_RECOVERY_SETTLE_MS = 500L;
+
+    /** Unique alphanumeric Kite order tag (≤20 chars) so a lost place response can be re-found in the order book. */
+    private static String patientTag() {
+        return "nqp" + System.currentTimeMillis() + (PATIENT_TAG_SEQ.getAndIncrement() % 10);
+    }
+
+    /**
+     * Recovery for a lost placeOrder response in patient mode. A null response may be a timeout
+     * with the order ACCEPTED at the broker, so a blind re-place risks a duplicate resting LIMIT
+     * (the 2026-06-19 over-fill class). The order book is consulted for the attempt's unique tag:
+     * found → adopt that orderId; verified absent → ONE re-place (same tag, so a second lost
+     * response is still adoptable); book unreadable → give up WITHOUT re-placing, leaving the
+     * possibly-live order findable under the logged tag.
+     */
+    private OrderResponse recoverLostPatientPlace(OrderParams params, ExecTrace trace) {
+        sleepMillis(PLACE_RECOVERY_SETTLE_MS);
+        List<Order> book = kiteGateway.getOrders();
+        if (book == null) {
+            log.error("PATIENT LIMIT place response lost and order book unreadable — NOT re-placing (duplicate risk); "
+                    + "a resting {} {} order may be live under tag={}", params.transactionType, params.tradingsymbol, params.tag);
+            trace.record("PATIENT place response lost, book unreadable -> no re-place (tag=%s)", params.tag);
+            return null;
+        }
+        OrderResponse adopted = findByTag(book, params.tag, params.tradingsymbol);
+        if (adopted != null) {
+            log.warn("PATIENT LIMIT place response lost but order book shows orderId={} for tag={} — adopting, not re-placing",
+                    adopted.orderId, params.tag);
+            trace.record("PATIENT place response lost -> adopted orderId=%s via tag", adopted.orderId);
+            return adopted;
+        }
+        trace.record("PATIENT place response lost, tag=%s verified absent -> one re-place", params.tag);
+        OrderResponse resp = kiteGateway.placeOrder(params, Constants.VARIETY_REGULAR);
+        if (resp != null && resp.orderId != null) return resp;
+        sleepMillis(PLACE_RECOVERY_SETTLE_MS);
+        book = kiteGateway.getOrders();
+        return book == null ? null : findByTag(book, params.tag, params.tradingsymbol);
+    }
+
+    /**
+     * The order-book entry carrying this placement attempt's tag (newest first), as an adoptable
+     * OrderResponse; null when absent. Status is deliberately NOT filtered — adopting a REJECTED
+     * order lets the normal confirm path read its terminal state honestly.
+     */
+    private static OrderResponse findByTag(List<Order> book, String tag, String ins) {
+        for (int i = book.size() - 1; i >= 0; i--) {
+            Order o = book.get(i);
+            if (tag != null && tag.equals(o.tag) && ins.equals(o.tradingSymbol)) {
+                OrderResponse r = new OrderResponse();
+                r.orderId = o.orderId;
+                return r;
+            }
+        }
+        return null;
     }
 
     private static void appendId(StringBuilder sb, String id) {

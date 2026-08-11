@@ -91,6 +91,20 @@ public class KiteConnectGateway implements KiteGateway {
     }
 
     @Override
+    public List<Order> getOrders() {
+        var kite = getKiteConnectObject();
+        if (kite == null) { log.error("KiteConnect null — cannot fetch order book"); return null; }
+        try {
+            return kite.getOrders();
+        } catch (KiteException e) {
+            log.error("Exception while fetching order book — code={} message={}", e.code, e.getMessage());
+        } catch (JSONException | IOException e) {
+            log.error("Exception while fetching order book", e);
+        }
+        return null;
+    }
+
+    @Override
     public OrderResponse placeOrder(OrderParams params, String variety) {
         var kite = getKiteConnectObject();
         if (kite == null) { log.error("KiteConnect null — cannot place order"); return null; }

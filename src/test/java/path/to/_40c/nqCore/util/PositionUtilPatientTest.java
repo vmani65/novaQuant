@@ -248,19 +248,64 @@ class PositionUtilPatientTest {
     }
 
     @Test
-    @DisplayName("LIMIT placement failing twice returns PLACE_FAILED — patient mode never covers a placement failure with MARKET")
+    @DisplayName("place response lost with the order book unreadable: PLACE_FAILED after ONE place — never a blind re-place, never MARKET")
     void placeFailedNoMarketFallback() {
         when(gw.placeOrder(any(OrderParams.class), anyString())).thenReturn(null);
+        when(gw.getOrders()).thenReturn(null);
 
         ExecResult res = patientSell(quote(462.0, 464.0, 463.0));
 
         ArgumentCaptor<OrderParams> cap = ArgumentCaptor.forClass(OrderParams.class);
-        verify(gw, times(2)).placeOrder(cap.capture(), anyString());
-        assertThat(cap.getAllValues()).allSatisfy(p ->
-                assertThat(p.orderType).isEqualTo(Constants.ORDER_TYPE_LIMIT));
+        verify(gw, times(1)).placeOrder(cap.capture(), anyString());
+        assertThat(cap.getValue().orderType).isEqualTo(Constants.ORDER_TYPE_LIMIT);
         assertThat(res.terminalStatus()).isEqualTo("PLACE_FAILED");
         assertThat(res.aggregateOrderIds()).isEmpty();
         assertThat(res.totalFilled()).isZero();
+    }
+
+    @Test
+    @DisplayName("place response lost but the tagged order is in the book: adopted, never re-placed")
+    void lostPlaceResponseAdoptsTaggedOrder() {
+        java.util.concurrent.atomic.AtomicReference<String> tag = new java.util.concurrent.atomic.AtomicReference<>();
+        when(gw.placeOrder(any(OrderParams.class), anyString())).thenAnswer(inv -> {
+            tag.set(((OrderParams) inv.getArgument(0)).tag);
+            return null;
+        });
+        when(gw.getOrders()).thenAnswer(inv -> {
+            Order o = order(Constants.ORDER_COMPLETE, QTY, 463.0);
+            o.orderId = "LIMIT1";
+            o.tradingSymbol = "NIFTY26AUG23850CE";
+            o.tag = tag.get();
+            return List.of(o);
+        });
+        when(gw.getOrderHistory("LIMIT1")).thenReturn(List.of(order(Constants.ORDER_COMPLETE, QTY, 463.0)));
+
+        ExecResult res = patientSell(quote(462.0, 464.0, 463.0));
+
+        verify(gw, times(1)).placeOrder(any(OrderParams.class), anyString());
+        assertThat(tag.get()).as("Kite tag contract: alphanumeric, max 20 chars").matches("[A-Za-z0-9]{1,20}");
+        assertThat(res.aggregateOrderIds()).isEqualTo("LIMIT1");
+        assertThat(res.fullyFilled()).isTrue();
+    }
+
+    @Test
+    @DisplayName("place response lost and the book verifiably lacks the tag: exactly one verified re-place")
+    void lostPlaceResponseVerifiedAbsentReplacesOnce() {
+        java.util.concurrent.atomic.AtomicInteger placeCalls = new java.util.concurrent.atomic.AtomicInteger();
+        when(gw.placeOrder(any(OrderParams.class), anyString())).thenAnswer(inv -> {
+            if (placeCalls.getAndIncrement() == 0) return null;
+            OrderResponse r = new OrderResponse();
+            r.orderId = "LIMIT1";
+            return r;
+        });
+        when(gw.getOrders()).thenReturn(List.of());
+        when(gw.getOrderHistory("LIMIT1")).thenReturn(List.of(order(Constants.ORDER_COMPLETE, QTY, 463.0)));
+
+        ExecResult res = patientSell(quote(462.0, 464.0, 463.0));
+
+        verify(gw, times(2)).placeOrder(any(OrderParams.class), anyString());
+        assertThat(res.aggregateOrderIds()).isEqualTo("LIMIT1");
+        assertThat(res.fullyFilled()).isTrue();
     }
 
     // ─── routing gates ──────────────────────────────────────────────────────────────────────

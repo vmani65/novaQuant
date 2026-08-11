@@ -48,6 +48,13 @@ public interface KiteGateway {
     /** Fetch status-transition history for an order. Last entry = current state. Returns empty list on failure. */
     List<Order> getOrderHistory(String orderId);
 
+    /**
+     * Full order book for the day. Returns NULL when the fetch fails — callers must treat null
+     * as "unknown", never as an empty book (the distinction gates the duplicate-order safety of
+     * PositionUtil's lost-place-response recovery).
+     */
+    List<Order> getOrders();
+
     /** Place an auto-sliced order for large quantities. Returns empty list on failure. */
     List<BulkOrderResponse> placeAutoSliceOrder(OrderParams params, String variety);
 
