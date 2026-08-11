@@ -5,6 +5,7 @@ import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LOT_SIZE;
 import static path.to._40c.nqCore.util.Constants.PARTIAL;
 import static path.to._40c.nqCore.util.Constants.PENDING_OPEN;
+import static path.to._40c.nqCore.util.Constants.UNKNOWN;
 
 import java.util.List;
 import java.util.Map;
@@ -17,6 +18,7 @@ import org.springframework.stereotype.Service;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.CloseOrderState;
 
@@ -76,7 +78,7 @@ public class PendingOpenReconciler {
     private synchronized void reconcileAll(boolean settle) {
         List<Position> pendings;
         try {
-            pendings = positionRepository.findByStatus(PENDING_OPEN);
+            pendings = positionRepository.findByLegStatus(PENDING_OPEN);
         } catch (Exception e) {
             log.error("PENDING_OPEN lookup failed — will retry next pass", e);
             return;
@@ -133,7 +135,7 @@ public class PendingOpenReconciler {
 
     /** Same UNKNOWN-tick budget as the close reconciler: a pending can't sit silently forever. */
     private void trackStillWorking(Position p, WeeklyLeg w, CloseOrderState s, int qty) {
-        if (!"UNKNOWN".equals(s.lastStatus())) {
+        if (!UNKNOWN.equals(s.lastStatus())) {
             unknownTicks.remove(w.getId());
             log.info("PENDING_OPEN trade id={} leg {} — entry order {} still {} ({}/{} filled), waiting",
                     p.getId(), w.getInstrument(), w.getOpenOrderId(), s.lastStatus(), s.tradedQty(), qty);
@@ -185,10 +187,11 @@ public class PendingOpenReconciler {
 
     /**
      * Settles the position from its legs' now-known states: legs still pending → stay
-     * PENDING_OPEN for the next pass. All legs LIVE → LIVE; some LIVE → PARTIAL (the
-     * orphan machinery flattens on the next signal); none LIVE → FAILED (never opened).
-     * Post-open calc (fill prices, margin, charges, peak margin) runs once the position
-     * holds real legs — the step the old terminal-FAILED path skipped.
+     * for the next pass. Otherwise the roll-up over ALL legs decides — per-book orphan
+     * shape → PARTIAL (the orphan machinery flattens on the next signal), any LIVE →
+     * LIVE, nothing traded → FAILED. Post-open calc (fill prices, margin, charges, peak
+     * margin) runs once the position holds real legs — the step the old terminal-FAILED
+     * path skipped.
      */
     private void finalizePosition(Position p) {
         boolean anyPending = p.getLegs().stream().anyMatch(w -> PENDING_OPEN.equals(w.getStatus()));
@@ -196,15 +199,11 @@ public class PendingOpenReconciler {
             positionRepository.save(p);
             return;
         }
-        boolean allLive = !p.getLegs().isEmpty() && p.getLegs().stream().allMatch(w -> LIVE.equals(w.getStatus()));
-        boolean anyLive = p.getLegs().stream().anyMatch(w -> LIVE.equals(w.getStatus()));
-        if (allLive) {
-            p.setStatus(LIVE);
-        } else if (anyLive) {
-            p.setStatus(PARTIAL);
+        String rolledUp = LegScope.rollUpStatus(p);
+        p.setStatus(rolledUp);
+        if (PARTIAL.equals(rolledUp)) {
             log.warn("PENDING_OPEN trade id={} settled PARTIAL — orphan legs will be flattened on the next signal", p.getId());
-        } else {
-            p.setStatus(FAILED);
+        } else if (FAILED.equals(rolledUp)) {
             log.error("PENDING_OPEN trade id={} settled FAILED — no entry fills", p.getId());
         }
         Position saved = positionRepository.save(p);

@@ -71,7 +71,7 @@ class PendingCloseReconcilerTest {
         position.setStatus(PENDING_CLOSE);
         position.setLegs(List.of(peLeg, ceLeg));
         ReflectionTestUtils.setField(position, "id", 73L);
-        when(repo.findByStatus(PENDING_CLOSE)).thenReturn(List.of(position));
+        when(repo.findByLegStatus(PENDING_CLOSE)).thenReturn(List.of(position));
     }
 
     @Test

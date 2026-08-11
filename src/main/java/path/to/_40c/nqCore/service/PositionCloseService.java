@@ -5,6 +5,7 @@ import static path.to._40c.nqCore.util.Constants.*;
 import java.util.List;
 import java.util.Map;
 import java.util.concurrent.CompletableFuture;
+import java.util.stream.Collectors;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
@@ -17,6 +18,7 @@ import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
 import path.to._40c.nqCore.util.ExecMode;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -60,36 +62,34 @@ public class PositionCloseService {
     }
 
     /**
-     * Closes the given book's live position at signalPrice. exitSpot is the literal final-exit
-     * spot: the current open segment (baselineSpot -> exitSpot) is the last contribution to
-     * pointsPnl, while all prior re-strike segments are already accumulated in bankedPoints.
-     * Only positions stamped with this book are candidates — the other book's LIVE position
-     * is invisible here.
+     * Closes the given book's live legs at signalPrice. The row is the signal's shared
+     * position — the finder returns whatever row holds this book's LIVE legs regardless of
+     * row status, and ONLY that book's legs are closed; the other book's legs on the same
+     * row are untouchable here. exitSpot is the literal final-exit spot: the current open
+     * segment is the last contribution to pointsPnl, while prior re-strike segments are
+     * already accumulated in the book's banked chain.
      */
     private Position closeTrade(String book, String signalPrice, Signal signal, boolean updateApiAction) {
         pendingCloseReconciler.resolveBeforeSignal();
         pendingOpenReconciler.resolveBeforeSignal();
         Position tradeToClose = positionUtil.findLiveTradesWithLiveOrderBooks(book);
-        if (tradeToClose == null) {
-            tradeToClose = positionUtil.findPartialTradesWithLiveOrderBooks(book);
-            if (tradeToClose != null) {
-                log.warn("ORPHAN: no LIVE {} trade, but PARTIAL trade id={} has orphan legs — closing them now",
-                        book, tradeToClose.getId());
-            }
-        }
         if(tradeToClose == null) {
             log.info("No Live {} trades to close.", book);
             return null;
         }
         boolean liveClose = LIVE.equals(tradeToClose.getStatus());
-        return doClose(tradeToClose, signalPrice, signal, updateApiAction, liveClose);
+        if (!liveClose) {
+            log.warn("ORPHAN-ish: {} live legs found on trade id={} with row status {} — closing them aggressively",
+                    book, tradeToClose.getId(), tradeToClose.getStatus());
+        }
+        return doClose(tradeToClose, book, signalPrice, signal, updateApiAction, liveClose);
     }
 
     /**
-     * Flattens the orphan legs of the given book's PARTIAL position (an open where only some
-     * legs filled), if one exists. Called by entry-signal handling before a new position is
-     * opened, so a fresh open never coexists with untracked broker positions from a failed
-     * earlier open of the same book.
+     * Flattens the given book's orphan legs on a PARTIAL position (an open where only some
+     * of the book's legs filled), if one exists. Called by entry-signal handling before a
+     * new position is opened, so a fresh open never coexists with untracked broker
+     * positions from a failed earlier open of the same book.
      */
     private Position closeOrphanIfAny(String book, String signalPrice, Signal signal) {
         pendingCloseReconciler.resolveBeforeSignal();
@@ -98,48 +98,44 @@ public class PositionCloseService {
         if (partialTrade == null) {
             return null;
         }
-        log.warn("ORPHAN: PARTIAL {} trade id={} found before new open — closing its orphan legs first",
-                book, partialTrade.getId());
-        return doClose(partialTrade, signalPrice, signal, false, false);
+        log.warn("ORPHAN: PARTIAL trade id={} has live {} legs before new open — closing its orphan legs first",
+                partialTrade.getId(), book);
+        return doClose(partialTrade, book, signalPrice, signal, false, false);
     }
 
     /**
-     * Execution-mode routing (PATIENT_EXECUTION_PLAN.md §3.1): a signal-driven close of a LIVE
-     * LONG_MONTHLY position requests PATIENT — thin monthly books deserve minutes of fair-priced
-     * resting over crossing the spread. Everything else stays AGGRESSIVE: the weekly book (liquid
-     * ATM), orphan flattens (they run immediately before a new open — speed beats spread), and the
-     * PARTIAL fallback inside closeTrade (semantically an orphan flatten). Availability (flag,
-     * config validity, IST cutoff) is re-checked inside placeAggressiveOrder, which silently
-     * degrades PATIENT to the aggressive path — intent is decided here, availability there.
+     * Execution-mode routing (PATIENT_EXECUTION_PLAN.md §3.1): a signal-driven close of the
+     * LIVE LONG_MONTHLY legs requests PATIENT — thin monthly books deserve minutes of
+     * fair-priced resting over crossing the spread. Everything else stays AGGRESSIVE: the
+     * weekly book (liquid ATM) and orphan flattens (they run immediately before a new open —
+     * speed beats spread). Availability (flag, config validity, IST cutoff) is re-checked
+     * inside placeAggressiveOrder, which silently degrades PATIENT to the aggressive path —
+     * intent is decided here, availability there.
      */
-    private static ExecMode closeMode(Position tradeToClose, boolean patientEligible) {
-        return patientEligible && LONG_MONTHLY.equals(tradeToClose.getBook())
-                ? ExecMode.PATIENT : ExecMode.AGGRESSIVE;
+    private static ExecMode closeMode(String book, boolean patientEligible) {
+        return patientEligible && LONG_MONTHLY.equals(book) ? ExecMode.PATIENT : ExecMode.AGGRESSIVE;
     }
 
-    private Position doClose(Position tradeToClose, String signalPrice, Signal signal, boolean updateApiAction,
-            boolean patientEligible) {
-        ExecMode mode = closeMode(tradeToClose, patientEligible);
+    private Position doClose(Position tradeToClose, String book, String signalPrice, Signal signal,
+            boolean updateApiAction, boolean patientEligible) {
+        ExecMode mode = closeMode(book, patientEligible);
         if (mode == ExecMode.PATIENT) {
-            log.info("PATIENT close requested for {} trade id={} (signal-driven LIVE close)",
-                    tradeToClose.getBook(), tradeToClose.getId());
+            log.info("PATIENT close requested for {} legs of trade id={} (signal-driven LIVE close)",
+                    book, tradeToClose.getId());
         }
         double closePrice = Double.parseDouble(signalPrice);
         tradeToClose.setExitSpot(Math.round(closePrice * 100.0) / 100.0);
-        log.info("Live Position being closed is: {}", tradeToClose);
-        String[] liveIns = tradeToClose.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
+        List<WeeklyLeg> bookLegs = LegScope.of(tradeToClose, book);
+        log.info("Closing {} legs of position id={}: {}", book, tradeToClose.getId(),
+                bookLegs.stream().map(WeeklyLeg::getInstrument).collect(Collectors.joining(", ")));
+        String[] liveIns = bookLegs.stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(liveIns);
         if (quotes.isEmpty()) {
-            log.error("Quote map is empty — aborting trade close (auth missing or Kite error)");
-            if (PARTIAL.equals(tradeToClose.getStatus())) {
-                log.warn("ORPHAN: trade id={} stays PARTIAL — orphan close will retry on the next signal", tradeToClose.getId());
-                return null;
-            }
-            tradeToClose.setStatus(FAILED);
-            positionRepository.save(tradeToClose);
+            log.error("Quote map is empty — aborting {} close (auth missing or Kite error); "
+                    + "legs stay LIVE for the next attempt", book);
             return null;
         }
-        List<CompletableFuture<Void>> futs = tradeToClose.getLegs().stream()
+        List<CompletableFuture<Void>> futs = bookLegs.stream()
             .map(w -> CompletableFuture.runAsync(() -> {
                 log.debug("WeeklyLeg to close is: {}", w);
                 String oppositeTransaction = BUY.equals(w.getSide()) ? SELL : BUY;
@@ -151,7 +147,7 @@ public class PositionCloseService {
                         w.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(q, w.getInstrument(), oppositeTransaction, w.getQuantity(), "EXIT", mode);
+                    ExecResult er = positionUtil.placeAggressiveOrder(q, w.getInstrument(), oppositeTransaction, w.getQuantity(), EXIT, mode);
                     applyCloseResult(tradeToClose, w, q, oppositeTransaction, er);
                 } catch (Exception e) {
                     log.error("Exception closing order for {} ({} qty): {}",
@@ -175,7 +171,7 @@ public class PositionCloseService {
             w.setCloseOrderId(er.aggregateOrderIds());
         }
         w.setCloseSpreadPaid(PositionUtil.effectiveSpreadPaid(q, oppositeTransaction, er.weightedAvgFillPrice()));
-        PositionUtil.alertIfMonthlySpreadExcessive(tradeToClose.getBook(), w.getInstrument(), "EXIT", w.getCloseSpreadPaid());
+        PositionUtil.alertIfMonthlySpreadExcessive(LegScope.bookOf(w), w.getInstrument(), EXIT, w.getCloseSpreadPaid());
         if (er.fullyFilled()) {
             w.setStatus(CLOSED);
         } else if (PositionUtil.closeOrderMayBeLive(er)) {
@@ -192,26 +188,32 @@ public class PositionCloseService {
     }
 
     /**
-     * Resolves the position status from its legs (all CLOSED → CLOSED, any PENDING_CLOSE →
-     * PENDING_CLOSE with closedAt deferred, else FAILED), stamps the signal action when asked,
-     * and saves. Extracted from doClose's tail; shared with MonthlyFlipService.
+     * Resolves the row status as the roll-up over ALL legs (LegScope.rollUpStatus — a shared
+     * row stays LIVE while the other book's legs are still open, goes PENDING_CLOSE while any
+     * close is unconfirmed, and CLOSES only when every leg is done), stamps the signal action
+     * when asked, stamps closedAt on the terminal transition, and saves. Shared with
+     * MonthlyFlipService.
      */
     Position finalizeClose(Position tradeToClose, Signal signal, boolean updateApiAction) {
         if(updateApiAction) {
             tradeToClose.setLastSignalAction(signal.action);
             tradeToClose.setLastSignalLeg(signal.signalType);
         }
-        if (tradeToClose.getLegs().stream().allMatch(ob -> CLOSED.equals(ob.getStatus()))) {
-            tradeToClose.setStatus(CLOSED);
-            tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
-        } else if (tradeToClose.getLegs().stream().anyMatch(ob -> PENDING_CLOSE.equals(ob.getStatus()))) {
-            tradeToClose.setStatus(PENDING_CLOSE);
+        String rolledUp = LegScope.rollUpStatus(tradeToClose);
+        tradeToClose.setStatus(rolledUp);
+        if (PENDING_CLOSE.equals(rolledUp)) {
             log.error("Position close not confirmed - a close order is still working at the broker; "
                     + "position PENDING_CLOSE (closedAt deferred), reconciler will finalize");
+        } else if (LegScope.isTerminal(tradeToClose)) {
+            if (tradeToClose.getClosedAt() == null) {
+                tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
+            }
+            if (FAILED.equals(rolledUp)) {
+                log.error("Position closing failed - not all orders were closed successfully");
+            }
         } else {
-            tradeToClose.setStatus(FAILED);
-            tradeToClose.setClosedAt(computeUtil.getDtTimeNow());
-            log.error("Position closing failed - not all orders were closed successfully");
+            log.info("Position id={} stays {} — the other book's legs are still open on this signal's row",
+                    tradeToClose.getId(), rolledUp);
         }
         log.info("Position closing completed: {}", tradeToClose);
         Position closedTrade = positionRepository.save(tradeToClose);

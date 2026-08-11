@@ -22,19 +22,21 @@ import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 /**
- * Rolls a book's LIVE position onto its next contract: close every leg in hand, re-open
- * the same structure at the current ATM on the target contract, and re-strike the
- * points accounting exactly like a recenter — bank the closed segment's points into
- * bankedPoints and reset baselineSpot to the roll spot. entrySpot/exitSpot are left
- * untouched (immutable original-entry / final-exit reference for reporting).
+ * Rolls a book's LIVE legs onto its next contract: close the book's legs in hand, re-open
+ * the same structure at the current ATM on the target contract, and re-strike the points
+ * accounting exactly like a recenter — bank the closed segment's points into the book's
+ * OWN banked chain and reset that chain's baseline to the roll spot. entrySpot/exitSpot
+ * are left untouched (immutable original-entry / final-exit reference for reporting).
  *
- * Book isolation is structural: each public method looks up ONLY its own book's LIVE
- * position, so the weekly expiry-day roll can never touch a monthly position and the
- * monthly roll can never touch the weekly synthetic.
+ * Book isolation is leg-structural: the position row is shared per signal, so every
+ * selection here filters legs by their BOOK column — the weekly expiry-day roll can never
+ * touch a monthly leg and the monthly roll can never touch the weekly synthetic, even in
+ * monthly-expiry week when both books hold the identical contract.
  *
  * Both books roll the same way: the caller syncs the book's symbol row first (weekly:
  * date-gated promotion on rollover day; monthly: DTE rule), then this service moves the
@@ -108,17 +110,19 @@ public class PositionRolloverService {
             log.info("No Live {} trades to rollover.", book);
             return;
         }
-        if (targetPrefix != null && tradeToRollOver.getLegs().stream()
+        List<WeeklyLeg> bookLegs = LegScope.of(tradeToRollOver, book);
+        if (targetPrefix != null && bookLegs.stream()
                 .allMatch(leg -> leg.getInstrument().startsWith(targetPrefix))) {
-            log.info("Rollover {} skipped — position already on the current contract {}; nothing to roll",
+            log.info("Rollover {} skipped — legs already on the current contract {}; nothing to roll",
                     book, targetPrefix);
             return;
         }
-        log.info("Live {} Position being rolled over is: {}", book, tradeToRollOver);
+        log.info("Rolling over {} legs of position id={}: {}", book, tradeToRollOver.getId(),
+                bookLegs.stream().map(WeeklyLeg::getInstrument).toList());
         List<LegOrder> legOrder = legBuilder.apply(tradeToRollOver);
 
         Instant closeStart = Instant.now();
-        String[] liveIns = tradeToRollOver.getLegs().stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
+        String[] liveIns = bookLegs.stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotesOfToCloseTrade = positionUtil.getQuote(liveIns);
         if (quotesOfToCloseTrade.isEmpty()) {
             log.error("Quote map is empty for close leg — aborting rollover (auth missing or Kite error)");
@@ -126,7 +130,7 @@ public class PositionRolloverService {
         }
         AtomicBoolean allClosesSucceeded = new AtomicBoolean(true);
 
-        List<CompletableFuture<Void>> closeFuts = tradeToRollOver.getLegs().stream()
+        List<CompletableFuture<Void>> closeFuts = bookLegs.stream()
             .map(toClose -> CompletableFuture.runAsync(() -> {
                 log.debug("WeeklyLeg to rollover is: {}", toClose);
                 String oppositeTransaction = BUY.equals(toClose.getSide()) ? SELL : BUY;
@@ -138,7 +142,7 @@ public class PositionRolloverService {
                         toClose.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(q, toClose.getInstrument(), oppositeTransaction, toClose.getQuantity(), "EXIT");
+                    ExecResult er = positionUtil.placeAggressiveOrder(q, toClose.getInstrument(), oppositeTransaction, toClose.getQuantity(), EXIT);
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         toClose.setCloseOrderId(er.aggregateOrderIds());
                     }
@@ -166,18 +170,16 @@ public class PositionRolloverService {
             log.info("[PERFORMANCE] rollover {} | close={}ms | open=0ms | total={}ms (aborted)", book, closeMs, closeMs);
             return;
         }
-        positionUtil.setTradeExecPricesForRollOver(tradeToRollOver, true, false);
+        positionUtil.setTradeExecPricesForRollOver(bookLegs, true, false);
         Instant openStart = Instant.now();
         List<WeeklyLeg> childOrderBook = new ArrayList<WeeklyLeg>();
         double rolloverPrice = signalPrice != null ? Double.valueOf(signalPrice) : 0.0;
-        double base = tradeToRollOver.getBaselineSpot() != null ? tradeToRollOver.getBaselineSpot() : rolloverPrice;
+        double base = baselineFor(tradeToRollOver, book, rolloverPrice);
         double segment = SHORT.equals(tradeToRollOver.getDirection()) ? base - rolloverPrice : rolloverPrice - base;
-        double banked = tradeToRollOver.getBankedPoints() != null ? tradeToRollOver.getBankedPoints() : 0.0;
-        tradeToRollOver.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
-        tradeToRollOver.setBaselineSpot(rolloverPrice);
-        tradeToRollOver.getLegs().forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * expectedFactor * segment)));
-        log.info("rollover {} re-strike | segment={}pts bankedPoints={} newBaseline={} expectedFactor={}",
-            book, Math.round(segment * 100.0) / 100.0, tradeToRollOver.getBankedPoints(), rolloverPrice, expectedFactor);
+        bankSegment(tradeToRollOver, book, segment, rolloverPrice);
+        bookLegs.forEach(leg -> leg.setExpectedPnl(ComputeUtil.rnd(leg.getQuantity() * expectedFactor * segment)));
+        log.info("rollover {} re-strike | segment={}pts newBaseline={} expectedFactor={}",
+            book, Math.round(segment * 100.0) / 100.0, rolloverPrice, expectedFactor);
         String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         log.debug("OpenTrade ltpIns is: {}", Arrays.toString(ltpIns));
         Map<String, Quote> quotesOfToOpenTrade = positionUtil.getQuote(ltpIns);
@@ -192,7 +194,7 @@ public class PositionRolloverService {
                 log.debug("LegOrder to place order is: {}", w);
                 int totalQty = w.getLots() * LOT_SIZE;
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(quotesOfToOpenTrade.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, "ENTRY");
+                    ExecResult er = positionUtil.placeAggressiveOrder(quotesOfToOpenTrade.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, ENTRY);
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         w.setOpenOrderId(er.aggregateOrderIds());
                     }
@@ -215,6 +217,7 @@ public class PositionRolloverService {
 
         legOrder.forEach(pojo -> {
             WeeklyLeg b = new WeeklyLeg();
+            b.setBook(pojo.getBook());
             b.setInstrument(pojo.getInstrument());
             b.setExchangeSymbol(pojo.getExchangeSymbol());
             b.setSide(pojo.getSide());
@@ -235,9 +238,40 @@ public class PositionRolloverService {
             childOrderBook.add(b);
         });
         tradeToRollOver.setLegs(childOrderBook);
-        positionUtil.setTradeExecPricesForRollOver(tradeToRollOver, false, true);
+        positionUtil.setTradeExecPricesForRollOver(childOrderBook, false, true);
+        tradeToRollOver.setStatus(LegScope.rollUpStatus(tradeToRollOver));
         var liveTrade = positionRepository.save(tradeToRollOver);
         log.info("Live {} Position after rollOver completed is: {}", book, liveTrade);
+        if (LegScope.isTerminal(liveTrade)) {
+            log.error("Rollover {} closed the held legs but opened nothing — position id={} is terminal; "
+                    + "running post-close accounting instead of post-open", book, liveTrade.getId());
+            postTradeService.afterClose(liveTrade);
+            return;
+        }
         postTradeService.afterOpen(liveTrade);
+    }
+
+    /** The book's current baseline: the weekly chain for SYNTH_WEEKLY, the monthly chain for LONG_MONTHLY. */
+    private static double baselineFor(Position trade, String book, double fallback) {
+        Double baseline = LONG_MONTHLY.equals(book)
+                ? (trade.getMonthlyBaselineSpot() != null ? trade.getMonthlyBaselineSpot() : trade.getBaselineSpot())
+                : trade.getBaselineSpot();
+        return baseline != null ? baseline : fallback;
+    }
+
+    /**
+     * Banks the closed segment's points into the book's OWN chain and re-bases that chain's
+     * baseline to the roll spot. The other book's chain is untouched — its legs did not move.
+     */
+    private static void bankSegment(Position trade, String book, double segment, double rolloverPrice) {
+        if (LONG_MONTHLY.equals(book)) {
+            double banked = trade.getMonthlyBankedPoints() != null ? trade.getMonthlyBankedPoints() : 0.0;
+            trade.setMonthlyBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
+            trade.setMonthlyBaselineSpot(rolloverPrice);
+        } else {
+            double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
+            trade.setBankedPoints(Math.round((banked + segment) * 100.0) / 100.0);
+            trade.setBaselineSpot(rolloverPrice);
+        }
     }
 }

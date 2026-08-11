@@ -57,7 +57,7 @@ class ComputeUtilBookAccountingTest {
     void monthlyThetaBledWinnerIsRupeeLoss() {
         // 2 monthly lots (130 qty) bought at 212, sold at 205 after a +20-pt drift: spot won, theta lost.
         Position trade = monthlyTrade(24500.0, 24520.0);
-        trade.setLegs(List.of(closedLeg("NIFTY26AUG24500CE", BUY, 130, 2, 212.0, 205.0)));
+        trade.setLegs(List.of(closedLeg("NIFTY26AUG24500CE", LONG_MONTHLY, BUY, 130, 2, 212.0, 205.0)));
 
         computeUtil.calcTradeOutcome(trade);
         assertThat(trade.getPointsPnl()).isEqualTo(20.0);
@@ -73,7 +73,7 @@ class ComputeUtilBookAccountingTest {
     void monthlyGammaWinnerCapturesAgainstFuturesEquivalent() {
         // +100 pts; leg gains 55 /unit on 130 qty = 7150 gross vs expected 65 × 100 = 6500 → capture > 100%.
         Position trade = monthlyTrade(24500.0, 24600.0);
-        trade.setLegs(List.of(closedLeg("NIFTY26AUG24500CE", BUY, 130, 2, 212.0, 267.0)));
+        trade.setLegs(List.of(closedLeg("NIFTY26AUG24500CE", LONG_MONTHLY, BUY, 130, 2, 212.0, 267.0)));
 
         computeUtil.calcTradeOutcome(trade);
         computeUtil.calcPnL(trade);
@@ -89,8 +89,8 @@ class ComputeUtilBookAccountingTest {
     void weeklyRulesUnchanged() {
         Position trade = weeklyTrade(24500.0, 24600.0);
         trade.setLegs(List.of(
-                closedLeg("NIFTY2681224500CE", BUY, 650, 10, 145.0, 210.0),
-                closedLeg("NIFTY2681224500PE", SELL, 650, 10, 120.0, 154.0)));
+                closedLeg("NIFTY2681224500CE", SYNTH_WEEKLY, BUY, 650, 10, 145.0, 210.0),
+                closedLeg("NIFTY2681224500PE", SYNTH_WEEKLY, SELL, 650, 10, 120.0, 154.0)));
 
         computeUtil.calcTradeOutcome(trade);
         assertThat(trade.getResult()).as("weekly result set from points sign before calcPnL").isEqualTo(WIN);
@@ -104,11 +104,12 @@ class ComputeUtilBookAccountingTest {
     // ---------------------------------------------------------------
 
     @Test
-    @DisplayName("monthly close flows through the capital chain but leaves lot sizing untouched")
+    @DisplayName("monthly-only close flows through the capital chain but leaves lot sizing untouched")
     void monthlyCloseSkipsLotSizing() {
         TradeCapital capital = capital(2_800_000.0, 200_000, 14);
         when(capitalRepo.getTradeCapital()).thenReturn(capital);
         Position trade = monthlyTrade(24500.0, 24600.0);
+        trade.setLegs(List.of(closedLeg("NIFTY26AUG24500CE", LONG_MONTHLY, BUY, 130, 2, 212.0, 267.0)));
         trade.setActualPnl(7106.0);
         trade.setLots(2);
 
@@ -117,15 +118,18 @@ class ComputeUtilBookAccountingTest {
         assertThat(trade.getStartingCapital()).isEqualTo(2_800_000.0);
         assertThat(trade.getEndingCapital()).isEqualTo(2_807_106.0);
         assertThat(capital.getCurrentCapital()).isEqualTo(2_807_106.0);
-        assertThat(capital.getPossibleLots()).as("weekly-margin sizing untouched by monthly close").isEqualTo(14);
+        assertThat(capital.getPossibleLots()).as("weekly-margin sizing untouched by a monthly-only close").isEqualTo(14);
     }
 
     @Test
-    @DisplayName("weekly close still recalculates lot sizing (regression)")
+    @DisplayName("a close with weekly legs still recalculates lot sizing, sized by the WEEKLY lots (regression)")
     void weeklyCloseStillSizesLots() {
         TradeCapital capital = capital(2_800_000.0, 200_000, 0);
         when(capitalRepo.getTradeCapital()).thenReturn(capital);
         Position trade = weeklyTrade(24500.0, 24600.0);
+        trade.setLegs(List.of(
+                closedLeg("NIFTY2681224500CE", SYNTH_WEEKLY, BUY, 650, 10, 145.0, 210.0),
+                closedLeg("NIFTY2681224500PE", SYNTH_WEEKLY, SELL, 650, 10, 120.0, 154.0)));
         trade.setActualPnl(60_000.0);
         trade.setLots(10);
 
@@ -140,9 +144,8 @@ class ComputeUtilBookAccountingTest {
     void unsetRiskPerLotIsGuarded() {
         TradeCapital zeroRisk = capital(2_800_000.0, 0, 5);
         when(capitalRepo.getTradeCapital()).thenReturn(zeroRisk);
-        Position trade = weeklyTrade(24500.0, 24600.0);
+        Position trade = weeklyTradeWithPnl();
         trade.setActualPnl(1000.0);
-        trade.setLots(10);
 
         assertThatCode(() -> computeUtil.recalculateCapital(trade)).doesNotThrowAnyException();
         assertThat(zeroRisk.getCurrentCapital()).isEqualTo(2_801_000.0);
@@ -159,6 +162,9 @@ class ComputeUtilBookAccountingTest {
 
     private Position weeklyTradeWithPnl() {
         Position t = weeklyTrade(24500.0, 24600.0);
+        t.setLegs(List.of(
+                closedLeg("NIFTY2681224500CE", SYNTH_WEEKLY, BUY, 650, 10, 145.0, 210.0),
+                closedLeg("NIFTY2681224500PE", SYNTH_WEEKLY, SELL, 650, 10, 120.0, 154.0)));
         t.setActualPnl(1000.0);
         t.setLots(10);
         return t;
@@ -166,17 +172,16 @@ class ComputeUtilBookAccountingTest {
 
     private static Position monthlyTrade(double entry, double exit) {
         Position t = new Position();
-        t.setBook(LONG_MONTHLY);
         t.setDirection(LONG);
         t.setEntrySpot(entry);
         t.setBaselineSpot(entry);
+        t.setMonthlyBaselineSpot(entry);
         t.setExitSpot(exit);
         return t;
     }
 
     private static Position weeklyTrade(double entry, double exit) {
         Position t = new Position();
-        t.setBook(SYNTH_WEEKLY);
         t.setDirection(LONG);
         t.setEntrySpot(entry);
         t.setBaselineSpot(entry);
@@ -184,11 +189,12 @@ class ComputeUtilBookAccountingTest {
         return t;
     }
 
-    private static WeeklyLeg closedLeg(String instrument, String side, int qty, int lots,
+    private static WeeklyLeg closedLeg(String instrument, String book, String side, int qty, int lots,
             double openPrice, double closePrice) {
         WeeklyLeg w = new WeeklyLeg();
         w.setInstrument(instrument);
         w.setExchangeSymbol("NFO:" + instrument);
+        w.setBook(book);
         w.setSide(side);
         w.setMoneyness("ATM");
         w.setQuantity(qty);

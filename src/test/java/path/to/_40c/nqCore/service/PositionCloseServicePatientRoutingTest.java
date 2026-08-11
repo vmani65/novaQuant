@@ -105,10 +105,9 @@ class PositionCloseServicePatientRoutingTest {
     }
 
     @Test
-    @DisplayName("signal close falling back to a PARTIAL position stays AGGRESSIVE — it's an orphan flatten in disguise")
-    void partialFallbackInsideSignalCloseStaysAggressive() {
-        when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(null);
-        when(util.findPartialTradesWithLiveOrderBooks(LONG_MONTHLY))
+    @DisplayName("signal close landing on a PARTIAL row stays AGGRESSIVE — it's an orphan flatten in disguise")
+    void partialRowInsideSignalCloseStaysAggressive() {
+        when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY))
                 .thenReturn(position(LONG_MONTHLY, PARTIAL, MONTHLY_INS));
 
         service.closeMonthlyTrade("24600", signal(), true);
@@ -121,12 +120,12 @@ class PositionCloseServicePatientRoutingTest {
         WeeklyLeg leg = new WeeklyLeg();
         leg.setInstrument(instrument);
         leg.setExchangeSymbol("NFO:" + instrument);
+        leg.setBook(book);
         leg.setSide(BUY);
         leg.setQuantity(130);
         leg.setLots(2);
         leg.setStatus(LIVE);
         Position p = new Position();
-        p.setBook(book);
         p.setStatus(status);
         p.setLegs(List.of(leg));
         return p;

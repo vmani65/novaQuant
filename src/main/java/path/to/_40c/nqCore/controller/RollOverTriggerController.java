@@ -87,10 +87,11 @@ public class RollOverTriggerController {
 
     /**
      * Called by nQTicker OpenBufferConsumer when the 9:15 AM open buffer fires.
-     * Closes the trade directly — no 9:15 AM check, no re-delegation to nQTicker.
+     * Closes BOTH books directly at nQTicker's live price — no 9:15 AM check, no
+     * re-delegation to nQTicker.
      *
      * This is the second leg of the open buffer flow:
-     *   AFL longExit → nqCore detects 9:15 → arms nQTicker buffer
+     *   AFL longExit → nqCore detects 9:15 → arms nQTicker buffer (neither book closes yet)
      *   → nQTicker fires this endpoint when target hit or 09:28:59 deadline reached
      *
      * Example: GET /api/execute-close?currentPrice=22463.5

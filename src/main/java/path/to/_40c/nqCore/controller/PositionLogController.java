@@ -1,5 +1,6 @@
 package path.to._40c.nqCore.controller;
 
+import java.util.Comparator;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -13,6 +14,8 @@ import org.springframework.web.bind.annotation.ResponseBody;
 import path.to._40c.nqCore.entity.BaseLegEntity;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.util.Constants;
+import path.to._40c.nqCore.util.LegScope;
 
 @Controller
 public class PositionLogController {
@@ -37,10 +40,17 @@ public class PositionLogController {
                 .collect(Collectors.toList());
     }
 
+    /**
+     * One map per signal-position. "books" lists the distinct books that traded the signal
+     * (derived from the legs, weekly first) — the row itself no longer has a single book.
+     */
     private Map<String, Object> toMap(Position t) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", t.getId());
-        m.put("book", t.getBook());
+        m.put("books", t.getLegs().stream()
+                .map(LegScope::bookOf).distinct()
+                .sorted(Comparator.comparing(b -> Constants.SYNTH_WEEKLY.equals(b) ? 0 : 1))
+                .collect(Collectors.toList()));
         m.put("signalAt", t.getSignalAt());
         m.put("openedAt", t.getOpenedAt());
         m.put("closedAt", t.getClosedAt());
@@ -57,6 +67,8 @@ public class PositionLogController {
         m.put("lots", t.getLots());
         m.put("baselineSpot", t.getBaselineSpot());
         m.put("bankedPoints", t.getBankedPoints());
+        m.put("monthlyBaselineSpot", t.getMonthlyBaselineSpot());
+        m.put("monthlyBankedPoints", t.getMonthlyBankedPoints());
         m.put("strategyName", t.getStrategyName());
         m.put("startingCapital", t.getStartingCapital());
         m.put("endingCapital", t.getEndingCapital());
@@ -69,6 +81,7 @@ public class PositionLogController {
     private Map<String, Object> childToMap(BaseLegEntity c) {
         Map<String, Object> m = new LinkedHashMap<>();
         m.put("id", c.getId());
+        m.put("book", c.getBook());
         m.put("openSpreadPaid", c.getOpenSpreadPaid());
         m.put("closeSpreadPaid", c.getCloseSpreadPaid());
         m.put("exchangeSymbol", c.getExchangeSymbol());

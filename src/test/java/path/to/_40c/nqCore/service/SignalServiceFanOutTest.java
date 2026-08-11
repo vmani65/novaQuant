@@ -48,8 +48,8 @@ class SignalServiceFanOutTest {
     private MonthlySymbolService monthlySymbolService;
     private SignalService service;
 
-    private final Position weeklyLive = livePosition(SYNTH_WEEKLY);
-    private final Position monthlyLive = livePosition(LONG_MONTHLY);
+    private final Position weeklyLive = livePosition(1L);
+    private final Position monthlyLive = livePosition(2L);
 
     @BeforeEach
     void setUp() {
@@ -229,14 +229,79 @@ class SignalServiceFanOutTest {
         assertThat(service.handleMonthlyRollOver("24501")).isFalse();
     }
 
+    @Test
+    @DisplayName("ONE position per signal: both books' opens receive the SAME Position instance")
+    void entryFanOutSharesOneRow() {
+        org.mockito.ArgumentCaptor<Position> weeklyArg = org.mockito.ArgumentCaptor.forClass(Position.class);
+        org.mockito.ArgumentCaptor<Position> monthlyArg = org.mockito.ArgumentCaptor.forClass(Position.class);
+
+        service.handleTradeOpen("24500", CE, signal("longEntry"));
+
+        verify(openingService).openWeeklyTrade(eq("24500"), eq(CE), weeklyArg.capture());
+        verify(openingService).openMonthlyTrade(eq("24500"), eq(CE), monthlyArg.capture());
+        assertThat(weeklyArg.getValue()).isSameAs(monthlyArg.getValue());
+    }
+
+    @Test
+    @DisplayName("ONE position per signal: the flip's weekly prep and monthly open share the new row")
+    void flipFanOutSharesOneNewRow() {
+        org.mockito.ArgumentCaptor<Position> prepArg = org.mockito.ArgumentCaptor.forClass(Position.class);
+        org.mockito.ArgumentCaptor<Position> monthlyArg = org.mockito.ArgumentCaptor.forClass(Position.class);
+
+        service.handleFlip("24500", CE, signal("flip"));
+
+        verify(openingService).prepareWeeklyOpen(eq("24500"), eq(CE), prepArg.capture());
+        verify(openingService).openMonthlyTrade(eq("24500"), eq(CE), monthlyArg.capture());
+        assertThat(prepArg.getValue()).isSameAs(monthlyArg.getValue());
+    }
+
+    @Test
+    @DisplayName("post-trade runs ONCE per row: both books closing the same row triggers a single afterClose")
+    void sharedClosedRowGetsOneAfterClose() {
+        Position sharedRow = livePosition(7L);
+        when(closingService.closeWeeklyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(sharedRow);
+        when(closingService.closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(sharedRow);
+
+        service.handleTradeClose("24500", "PE", signal("shortExit"));
+
+        verify(postTradeService, org.mockito.Mockito.times(1)).afterClose(sharedRow);
+    }
+
+    @Test
+    @DisplayName("open-buffer callback closes BOTH books at nQTicker's price, post-trade once per shared row")
+    void executeCloseImmediateClosesBothBooks() {
+        Position sharedRow = livePosition(9L);
+        when(closingService.closeWeeklyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(sharedRow);
+        when(closingService.closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(sharedRow);
+
+        service.executeCloseImmediate("24621");
+
+        verify(closingService).closeWeeklyTrade(eq("24621"), any(Signal.class), eq(true));
+        verify(closingService).closeMonthlyTrade(eq("24621"), any(Signal.class), eq(true));
+        verify(postTradeService, org.mockito.Mockito.times(1)).afterClose(sharedRow);
+    }
+
+    @Test
+    @DisplayName("open-buffer callback isolates a weekly failure: the monthly book still closes")
+    void executeCloseImmediateIsolatesWeeklyFailure() {
+        when(closingService.closeWeeklyTrade(anyString(), any(Signal.class), anyBoolean()))
+                .thenThrow(new RuntimeException("kite down"));
+        when(closingService.closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(monthlyLive);
+
+        service.executeCloseImmediate("24621");
+
+        verify(closingService).closeMonthlyTrade(eq("24621"), any(Signal.class), eq(true));
+        verify(postTradeService).afterClose(monthlyLive);
+    }
+
     private static Signal signal(String action) {
         return new Signal("RIDETHETIDE", action, action.startsWith("short") ? "PE" : CE, "07-Aug-2026 10.30.00 AM", "24500");
     }
 
-    private static Position livePosition(String book) {
+    private static Position livePosition(long id) {
         Position p = new Position();
-        p.setBook(book);
         p.setStatus(LIVE);
+        org.springframework.test.util.ReflectionTestUtils.setField(p, "id", id);
         return p;
     }
 }

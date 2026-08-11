@@ -39,10 +39,10 @@ import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 /**
  * Business rules of the book-aware open path:
- * - openWeeklyTrade stamps the position SYNTH_WEEKLY and builds via the weekly slot;
- *   openMonthlyTrade stamps LONG_MONTHLY and builds via the monthly slot — the stamp is
- *   what every book-scoped query filters on, so a wrong/missing stamp would let one book
- *   close the other's position.
+ * - openWeeklyTrade opens weekly-booked legs via the weekly slot; openMonthlyTrade opens
+ *   the LONG_MONTHLY-booked leg via the monthly slot — the leg's BOOK stamp is what every
+ *   book-scoped operation filters on, so a wrong/missing stamp would let one book close
+ *   the other's legs on the shared row.
  * - PENDING_OPEN producer (trade-73 class, open side): an entry order that finishes its
  *   confirm budget in a NON-terminal state must park the leg as PENDING_OPEN with the
  *   orderId retained — never terminally FAILED, because a late fill would then be an
@@ -79,7 +79,7 @@ class PositionOpenServiceBookTest {
 
         Position saved = service.openWeeklyTrade("24500", "CE", new Position());
 
-        assertThat(saved.getBook()).isEqualTo(SYNTH_WEEKLY);
+        assertThat(saved.getLegs()).allSatisfy(l -> assertThat(l.getBook()).isEqualTo(SYNTH_WEEKLY));
         assertThat(saved.getDirection()).isEqualTo(LONG);
         assertThat(saved.getStatus()).isEqualTo(LIVE);
         assertThat(saved.getLegs()).hasSize(2);
@@ -88,16 +88,16 @@ class PositionOpenServiceBookTest {
     }
 
     @Test
-    @DisplayName("openMonthlyTrade stamps LONG_MONTHLY and opens the single bought leg via the monthly build")
+    @DisplayName("openMonthlyTrade stamps LONG_MONTHLY on the leg and opens it via the monthly build")
     void monthlyOpenStampsBookAndUsesMonthlyBuild() {
-        LegOrder leg = legOrder(MONTHLY_INS, BUY, 2);
+        LegOrder leg = legOrder(MONTHLY_INS, LONG_MONTHLY, BUY, 2);
         when(compute.buildMonthlyInstrument(eq("24500"), any(Position.class))).thenReturn(List.of(leg));
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + MONTHLY_INS, new Quote()));
         stubFill(MONTHLY_INS, "M-OPEN-1", 2 * LOT_SIZE, Constants.ORDER_COMPLETE);
 
         Position saved = service.openMonthlyTrade("24500", "CE", new Position());
 
-        assertThat(saved.getBook()).isEqualTo(LONG_MONTHLY);
+        assertThat(saved.getLegs().get(0).getBook()).isEqualTo(LONG_MONTHLY);
         assertThat(saved.getStatus()).isEqualTo(LIVE);
         assertThat(saved.getLegs()).hasSize(1);
         assertThat(saved.getLegs().get(0).getQuantity()).isEqualTo(2 * LOT_SIZE);
@@ -107,7 +107,7 @@ class PositionOpenServiceBookTest {
     @Test
     @DisplayName("entry order still OPEN after the confirm budget → leg + position PENDING_OPEN, orderId retained")
     void unconfirmedWorkingEntryBecomesPendingOpen() {
-        LegOrder leg = legOrder(MONTHLY_INS, BUY, 10);
+        LegOrder leg = legOrder(MONTHLY_INS, LONG_MONTHLY, BUY, 10);
         when(compute.buildMonthlyInstrument(anyString(), any(Position.class))).thenReturn(List.of(leg));
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + MONTHLY_INS, new Quote()));
         stubExec(MONTHLY_INS, new ExecResult("M-OPEN-1", 0, QTY, 0.0, false, "OPEN"));
@@ -125,7 +125,7 @@ class PositionOpenServiceBookTest {
     @Test
     @DisplayName("definitively REJECTED entry still fails terminally — PENDING_OPEN is only for possibly-live orders")
     void rejectedEntryStillFailsTerminally() {
-        LegOrder leg = legOrder(MONTHLY_INS, BUY, 10);
+        LegOrder leg = legOrder(MONTHLY_INS, LONG_MONTHLY, BUY, 10);
         when(compute.buildMonthlyInstrument(anyString(), any(Position.class))).thenReturn(List.of(leg));
         when(util.getQuote(any(String[].class))).thenReturn(Map.of("NFO:" + MONTHLY_INS, new Quote()));
         stubExec(MONTHLY_INS, new ExecResult("", 0, QTY, 0.0, false, Constants.ORDER_REJECTED));
@@ -163,7 +163,7 @@ class PositionOpenServiceBookTest {
     }
 
     private void stubWeeklyPair() {
-        List<LegOrder> pair = List.of(legOrder(CE_INS, BUY, 10), legOrder(PE_INS, SELL, 10));
+        List<LegOrder> pair = List.of(legOrder(CE_INS, SYNTH_WEEKLY, BUY, 10), legOrder(PE_INS, SYNTH_WEEKLY, SELL, 10));
         when(compute.buildWeeklyInstrument(anyString(), any(Position.class))).thenReturn(pair);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of(
                 "NFO:" + CE_INS, new Quote(), "NFO:" + PE_INS, new Quote()));
@@ -177,10 +177,11 @@ class PositionOpenServiceBookTest {
         when(util.placeAggressiveOrder(any(), eq(instrument), anyString(), anyInt(), anyString())).thenReturn(er);
     }
 
-    private static LegOrder legOrder(String instrument, String side, int lots) {
+    private static LegOrder legOrder(String instrument, String book, String side, int lots) {
         LegOrder w = new LegOrder();
         w.setInstrument(instrument);
         w.setExchangeSymbol("NFO:" + instrument);
+        w.setBook(book);
         w.setSide(side);
         w.setLots(lots);
         w.setMoneyness("ATM");

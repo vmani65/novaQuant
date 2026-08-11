@@ -34,13 +34,12 @@ import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
 /**
- * The core two-book audit BLOCKER, pinned at the closing-service level: before this
- * change the close path selected THE latest LIVE position bookless, so with two books
- * live a monthly close would grab and flatten the weekly synthetic (or vice versa).
- * Each public close method may only ever ask the position finder for ITS OWN book —
- * the other book's LIVE position must be structurally unreachable from here. Also pins
- * that a close finding nothing (the disabled-dormant or never-opened case) is a clean
- * no-op rather than an error.
+ * The core book-isolation invariant under one-position-per-signal: both books' legs live
+ * on the SAME row, so a book's close must select only ITS OWN legs — the other book's
+ * legs on the shared row are untouchable, and the row's status stays LIVE (roll-up) until
+ * the last book closes. Also pins that a close finding nothing (the disabled-dormant or
+ * never-opened case) is a clean no-op, and that the orphan sweep only ever asks the
+ * finder for its own book.
  */
 class PositionCloseServiceBookIsolationTest {
 
@@ -49,8 +48,9 @@ class PositionCloseServiceBookIsolationTest {
 
     private PositionUtil util;
     private PositionCloseService service;
-    private Position weeklyLive;
-    private Position monthlyLive;
+    private Position shared;
+    private WeeklyLeg weeklyLeg;
+    private WeeklyLeg monthlyLeg;
 
     @BeforeEach
     void setUp() {
@@ -62,10 +62,13 @@ class PositionCloseServiceBookIsolationTest {
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
         when(compute.getDtTimeNow()).thenReturn("07-08-2026 10:30:00.000");
 
-        weeklyLive = position(SYNTH_WEEKLY, WEEKLY_CE);
-        monthlyLive = position(LONG_MONTHLY, MONTHLY_CE);
-        when(util.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY)).thenReturn(weeklyLive);
-        when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(monthlyLive);
+        weeklyLeg = leg(WEEKLY_CE, SYNTH_WEEKLY);
+        monthlyLeg = leg(MONTHLY_CE, LONG_MONTHLY);
+        shared = new Position();
+        shared.setStatus(LIVE);
+        shared.setLegs(List.of(weeklyLeg, monthlyLeg));
+        when(util.findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY)).thenReturn(shared);
+        when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(shared);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of(
                 "NFO:" + WEEKLY_CE, new Quote(), "NFO:" + MONTHLY_CE, new Quote()));
         when(util.placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString(), any(ExecMode.class)))
@@ -73,39 +76,54 @@ class PositionCloseServiceBookIsolationTest {
     }
 
     @Test
-    @DisplayName("closeWeeklyTrade closes the weekly position and never even looks at the monthly book")
-    void weeklyCloseTouchesOnlyWeeklyBook() {
+    @DisplayName("closeWeeklyTrade closes ONLY the weekly leg; the monthly leg on the shared row stays LIVE and so does the row")
+    void weeklyCloseTouchesOnlyWeeklyLegs() {
         Position closed = service.closeWeeklyTrade("24600", signal(), true);
 
-        assertThat(closed).isSameAs(weeklyLive);
-        assertThat(closed.getStatus()).isEqualTo(CLOSED);
-        assertThat(monthlyLive.getStatus()).as("monthly book untouched").isEqualTo(LIVE);
-        verify(util).findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY);
+        assertThat(closed).isSameAs(shared);
+        assertThat(weeklyLeg.getStatus()).isEqualTo(CLOSED);
+        assertThat(monthlyLeg.getStatus()).as("monthly leg untouched").isEqualTo(LIVE);
+        assertThat(closed.getStatus()).as("row stays LIVE while the monthly leg is open").isEqualTo(LIVE);
+        assertThat(closed.getClosedAt()).as("closedAt deferred to the last book").isNull();
+        verify(util).placeAggressiveOrder(any(), org.mockito.ArgumentMatchers.eq(WEEKLY_CE), anyString(), anyInt(), anyString(), any(ExecMode.class));
+        verify(util, never()).placeAggressiveOrder(any(), org.mockito.ArgumentMatchers.eq(MONTHLY_CE), anyString(), anyInt(), anyString(), any(ExecMode.class));
         verify(util, never()).findLiveTradesWithLiveOrderBooks(LONG_MONTHLY);
     }
 
     @Test
-    @DisplayName("closeMonthlyTrade closes the monthly position and never even looks at the weekly book")
-    void monthlyCloseTouchesOnlyMonthlyBook() {
+    @DisplayName("closeMonthlyTrade closes ONLY the monthly leg; the weekly leg stays LIVE")
+    void monthlyCloseTouchesOnlyMonthlyLegs() {
         Position closed = service.closeMonthlyTrade("24600", signal(), true);
 
-        assertThat(closed).isSameAs(monthlyLive);
-        assertThat(closed.getStatus()).isEqualTo(CLOSED);
-        assertThat(weeklyLive.getStatus()).as("weekly book untouched").isEqualTo(LIVE);
-        verify(util).findLiveTradesWithLiveOrderBooks(LONG_MONTHLY);
+        assertThat(closed).isSameAs(shared);
+        assertThat(monthlyLeg.getStatus()).isEqualTo(CLOSED);
+        assertThat(weeklyLeg.getStatus()).as("weekly leg untouched").isEqualTo(LIVE);
+        assertThat(closed.getStatus()).isEqualTo(LIVE);
+        verify(util, never()).placeAggressiveOrder(any(), org.mockito.ArgumentMatchers.eq(WEEKLY_CE), anyString(), anyInt(), anyString(), any(ExecMode.class));
         verify(util, never()).findLiveTradesWithLiveOrderBooks(SYNTH_WEEKLY);
     }
 
     @Test
-    @DisplayName("a book with nothing open closes as a clean no-op even while the OTHER book has a LIVE position")
-    void closeWithNoPositionInOwnBookIsNoOp() {
+    @DisplayName("the LAST book's close makes the shared row CLOSED with closedAt stamped")
+    void lastBookCloseMakesRowTerminal() {
+        service.closeWeeklyTrade("24600", signal(), true);
+        Position closed = service.closeMonthlyTrade("24600", signal(), true);
+
+        assertThat(weeklyLeg.getStatus()).isEqualTo(CLOSED);
+        assertThat(monthlyLeg.getStatus()).isEqualTo(CLOSED);
+        assertThat(closed.getStatus()).isEqualTo(CLOSED);
+        assertThat(closed.getClosedAt()).isEqualTo("07-08-2026 10:30:00.000");
+    }
+
+    @Test
+    @DisplayName("a book with no live legs closes as a clean no-op even while the other book is LIVE on the row")
+    void closeWithNoLegsInOwnBookIsNoOp() {
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(null);
-        when(util.findPartialTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(null);
 
         Position closed = service.closeMonthlyTrade("24600", signal(), true);
 
         assertThat(closed).isNull();
-        assertThat(weeklyLive.getStatus()).isEqualTo(LIVE);
+        assertThat(weeklyLeg.getStatus()).isEqualTo(LIVE);
         verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString(), any(ExecMode.class));
     }
 
@@ -121,19 +139,16 @@ class PositionCloseServiceBookIsolationTest {
         verify(util, never()).findPartialTradesWithLiveOrderBooks(LONG_MONTHLY);
     }
 
-    private static Position position(String book, String instrument) {
+    private static WeeklyLeg leg(String instrument, String book) {
         WeeklyLeg leg = new WeeklyLeg();
         leg.setInstrument(instrument);
         leg.setExchangeSymbol("NFO:" + instrument);
+        leg.setBook(book);
         leg.setSide(BUY);
         leg.setQuantity(650);
         leg.setLots(10);
         leg.setStatus(LIVE);
-        Position p = new Position();
-        p.setBook(book);
-        p.setStatus(LIVE);
-        p.setLegs(List.of(leg));
-        return p;
+        return leg;
     }
 
     private static Signal signal() {

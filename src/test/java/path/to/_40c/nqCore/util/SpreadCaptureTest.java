@@ -104,6 +104,7 @@ class SpreadCaptureTest {
         LegOrder leg = new LegOrder();
         leg.setInstrument(INS);
         leg.setExchangeSymbol("NFO:" + INS);
+        leg.setBook(LONG_MONTHLY);
         leg.setSide(BUY);
         leg.setLots(2);
         leg.setMoneyness("ATM");
@@ -127,12 +128,12 @@ class SpreadCaptureTest {
         WeeklyLeg leg = new WeeklyLeg();
         leg.setInstrument(INS);
         leg.setExchangeSymbol("NFO:" + INS);
+        leg.setBook(LONG_MONTHLY);
         leg.setSide(BUY);
         leg.setQuantity(130);
         leg.setLots(2);
         leg.setStatus(LIVE);
         Position monthly = new Position();
-        monthly.setBook(LONG_MONTHLY);
         monthly.setStatus(LIVE);
         monthly.setLegs(List.of(leg));
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(monthly);

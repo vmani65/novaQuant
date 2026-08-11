@@ -20,6 +20,7 @@ import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -61,9 +62,10 @@ public class ProfitRecenterService {
     }
 
     /**
-     * Re-centres the SYNTH_WEEKLY book's live trade at the new ATM — hard book fence from
-     * the two-book audit: without it a +500-pt trigger would close a LONG_MONTHLY leg and
-     * reopen it as a weekly. Aborts (no orders) if the effective profit from the
+     * Re-centres the SYNTH_WEEKLY legs at the new ATM — the book fence is leg-structural:
+     * only legs with BOOK=SYNTH_WEEKLY on the shared row are closed and re-struck, so a
+     * +500-pt trigger can never close a LONG_MONTHLY leg and reopen it as a weekly.
+     * Aborts (no orders) if the effective profit from the
      * current baselineSpot is below RECENTER_MIN_PROFIT — a backstop against a corrupt/stale baseline,
      * bad currentPrice, or duplicate fire, since nQTicker's liquidity gate can't be re-checked here.
      * On pass: banks the closed segment's points (measured from baselineSpot) into bankedPoints,
@@ -91,7 +93,8 @@ public class ProfitRecenterService {
         }
 
         Instant closeStart = Instant.now();
-        String[] liveSymbols = trade.getLegs().stream()
+        List<WeeklyLeg> weeklyLegs = LegScope.of(trade, SYNTH_WEEKLY);
+        String[] liveSymbols = weeklyLegs.stream()
                 .map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
 
         Map<String, Quote> quotesClose = positionUtil.getQuote(liveSymbols);
@@ -101,7 +104,7 @@ public class ProfitRecenterService {
         }
 
         AtomicBoolean allClosed = new AtomicBoolean(true);
-        List<WeeklyLeg> legsBeingClosed = new ArrayList<>(trade.getLegs());
+        List<WeeklyLeg> legsBeingClosed = new ArrayList<>(weeklyLegs);
 
         List<CompletableFuture<Void>> closeFuts = legsBeingClosed.stream()
             .map(leg -> CompletableFuture.runAsync(() -> {
@@ -114,7 +117,7 @@ public class ProfitRecenterService {
                         leg.setSellIntendedPrice(q.lastPrice);
                 }
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(q, leg.getInstrument(), opposite, leg.getQuantity(), "EXIT");
+                    ExecResult er = positionUtil.placeAggressiveOrder(q, leg.getInstrument(), opposite, leg.getQuantity(), EXIT);
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         leg.setCloseOrderId(er.aggregateOrderIds());
                     }
@@ -164,7 +167,12 @@ public class ProfitRecenterService {
             log.error("realizeProfits: quote map empty for open leg — close already executed, manual intervention needed");
             long abortOpenMs = Duration.between(openStart, Instant.now()).toMillis();
             log.info("[PERFORMANCE] recenter | close={}ms | open={}ms | total={}ms (aborted at open quote)", closeMs, abortOpenMs, closeMs + abortOpenMs);
-            positionRepository.save(trade);
+            trade.setStatus(LegScope.rollUpStatus(trade));
+            Position aborted = positionRepository.save(trade);
+            if (LegScope.isTerminal(aborted)) {
+                log.error("Recenter closed the weekly legs but opened nothing — position id={} is terminal; running post-close accounting", aborted.getId());
+                postTradeService.afterClose(aborted);
+            }
             return;
         }
 
@@ -172,7 +180,7 @@ public class ProfitRecenterService {
             .map(pojo -> CompletableFuture.runAsync(() -> {
                 int totalQty = pojo.getLots() * LOT_SIZE;
                 try {
-                    ExecResult er = positionUtil.placeAggressiveOrder(quotesOpen.get(pojo.getExchangeSymbol()), pojo.getInstrument(), pojo.getSide(), totalQty, "ENTRY");
+                    ExecResult er = positionUtil.placeAggressiveOrder(quotesOpen.get(pojo.getExchangeSymbol()), pojo.getInstrument(), pojo.getSide(), totalQty, ENTRY);
                     if (er.aggregateOrderIds() != null && !er.aggregateOrderIds().isEmpty()) {
                         pojo.setOpenOrderId(er.aggregateOrderIds());
                     }
@@ -194,6 +202,7 @@ public class ProfitRecenterService {
         List<WeeklyLeg> newChildren = new ArrayList<>();
         newLegs.forEach(pojo -> {
             WeeklyLeg b = new WeeklyLeg();
+            b.setBook(pojo.getBook());
             b.setInstrument(pojo.getInstrument());
             b.setExchangeSymbol(pojo.getExchangeSymbol());
             b.setSide(pojo.getSide());
@@ -217,10 +226,16 @@ public class ProfitRecenterService {
 
         accumulateExecPrices(newChildren, false);
 
+        trade.setStatus(LegScope.rollUpStatus(trade));
         Position saved = positionRepository.save(trade);
         log.info("realizeProfits complete | tradeId={} bankedPoints={} newBaseline={}",
                 saved.getId(), saved.getBankedPoints(), saved.getBaselineSpot());
 
+        if (LegScope.isTerminal(saved)) {
+            log.error("Recenter closed the weekly legs but none of the new legs went LIVE — position id={} is terminal; running post-close accounting", saved.getId());
+            postTradeService.afterClose(saved);
+            return;
+        }
         postTradeService.afterOpen(saved);
     }
 

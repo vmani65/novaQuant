@@ -5,6 +5,7 @@ import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LOT_SIZE;
 import static path.to._40c.nqCore.util.Constants.PARTIAL;
 import static path.to._40c.nqCore.util.Constants.PENDING_CLOSE;
+import static path.to._40c.nqCore.util.Constants.UNKNOWN;
 
 import java.util.List;
 import java.util.Map;
@@ -18,6 +19,7 @@ import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.CloseOrderState;
 
@@ -84,7 +86,7 @@ public class PendingCloseReconciler {
     private synchronized void reconcileAll(boolean flatten) {
         List<Position> pendings;
         try {
-            pendings = positionRepository.findByStatus(PENDING_CLOSE);
+            pendings = positionRepository.findByLegStatus(PENDING_CLOSE);
         } catch (Exception e) {
             log.error("PENDING_CLOSE lookup failed — will retry next pass", e);
             return;
@@ -99,34 +101,36 @@ public class PendingCloseReconciler {
     }
 
     private void reconcilePosition(Position p, boolean flatten) {
+        boolean revivedAny = false;
         for (WeeklyLeg w : p.getLegs()) {
             if (PENDING_CLOSE.equals(w.getStatus())) {
-                resolveLeg(p, w, flatten);
+                revivedAny |= resolveLeg(p, w, flatten);
             }
         }
-        finalizePosition(p);
+        finalizePosition(p, revivedAny);
     }
 
-    private void resolveLeg(Position p, WeeklyLeg w, boolean flatten) {
+    /** Resolves one pending leg; returns true when the leg was revived to LIVE as an orphan. */
+    private boolean resolveLeg(Position p, WeeklyLeg w, boolean flatten) {
         String orderIds = w.getCloseOrderId();
         int qty = w.getQuantity() != null ? w.getQuantity() : 0;
         if (orderIds == null || orderIds.isBlank() || qty <= 0) {
             log.error("PENDING_CLOSE leg id={} ({}) has no close orderId/qty — treating as never closed", w.getId(), w.getInstrument());
-            markOrphan(p, w, new CloseOrderState(0, 0.0, "UNKNOWN"), qty);
-            return;
+            markOrphan(p, w, new CloseOrderState(0, 0.0, UNKNOWN), qty);
+            return true;
         }
         CloseOrderState s = positionUtil.readCloseOrderState(orderIds);
         if (s.tradedQty() >= qty) {
             markLegClosed(p, w, s);
-            return;
+            return false;
         }
         if (PositionUtil.isTerminalStatus(s.lastStatus())) {
             markOrphan(p, w, s, qty);
-            return;
+            return true;
         }
         if (!flatten) {
             trackStillWorking(p, w, s, qty);
-            return;
+            return false;
         }
         log.warn("PENDING_CLOSE trade id={} leg {} — close order {} still {} at signal time; cancelling before re-entry",
                 p.getId(), w.getInstrument(), orderIds, s.lastStatus());
@@ -134,9 +138,10 @@ public class PendingCloseReconciler {
         CloseOrderState settled = positionUtil.confirmCloseOrderSettled(orderIds);
         if (settled.tradedQty() >= qty) {
             markLegClosed(p, w, settled);
-        } else {
-            markOrphan(p, w, settled, qty);
+            return false;
         }
+        markOrphan(p, w, settled, qty);
+        return true;
     }
 
     /**
@@ -146,7 +151,7 @@ public class PendingCloseReconciler {
      * has stopped serving the order id.
      */
     private void trackStillWorking(Position p, WeeklyLeg w, CloseOrderState s, int qty) {
-        if (!"UNKNOWN".equals(s.lastStatus())) {
+        if (!UNKNOWN.equals(s.lastStatus())) {
             unknownTicks.remove(w.getId());
             log.info("PENDING_CLOSE trade id={} leg {} — close order {} still {} ({}/{} filled), waiting",
                     p.getId(), w.getInstrument(), w.getCloseOrderId(), s.lastStatus(), s.tradedQty(), qty);
@@ -194,31 +199,33 @@ public class PendingCloseReconciler {
     }
 
     /**
-     * Settles the position from its legs' now-known states: no pending and no live legs → the
-     * close is complete, so the position finally CLOSEs and post-close calc (fill prices, P&L,
-     * capital chain) runs — the step the old terminal-FAILED path skipped, leaving trade 73 at
-     * zero P&L. Any leg back at LIVE → PARTIAL for the orphan machinery. Legs still pending →
-     * stay PENDING_CLOSE for the next pass.
+     * Settles the position from its legs' now-known states. Legs still pending → stay for
+     * the next pass. A leg revived to LIVE as an orphan → the row is stamped PARTIAL
+     * explicitly (the roll-up alone cannot tell a revived orphan from the other book's
+     * healthy live legs on the shared row), and the orphan machinery flattens on the next
+     * signal. Otherwise the roll-up decides: terminal → post-close calc (fill prices, P&L,
+     * the signal's single capital step) finally runs — the step the old terminal-FAILED
+     * path skipped, leaving trade 73 at zero P&L; still LIVE on the other book's legs →
+     * enrichment now, accounting deferred until that book closes.
      */
-    private void finalizePosition(Position p) {
+    private void finalizePosition(Position p, boolean revivedAny) {
         boolean anyPending = p.getLegs().stream().anyMatch(w -> PENDING_CLOSE.equals(w.getStatus()));
-        boolean anyLive = p.getLegs().stream().anyMatch(w -> LIVE.equals(w.getStatus()));
         if (anyPending) {
             positionRepository.save(p);
             return;
         }
-        if (anyLive) {
+        if (revivedAny) {
             p.setStatus(PARTIAL);
             positionRepository.save(p);
             log.warn("PENDING_CLOSE trade id={} downgraded to PARTIAL — orphan legs will be flattened on the next signal", p.getId());
             return;
         }
-        p.setStatus(CLOSED);
-        if (p.getClosedAt() == null) {
+        p.setStatus(LegScope.rollUpStatus(p));
+        if (LegScope.isTerminal(p) && p.getClosedAt() == null) {
             p.setClosedAt(computeUtil.getDtTimeNow());
         }
         Position saved = positionRepository.save(p);
-        log.info("PENDING_CLOSE trade id={} fully reconciled — position CLOSED, running post-close calc", p.getId());
+        log.info("PENDING_CLOSE trade id={} reconciled — position {}, running post-close pass", p.getId(), saved.getStatus());
         postTradeService.afterClose(saved);
     }
 }

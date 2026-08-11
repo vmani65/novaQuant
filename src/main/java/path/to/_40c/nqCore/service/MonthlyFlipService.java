@@ -2,8 +2,10 @@ package path.to._40c.nqCore.service;
 
 import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_COMPLETE;
 import static path.to._40c.nqCore.util.Constants.BUY;
+import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.LOT_SIZE;
+import static path.to._40c.nqCore.util.Constants.PARTIAL;
 import static path.to._40c.nqCore.util.Constants.SELL;
 
 import java.util.ArrayList;
@@ -22,6 +24,7 @@ import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.service.PositionOpenService.OpenPrep;
 import path.to._40c.nqCore.util.ExecMode;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -87,30 +90,33 @@ public class MonthlyFlipService {
     }
 
     /**
-     * Runs the interleaved flip. Returns null when the held position's shape can't be
-     * interleaved (multi-leg — caller falls back to the legacy flip), and FlipOutcome(null,null)
-     * when aborted pre-execution with the held position fully intact (dead quotes). The target
-     * leg is prepared and quoted BEFORE any close order is placed, so an unconfigured monthly
-     * book can never strand a half-closed flip.
+     * Runs the interleaved flip against the signal's shared row (newTrade — created by the
+     * fan-out, the weekly legs may already sit on it). Returns null when the held book's
+     * shape can't be interleaved (more than one LONG_MONTHLY leg — caller falls back to the
+     * legacy flip), and FlipOutcome(null,null) when aborted pre-execution with the held
+     * position fully intact (dead quotes). Only the held row's LONG_MONTHLY legs are
+     * considered — its weekly legs belong to the other book and are untouchable here. The
+     * target leg is prepared and quoted BEFORE any close order is placed, so an unconfigured
+     * monthly book can never strand a half-closed flip.
      */
-    public FlipOutcome flip(String signalPrice, String type, Signal signal) {
+    public FlipOutcome flip(String signalPrice, String type, Signal signal, Position newTrade) {
         pendingCloseReconciler.resolveBeforeSignal();
         pendingOpenReconciler.resolveBeforeSignal();
         Position held = positionUtil.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY);
-        if (held == null || held.getLegs() == null || held.getLegs().isEmpty()) {
-            log.info("interleaved flip: no LIVE LONG_MONTHLY position — plain open path");
+        List<WeeklyLeg> heldMonthlyLegs = held != null ? LegScope.of(held, LONG_MONTHLY) : List.of();
+        if (held == null || heldMonthlyLegs.isEmpty()) {
+            log.info("interleaved flip: no LIVE LONG_MONTHLY legs — plain open path");
             Position orphanClosed = closingService.closeMonthlyOrphanIfAny(signalPrice, signal);
-            Position opened = openingService.openMonthlyTrade(signalPrice, type, new Position(signal));
+            Position opened = openingService.openMonthlyTrade(signalPrice, type, newTrade);
             return new FlipOutcome(orphanClosed, opened);
         }
-        if (held.getLegs().size() > 1) {
-            log.warn("interleaved flip: LONG_MONTHLY trade id={} unexpectedly has {} legs — legacy flip path",
-                    held.getId(), held.getLegs().size());
+        if (heldMonthlyLegs.size() > 1) {
+            log.warn("interleaved flip: trade id={} unexpectedly has {} LONG_MONTHLY legs — legacy flip path",
+                    held.getId(), heldMonthlyLegs.size());
             return null;
         }
-        WeeklyLeg heldLeg = held.getLegs().get(0);
+        WeeklyLeg heldLeg = heldMonthlyLegs.get(0);
 
-        Position newTrade = new Position(signal);
         OpenPrep prep = openingService.prepareMonthlyOpen(signalPrice, type, newTrade);
         LegOrder target = prep.pojos().isEmpty() ? null : prep.pojos().get(0);
         Quote targetQuote = target != null ? prep.quotes().get(target.getExchangeSymbol()) : null;
@@ -213,8 +219,8 @@ public class MonthlyFlipService {
         String status;
         if (full) status = ORDER_COMPLETE;
         else if (liveStatus != null) status = liveStatus;
-        else if (filled > 0) status = "PARTIAL";
-        else status = lastTerminal != null ? lastTerminal : "FAILED";
+        else if (filled > 0) status = PARTIAL;
+        else status = lastTerminal != null ? lastTerminal : FAILED;
         return new ExecResult(ids.toString(), filled, totalRequested, avg, full, status);
     }
 }

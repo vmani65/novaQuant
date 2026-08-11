@@ -15,33 +15,37 @@ import lombok.Setter;
 import lombok.ToString;
 import org.hibernate.annotations.Filter;
 import path.to._40c.nqCore.controller.SignalController;
-import path.to._40c.nqCore.util.Constants;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 import static path.to._40c.nqCore.util.Constants.INPUT_FORMATS;
+import static path.to._40c.nqCore.util.Constants.LIVE_ORDER_BOOKS;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import org.hibernate.annotations.FilterDef;
 import org.hibernate.annotations.ParamDef;
 
 /**
- * A trade position: the parent row plus its WeeklyLeg children across all segments (open,
- * recenters, rollovers, close).
+ * ONE position per signal: the signal is the opportunity (direction, entry/exit spot, total
+ * sizing, capital chain, cumulative P&L) and this row is what was done with it. Execution
+ * detail lives on the WeeklyLeg children — each leg carries its BOOK (SYNTH_WEEKLY /
+ * LONG_MONTHLY), so one row holds both books' legs across all segments (open, recenters,
+ * rollovers, close). Row status is the roll-up of all legs (LegScope.rollUpStatus).
  *
- * Spot/points accounting (the baseline/banked scheme):
+ * Spot/points accounting (the baseline/banked scheme, one chain per book):
  * entrySpot and exitSpot are immutable — the spot at original entry (set once on open/flip,
  * never mutated by recenter/rollover; reporting + signal-dedup only) and the spot at final
- * close (set once by PositionCloseService; reporting only). baselineSpot is the live
- * baseline: the spot at which the CURRENT live legs were struck — set = entrySpot on open,
- * then reset to the re-strike price on every recenter and rollover. It is the single source
- * of truth for "how far has spot moved from where the current legs sit", read by nQTicker's
- * profit gate and by ProfitRecenterService/calcTradeOutcome. bankedPoints accumulates the
- * points from all CLOSED segments before the current one — every recenter and rollover adds
- * its segment (baselineSpot → re-strike price); calcTradeOutcome computes
- * pointsPnl = bankedPoints + current segment. peakMargin is the running max of
- * Σ(LIVE legs.marginRequired) across the position's lifetime.
+ * close (set once by PositionCloseService; reporting only). baselineSpot/bankedPoints are
+ * the SYNTH_WEEKLY chain: the spot at which the current weekly legs were struck, re-based by
+ * every weekly recenter and rollover, with the closed segments' points accumulating in
+ * bankedPoints. monthlyBaselineSpot/monthlyBankedPoints are the LONG_MONTHLY chain, re-based
+ * only by monthly rollovers. Both chains telescope to the same total spot move (entry→exit);
+ * they differ in segment boundaries, which is what per-leg expectedPnl stamping needs.
+ * calcTradeOutcome computes pointsPnl = banked + current segment on the weekly chain when
+ * weekly legs exist, else the monthly chain. peakMargin is the running max of
+ * Σ(LIVE legs.marginRequired) across ALL books; weeklyMarginPerLot tracks the weekly book's
+ * margin per synthetic lot for the NRML sizing stats (monthly premium must not poison them).
  */
-@FilterDef(name = "liveOrderBooks", parameters = @ParamDef(name = "status", type = String.class))
+@FilterDef(name = LIVE_ORDER_BOOKS, parameters = @ParamDef(name = "status", type = String.class))
 @Entity
 @Table(name = "POSITION")
 @Getter
@@ -51,16 +55,6 @@ public class Position extends BaseEntity {
 
     @Column(name = "STRATEGY_ID")
     private String strategyId = "RIDETHETIDE";
-
-    /**
-     * Execution book that owns this position: SYNTH_WEEKLY (2-leg weekly synthetic) or
-     * LONG_MONTHLY (1-leg monthly buying). Every book-scoped query filters on this, so a
-     * signal fanned out to both books can never close the other book's position. Defaults
-     * to SYNTH_WEEKLY; the monthly open path overrides it before save. Legacy null rows
-     * are backfilled to SYNTH_WEEKLY at startup (BookBackfill).
-     */
-    @Column(name = "BOOK")
-    private String book = Constants.SYNTH_WEEKLY;
 
     @Column(name = "ACCOUNT")
     private String account = "ZERODHAVINOTH";
@@ -76,6 +70,12 @@ public class Position extends BaseEntity {
 
     @Column(name = "BANKED_POINTS")
     private Double bankedPoints = 0.0;
+
+    @Column(name = "MONTHLY_BASELINE_SPOT")
+    private Double monthlyBaselineSpot;
+
+    @Column(name = "MONTHLY_BANKED_POINTS")
+    private Double monthlyBankedPoints = 0.0;
 
     @Column(name = "DIRECTION")
     private String direction;
@@ -134,9 +134,12 @@ public class Position extends BaseEntity {
     @Column(name = "PEAK_MARGIN")
     private Double peakMargin;
 
+    @Column(name = "WEEKLY_MARGIN_PER_LOT")
+    private Double weeklyMarginPerLot;
+
     @Setter(AccessLevel.NONE)
     @OneToMany(mappedBy = "position", cascade = CascadeType.ALL, orphanRemoval = true, fetch = FetchType.EAGER)
-    @Filter(name = "liveOrderBooks", condition = "STATUS = :status")
+    @Filter(name = LIVE_ORDER_BOOKS, condition = "STATUS = :status")
     private List<WeeklyLeg> legs;
 
     public Position() {

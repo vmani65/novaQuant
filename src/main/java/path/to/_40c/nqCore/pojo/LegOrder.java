@@ -24,6 +24,8 @@ import path.to._40c.nqCore.entity.Position;
 @ToString(exclude = "orderResponse")
 public class LegOrder {
 
+    /** Execution book that owns this leg (SYNTH_WEEKLY / LONG_MONTHLY) — copied onto the persisted WeeklyLeg. */
+    private String book;
     private String exchangeSymbol;
     private String instrument;
     private String side;

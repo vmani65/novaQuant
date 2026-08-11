@@ -16,6 +16,7 @@ import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.LegOrder;
 import path.to._40c.nqCore.repo.PositionRepository;
 import path.to._40c.nqCore.util.ComputeUtil;
+import path.to._40c.nqCore.util.LegScope;
 import path.to._40c.nqCore.util.PositionUtil;
 import path.to._40c.nqCore.util.PositionUtil.ExecResult;
 
@@ -47,7 +48,7 @@ public class PositionOpenService {
      * the moment the close completes (~100ms work vs ~500ms close execution).
      */
     public OpenPrep prepareWeeklyOpen(String signalPrice, String type, Position trade) {
-        stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+        stampForOpen(trade, signalPrice, type);
         List<LegOrder> pojos = computeUtil.buildWeeklyInstrument(signalPrice, trade);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(symbols);
@@ -55,10 +56,12 @@ public class PositionOpenService {
     }
 
     /**
-     * SYNTH_WEEKLY open — weekly templates + weekly symbol, quotes fetched inline.
+     * SYNTH_WEEKLY open — weekly templates + weekly symbol, quotes fetched inline. The
+     * weekly legs land on the signal's shared row (fan-out passes the same Position
+     * instance to both books).
      */
     public Position openWeeklyTrade(String signalPrice, String type, Position trade) {
-    	stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+    	stampForOpen(trade, signalPrice, type);
     	List<LegOrder> legOrder = computeUtil.buildWeeklyInstrument(signalPrice, trade);
     	String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
 	    log.debug("OpenTrade ltpIns is: {}", (Object) ltpIns);
@@ -67,13 +70,13 @@ public class PositionOpenService {
     }
 
     /**
-     * LONG_MONTHLY open — single bought leg on the monthly contract. No async prep
-     * variant: one leg's build+quote is cheap and the monthly flip closes inline.
-     * Throws IllegalStateException when the monthly book is unconfigured (fan-out
-     * isolates the failure to this book).
+     * LONG_MONTHLY open — single bought leg on the monthly contract, appended to the
+     * signal's shared row. No async prep variant: one leg's build+quote is cheap and the
+     * monthly flip closes inline. Throws IllegalStateException when the monthly book is
+     * unconfigured (fan-out isolates the failure to this book).
      */
     public Position openMonthlyTrade(String signalPrice, String type, Position trade) {
-        stampForOpen(trade, signalPrice, type, LONG_MONTHLY);
+        stampForOpen(trade, signalPrice, type);
         List<LegOrder> legOrder = computeUtil.buildMonthlyInstrument(signalPrice, trade);
         String[] ltpIns = legOrder.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(ltpIns);
@@ -83,10 +86,10 @@ public class PositionOpenService {
     /**
      * Optimised weekly flip path — skips buildWeeklyInstrument and getQuote since both
      * were pre-computed by prepareWeeklyOpen while the close orders were executing on
-     * Zerodha. The book was stamped by prepareWeeklyOpen on the same trade instance.
+     * Zerodha, against the same shared trade instance.
      */
     public Position openTrade(String signalPrice, String type, Position trade, OpenPrep prep) {
-        stampForOpen(trade, signalPrice, type, SYNTH_WEEKLY);
+        stampForOpen(trade, signalPrice, type);
         return placeAndSave(trade, prep.pojos(), prep.quotes());
     }
 
@@ -94,11 +97,11 @@ public class PositionOpenService {
      * Monthly analogue of prepareWeeklyOpen, used by the interleaved flip
      * (PATIENT_EXECUTION_PLAN.md §4): builds the target monthly leg and fetches its quote
      * BEFORE any close order is placed, so an unconfigured book or dead quote feed aborts
-     * the flip while the held position is still intact. Stamps book/spots/direction on the
-     * trade exactly like the weekly prep.
+     * the flip while the held position is still intact. Stamps spots/direction on the
+     * shared trade exactly like the weekly prep.
      */
     public OpenPrep prepareMonthlyOpen(String signalPrice, String type, Position trade) {
-        stampForOpen(trade, signalPrice, type, LONG_MONTHLY);
+        stampForOpen(trade, signalPrice, type);
         List<LegOrder> pojos = computeUtil.buildMonthlyInstrument(signalPrice, trade);
         String[] symbols = pojos.stream().map(LegOrder::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(symbols);
@@ -125,25 +128,31 @@ public class PositionOpenService {
         return materializeAndSave(trade, prep.pojos(), prep.quotes());
     }
 
-    private void stampForOpen(Position trade, String signalPrice, String type, String book) {
-        trade.setBook(book);
+    /**
+     * Stamps the signal-level open state on the shared row: entry spot, both books' baseline
+     * chains (they start equal and diverge only through recenters/rolls), and direction.
+     * Idempotent — the second book's open re-stamps the same values from the same signal.
+     */
+    private void stampForOpen(Position trade, String signalPrice, String type) {
         trade.setEntrySpot(Double.valueOf(signalPrice));
         trade.setBaselineSpot(Double.valueOf(signalPrice));
+        trade.setMonthlyBaselineSpot(Double.valueOf(signalPrice));
         trade.setDirection(CE.equals(type) ? LONG : SHORT);
     }
 
     private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
     	if (quotes.isEmpty()) {
-    	    log.error("Quote map is empty — aborting trade open for all instruments");
+    	    log.error("Quote map is empty — aborting trade open for this book's instruments");
     	    trade.setLegs(legOrder.stream().map(pojo -> {
     	        WeeklyLeg b = new WeeklyLeg();
+    	        b.setBook(pojo.getBook());
     	        b.setInstrument(pojo.getInstrument()); b.setExchangeSymbol(pojo.getExchangeSymbol());
     	        b.setSide(pojo.getSide()); b.setPosition(pojo.getParentPosition());
     	        b.setMoneyness(pojo.getMoneyness()); b.setLots(pojo.getLots());
     	        b.setQuantity(pojo.getLots() * LOT_SIZE); b.setStatus(FAILED);
     	        return b;
     	    }).collect(Collectors.toList()));
-    	    trade.setStatus(FAILED);
+    	    trade.setStatus(LegScope.rollUpStatus(trade));
     	    return positionRepository.save(trade);
     	}
     	List<CompletableFuture<Void>> futs = legOrder.stream()
@@ -151,7 +160,7 @@ public class PositionOpenService {
     	        log.debug("LegOrder to place order is: {}", w);
     	        int totalQty = w.getLots() * LOT_SIZE;
     	        try {
-    	            ExecResult er = positionUtil.placeAggressiveOrder(quotes.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, "ENTRY");
+    	            ExecResult er = positionUtil.placeAggressiveOrder(quotes.get(w.getExchangeSymbol()), w.getInstrument(), w.getSide(), totalQty, ENTRY);
     	            recordOpenResult(w, quotes.get(w.getExchangeSymbol()), er);
     	        } catch (Exception e) {
     	            log.error("Exception placing order for {} ({} qty): {}", w.getInstrument(), totalQty, e.getMessage(), e);
@@ -185,15 +194,19 @@ public class PositionOpenService {
     }
 
     /**
-     * Materializes WeeklyLeg rows from the recorded LegOrder outcomes and resolves per-leg and
-     * position statuses (LIVE trim-to-filled / PENDING_OPEN / PARTIAL / FAILED), then saves.
-     * Extracted verbatim from placeAndSave's tail; shared by the normal open paths and
-     * savePreparedOpen.
+     * Materializes WeeklyLeg rows from the recorded LegOrder outcomes and resolves per-leg
+     * statuses (LIVE trim-to-filled / PENDING_OPEN / FAILED), appends them to the signal's
+     * shared row, resolves the row status as the roll-up over ALL legs (the other book's
+     * legs included), then saves. A trim-to-filled partial open is stamped PARTIAL
+     * explicitly — its legs are all LIVE so the roll-up alone cannot see that this book's
+     * open half-failed and the orphan machinery must flatten it before the next entry.
+     * Shared by the normal open paths and savePreparedOpen.
      */
     private Position materializeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
     	List<WeeklyLeg> childOrderBook = new ArrayList<>();
     	legOrder.forEach(pojo -> {
     		WeeklyLeg b = new WeeklyLeg();
+    		b.setBook(pojo.getBook());
     		b.setInstrument(pojo.getInstrument());
     		b.setExchangeSymbol(pojo.getExchangeSymbol());
     		b.setSide(pojo.getSide());
@@ -201,7 +214,7 @@ public class PositionOpenService {
     		b.setMoneyness(pojo.getMoneyness());
     		b.setOpenOrderId(pojo.getOpenOrderId());
     		b.setOpenSpreadPaid(pojo.getOpenSpreadPaid());
-    		PositionUtil.alertIfMonthlySpreadExcessive(trade.getBook(), pojo.getInstrument(), "ENTRY", pojo.getOpenSpreadPaid());
+    		PositionUtil.alertIfMonthlySpreadExcessive(pojo.getBook(), pojo.getInstrument(), ENTRY, pojo.getOpenSpreadPaid());
     		int filledQty = pojo.getOpenFilledQty();
     		boolean mayStillFill = Boolean.TRUE.equals(pojo.getOpenOrderMayBeLive())
     				&& !Boolean.TRUE.equals(pojo.getOpenFullyFilled());
@@ -234,22 +247,24 @@ public class PositionOpenService {
     	boolean allFullyFilled = legOrder.stream().allMatch(p -> Boolean.TRUE.equals(p.getOpenFullyFilled()));
     	boolean anyPendingOpen = childOrderBook.stream().anyMatch(l -> PENDING_OPEN.equals(l.getStatus()));
     	boolean anyFilled = legOrder.stream().anyMatch(p -> p.getOpenFilledQty() > 0);
-    	if (allFullyFilled) {
-    		trade.setStatus(LIVE);
-    	} else if (anyPendingOpen) {
-    		trade.setStatus(PENDING_OPEN);
-            log.error("Position open not confirmed - an entry order is still working at the broker; "
-                    + "position PENDING_OPEN, reconciler will settle it from the tradebook");
-        } else if (anyFilled) {
-        	trade.setStatus(PARTIAL);
-            log.error("ORPHAN: position opened PARTIALLY - filled legs will be closed on next signal. Legs: {}",
-                trade.getLegs().stream()
-                    .map(l -> l.getInstrument() + " " + l.getSide() + " " + l.getStatus() + " qty=" + l.getQuantity())
-                    .collect(Collectors.joining(", ")));
-        } else {
-        	trade.setStatus(FAILED);
-            log.error("Position opening operation failed - no legs filled");
-        }
+    	if (!allFullyFilled) {
+    		if (anyPendingOpen) {
+    			log.error("Book open not confirmed - an entry order is still working at the broker; "
+    					+ "leg(s) PENDING_OPEN, reconciler will settle from the tradebook");
+    		} else if (anyFilled) {
+    			log.error("ORPHAN: book opened PARTIALLY - filled legs will be closed on next signal. Legs: {}",
+    				childOrderBook.stream()
+    					.map(l -> l.getInstrument() + " " + l.getSide() + " " + l.getStatus() + " qty=" + l.getQuantity())
+    					.collect(Collectors.joining(", ")));
+    		} else {
+    			log.error("Book opening operation failed - no legs filled");
+    		}
+    	}
+    	String rolledUp = LegScope.rollUpStatus(trade);
+    	if (anyFilled && !allFullyFilled && !anyPendingOpen && LIVE.equals(rolledUp)) {
+    		rolledUp = PARTIAL;
+    	}
+    	trade.setStatus(rolledUp);
     	var liveTrade = positionRepository.save(trade);
     	log.info("Live Position Being Opened: {}", trade);
     	return liveTrade;

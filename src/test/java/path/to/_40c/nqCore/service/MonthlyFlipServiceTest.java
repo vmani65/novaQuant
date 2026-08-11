@@ -85,12 +85,12 @@ class MonthlyFlipServiceTest {
         heldLeg = new WeeklyLeg();
         heldLeg.setInstrument(CE);
         heldLeg.setExchangeSymbol(EX_CE);
+        heldLeg.setBook(LONG_MONTHLY);
         heldLeg.setSide(BUY);
         heldLeg.setQuantity(130);
         heldLeg.setLots(2);
         heldLeg.setStatus(LIVE);
         held = new Position();
-        held.setBook(LONG_MONTHLY);
         held.setStatus(LIVE);
         held.setLegs(List.of(heldLeg));
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(held);
@@ -120,7 +120,7 @@ class MonthlyFlipServiceTest {
         stubOpen(0, new ExecResult("O0", 65, 65, 180.0, true, Constants.ORDER_COMPLETE));
         stubOpen(1, new ExecResult("O1", 65, 65, 181.0, true, Constants.ORDER_COMPLETE));
 
-        FlipOutcome outcome = service.flip("24600", "PE", signal());
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
 
         InOrder io = inOrder(util);
         io.verify(util).placeAggressiveOrder(any(), eq(CE), eq(SELL), eq(65), eq("EXIT[0]"), eq(ExecMode.PATIENT), anyLong());
@@ -154,7 +154,7 @@ class MonthlyFlipServiceTest {
         stubClose(1, new ExecResult("C1", 0, 65, 0.0, false, "OPEN"));
         stubOpen(0, new ExecResult("O0", 65, 65, 180.0, true, Constants.ORDER_COMPLETE));
 
-        service.flip("24600", "PE", signal());
+        service.flip("24600", "PE", signal(), new Position());
 
         verify(util, times(1)).placeAggressiveOrder(any(), eq(PE), anyString(), anyInt(), anyString(), any(ExecMode.class));
 
@@ -176,7 +176,7 @@ class MonthlyFlipServiceTest {
     void firstSliceStallOpensNothing() {
         stubClose(0, new ExecResult("C0", 0, 65, 0.0, false, "OPEN"));
 
-        FlipOutcome outcome = service.flip("24600", "PE", signal());
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
 
         verify(util, never()).placeAggressiveOrder(any(), eq(PE), anyString(), anyInt(), anyString(), any(ExecMode.class));
         verify(opening, never()).savePreparedOpen(any(), any(), anyMap());
@@ -193,7 +193,7 @@ class MonthlyFlipServiceTest {
         stubClose(1, new ExecResult("C1", 65, 65, 463.0, true, Constants.ORDER_COMPLETE));
         stubOpen(0, new ExecResult("", 0, 65, 0.0, false, "PLACE_FAILED"));
 
-        service.flip("24600", "PE", signal());
+        service.flip("24600", "PE", signal(), new Position());
 
         verify(util).placeAggressiveOrder(any(), eq(CE), eq(SELL), eq(65), eq("EXIT[1]"), eq(ExecMode.PATIENT), anyLong());
         verify(util, times(1)).placeAggressiveOrder(any(), eq(PE), anyString(), anyInt(), anyString(), any(ExecMode.class));
@@ -214,7 +214,7 @@ class MonthlyFlipServiceTest {
         stubOpen(0, new ExecResult("O0", 65, 65, 180.0, true, Constants.ORDER_COMPLETE));
         stubOpen(1, new ExecResult("O1", 65, 65, 181.0, true, Constants.ORDER_COMPLETE));
 
-        service.flip("24600", "PE", signal());
+        service.flip("24600", "PE", signal(), new Position());
 
         ArgumentCaptor<Long> budget = ArgumentCaptor.forClass(Long.class);
         verify(util, times(2)).placeAggressiveOrder(any(), eq(CE), eq(SELL), eq(65), anyString(),
@@ -234,7 +234,7 @@ class MonthlyFlipServiceTest {
         when(closing.closeMonthlyOrphanIfAny(anyString(), any(Signal.class))).thenReturn(orphan);
         when(opening.openMonthlyTrade(anyString(), anyString(), any(Position.class))).thenReturn(opened);
 
-        FlipOutcome outcome = service.flip("24600", "PE", signal());
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
 
         assertThat(outcome.closed()).isSameAs(orphan);
         assertThat(outcome.opened()).isSameAs(opened);
@@ -247,7 +247,7 @@ class MonthlyFlipServiceTest {
     void deadQuoteAbortsBeforeAnyOrder() {
         when(util.getQuote(any(String[].class))).thenReturn(Map.of());
 
-        FlipOutcome outcome = service.flip("24600", "PE", signal());
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
 
         assertThat(outcome).isNotNull();
         assertThat(outcome.closed()).isNull();
@@ -261,21 +261,46 @@ class MonthlyFlipServiceTest {
     }
 
     @Test
-    @DisplayName("unexpected multi-leg monthly position: declines (null) so the caller uses the legacy flip")
+    @DisplayName("more than one LONG_MONTHLY leg: declines (null) so the caller uses the legacy flip")
     void multiLegFallsBackToLegacy() {
         WeeklyLeg second = new WeeklyLeg();
         second.setInstrument(PE);
         second.setExchangeSymbol(EX_PE);
+        second.setBook(LONG_MONTHLY);
         second.setSide(SELL);
         second.setQuantity(65);
         second.setStatus(LIVE);
         held.setLegs(List.of(second));
 
-        FlipOutcome outcome = service.flip("24600", "PE", signal());
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
 
         assertThat(outcome).isNull();
         verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString(),
                 any(ExecMode.class), anyLong());
+    }
+
+    @Test
+    @DisplayName("weekly legs on the shared row do NOT decline the interleave — only monthly legs count")
+    void weeklyLegsOnSharedRowDoNotDecline() {
+        WeeklyLeg weeklyLeg = new WeeklyLeg();
+        weeklyLeg.setInstrument("NIFTY2681224500PE");
+        weeklyLeg.setExchangeSymbol("NFO:NIFTY2681224500PE");
+        weeklyLeg.setBook(path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY);
+        weeklyLeg.setSide(SELL);
+        weeklyLeg.setQuantity(650);
+        weeklyLeg.setStatus(LIVE);
+        held.setLegs(List.of(weeklyLeg));
+        stubClose(0, new ExecResult("C0", 65, 65, 464.0, true, Constants.ORDER_COMPLETE));
+        stubClose(1, new ExecResult("C1", 65, 65, 463.0, true, Constants.ORDER_COMPLETE));
+        stubOpen(0, new ExecResult("O0", 65, 65, 180.0, true, Constants.ORDER_COMPLETE));
+        stubOpen(1, new ExecResult("O1", 65, 65, 181.0, true, Constants.ORDER_COMPLETE));
+
+        FlipOutcome outcome = service.flip("24600", "PE", signal(), new Position());
+
+        assertThat(outcome).as("interleave proceeds on the single monthly leg").isNotNull();
+        assertThat(outcome.closed()).isSameAs(held);
+        verify(util, never()).placeAggressiveOrder(any(), eq("NIFTY2681224500PE"), anyString(), anyInt(),
+                anyString(), any(ExecMode.class), anyLong());
     }
 
     @Test

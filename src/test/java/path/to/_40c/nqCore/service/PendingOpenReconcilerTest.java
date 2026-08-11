@@ -63,13 +63,12 @@ class PendingOpenReconcilerTest {
 
         when(repo.save(any(Position.class))).thenAnswer(inv -> inv.getArgument(0));
 
-        leg = leg(1L, MONTHLY_INS, BUY, PENDING_OPEN, ORDER, QTY);
+        leg = leg(1L, MONTHLY_INS, LONG_MONTHLY, BUY, PENDING_OPEN, ORDER, QTY);
         position = new Position();
-        position.setBook(LONG_MONTHLY);
         position.setStatus(PENDING_OPEN);
         position.setLegs(List.of(leg));
         ReflectionTestUtils.setField(position, "id", 80L);
-        when(repo.findByStatus(PENDING_OPEN)).thenReturn(List.of(position));
+        when(repo.findByLegStatus(PENDING_OPEN)).thenReturn(List.of(position));
     }
 
     @Test
@@ -163,14 +162,13 @@ class PendingOpenReconcilerTest {
     @Test
     @DisplayName("two-leg weekly pending: working leg fails terminally while the other is LIVE → position PARTIAL for orphan flatten")
     void weeklyMixedSettleDropsToPartial() {
-        WeeklyLeg liveLeg = leg(2L, "NIFTY2681224500CE", BUY, LIVE, "CE-OPEN-1", 650);
-        WeeklyLeg pendingLeg = leg(3L, "NIFTY2681224500PE", SELL, PENDING_OPEN, "PE-OPEN-1", 650);
+        WeeklyLeg liveLeg = leg(2L, "NIFTY2681224500CE", SYNTH_WEEKLY, BUY, LIVE, "CE-OPEN-1", 650);
+        WeeklyLeg pendingLeg = leg(3L, "NIFTY2681224500PE", SYNTH_WEEKLY, SELL, PENDING_OPEN, "PE-OPEN-1", 650);
         Position weekly = new Position();
-        weekly.setBook(SYNTH_WEEKLY);
         weekly.setStatus(PENDING_OPEN);
         weekly.setLegs(List.of(liveLeg, pendingLeg));
         ReflectionTestUtils.setField(weekly, "id", 81L);
-        when(repo.findByStatus(PENDING_OPEN)).thenReturn(List.of(weekly));
+        when(repo.findByLegStatus(PENDING_OPEN)).thenReturn(List.of(weekly));
         when(util.readCloseOrderState("PE-OPEN-1"))
                 .thenReturn(new CloseOrderState(0, 0.0, Constants.ORDER_REJECTED));
 
@@ -181,11 +179,12 @@ class PendingOpenReconcilerTest {
         verify(postTrade).afterOpen(weekly);
     }
 
-    private static WeeklyLeg leg(long id, String instrument, String side, String status, String openOrderId, int qty) {
+    private static WeeklyLeg leg(long id, String instrument, String book, String side, String status, String openOrderId, int qty) {
         WeeklyLeg w = new WeeklyLeg();
         ReflectionTestUtils.setField(w, "id", id);
         w.setInstrument(instrument);
         w.setExchangeSymbol("NFO:" + instrument);
+        w.setBook(book);
         w.setSide(side);
         w.setQuantity(qty);
         w.setLots(qty / 65);

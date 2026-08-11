@@ -54,7 +54,7 @@
         <dependency>
             <groupId>com.zerodhatech.kiteconnect</groupId>
             <artifactId>kiteconnect</artifactId>
-            <version>4.0.0</version>
+            <version>4.0.1</version>
         </dependency>
         <dependency>
             <groupId>org.springframework.boot</groupId>

@@ -7,13 +7,21 @@ import static com.zerodhatech.kiteconnect.utils.Constants.ORDER_REJECTED;
 import static path.to._40c.nqCore.util.Constants.BUY;
 import static path.to._40c.nqCore.util.Constants.CLOSED;
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
+import static path.to._40c.nqCore.util.Constants.ENTRY;
+import static path.to._40c.nqCore.util.Constants.EXIT;
+import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LIVE;
+import static path.to._40c.nqCore.util.Constants.LIVE_ORDER_BOOKS;
 import static path.to._40c.nqCore.util.Constants.MAX_SIZE_PER_ORDER;
 import static path.to._40c.nqCore.util.Constants.NFO;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.NIFTY_OPT_TICK;
+import static path.to._40c.nqCore.util.Constants.OVERFILL;
 import static path.to._40c.nqCore.util.Constants.PARTIAL;
+import static path.to._40c.nqCore.util.Constants.PLACE_FAILED;
 import static path.to._40c.nqCore.util.Constants.SELL;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
+import static path.to._40c.nqCore.util.Constants.UNKNOWN;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.time.Instant;
@@ -66,6 +74,9 @@ public class PositionUtil {
      */
     public static final java.util.concurrent.ExecutorService LEG_EXEC =
         java.util.concurrent.Executors.newVirtualThreadPerTaskExecutor();
+
+    /** Split regex for the comma-separated values this class round-trips (aggregate order ids, patient config). */
+    private static final String CSV_SPLIT = "\\s*,\\s*";
 
     private final KiteGateway kiteGateway;
     private final KiteOrderStream orderStream;
@@ -125,9 +136,9 @@ public class PositionUtil {
     @jakarta.annotation.PostConstruct
     void initPatientConfig() {
         try {
-            long[] delays = Arrays.stream(patientStepDelaysRaw.split("\\s*,\\s*"))
+            long[] delays = Arrays.stream(patientStepDelaysRaw.split(CSV_SPLIT))
                     .mapToLong(Long::parseLong).toArray();
-            double[] fracs = Arrays.stream(patientConcessionFractionsRaw.split("\\s*,\\s*"))
+            double[] fracs = Arrays.stream(patientConcessionFractionsRaw.split(CSV_SPLIT))
                     .mapToDouble(Double::parseDouble).toArray();
             LocalTime cutoff = LocalTime.parse(patientCutoffRaw);
             boolean ok = delays.length > 0 && delays.length == fracs.length;
@@ -171,7 +182,7 @@ public class PositionUtil {
                 boolean isLive = LIVE.equals(w.getStatus());
                 String orderId = isLive ? w.getOpenOrderId() : w.getCloseOrderId();
                 if (orderId == null || orderId.isBlank()) return;
-                MDC.put(MDC_LEG_KEY, (isLive ? "ENTRY" : "EXIT") + ":" + w.getInstrument() + " | ");
+                MDC.put(MDC_LEG_KEY, (isLive ? ENTRY : EXIT) + ":" + w.getInstrument() + " | ");
                 try {
                     log.debug("Fetching executed prices for trade id={} orderId={}", t.getId(), orderId);
                     List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "executed prices");
@@ -224,13 +235,18 @@ public class PositionUtil {
         return target != null;
     }
 
-    public void setTradeExecPricesForRollOver(Position t, boolean rollOverClose, boolean rollOverOpen) {
-        if (t != null) {
-            t.getLegs().stream()
+    /**
+     * Accumulates (+=) fill prices onto the given legs after a rollover close/open. Takes an
+     * explicit leg list — never the whole position — because on a shared row the += would
+     * double-count prices onto the other book's already-priced legs.
+     */
+    public void setTradeExecPricesForRollOver(List<WeeklyLeg> legs, boolean rollOverClose, boolean rollOverOpen) {
+        if (legs != null) {
+            legs.stream()
                 .filter(w -> rollOverClose ? CLOSED.equals(w.getStatus()) : LIVE.equals(w.getStatus()))
                 .forEach(w -> {
                     String orderId = rollOverOpen ? w.getOpenOrderId() : w.getCloseOrderId();
-                    log.debug("Fetching executed prices for rollover trade id={} orderId={}", t.getId(), orderId);
+                    log.debug("Fetching executed prices for rollover leg {} orderId={}", w.getInstrument(), orderId);
                     List<com.zerodhatech.models.Trade> trades = fetchWithRetry(orderId, "rollover executed prices");
                     if (trades != null && !trades.isEmpty()) {
                         double avgPrice = weightedAvgFillPrice(trades);
@@ -314,7 +330,7 @@ public class PositionUtil {
     static int sliceCount(WeeklyLeg w, boolean openSide) {
         String orderId = openSide ? w.getOpenOrderId() : w.getCloseOrderId();
         if (orderId != null && !orderId.isBlank()) {
-            return orderId.split("\\s*,\\s*").length;
+            return orderId.split(CSV_SPLIT).length;
         }
         Integer qty = w.getQuantity();
         if (qty == null || qty <= MAX_SIZE_PER_ORDER) return 1;
@@ -385,7 +401,13 @@ public class PositionUtil {
         }
     }
 
-    /** Running max of Σ(LIVE legs.marginRequired) across the trade's lifetime. */
+    /**
+     * Running max of Σ(LIVE legs.marginRequired) across the trade's lifetime — cumulative
+     * over ALL books (the signal's total capital locked at the broker). Also tracks the
+     * SYNTH_WEEKLY book's margin per synthetic lot (pair margin / pair lots) as its own
+     * running max, because the NRML sizing stats need the weekly regime undiluted by
+     * monthly premium.
+     */
     public void calcPeakMargin(Position trade) {
         if (trade == null || trade.getLegs() == null) return;
         double currentSegmentMargin = trade.getLegs().stream()
@@ -396,6 +418,19 @@ public class PositionUtil {
         double currentPeak = trade.getPeakMargin() != null ? trade.getPeakMargin() : 0.0;
         if (currentSegmentMargin > currentPeak) {
             trade.setPeakMargin(ComputeUtil.rnd(currentSegmentMargin));
+        }
+        List<WeeklyLeg> weeklyLive = LegScope.of(trade, SYNTH_WEEKLY).stream()
+                .filter(w -> LIVE.equals(w.getStatus()) && w.getMarginRequired() != null)
+                .toList();
+        double weeklyMargin = weeklyLive.stream().mapToDouble(WeeklyLeg::getMarginRequired).sum();
+        int weeklyLots = weeklyLive.stream()
+                .filter(w -> w.getLots() != null && w.getLots() > 0)
+                .mapToInt(WeeklyLeg::getLots).max().orElse(0);
+        if (weeklyMargin <= 0.0 || weeklyLots <= 0) return;
+        double weeklyPerLot = weeklyMargin / weeklyLots;
+        double currentWeeklyPeak = trade.getWeeklyMarginPerLot() != null ? trade.getWeeklyMarginPerLot() : 0.0;
+        if (weeklyPerLot > currentWeeklyPeak) {
+            trade.setWeeklyMarginPerLot(ComputeUtil.rnd(weeklyPerLot));
         }
     }
 
@@ -440,7 +475,7 @@ public class PositionUtil {
     }
 
     private void captureSliceFillsForSide(WeeklyLeg w, boolean buySide, String orderIdsStr) {
-        String[] sliceIds = orderIdsStr.split("\\s*,\\s*");
+        String[] sliceIds = orderIdsStr.split(CSV_SPLIT);
         if (sliceIds.length == 0) return;
 
         List<com.zerodhatech.models.Trade> allFills = fetchWithRetry(orderIdsStr,
@@ -562,7 +597,7 @@ public class PositionUtil {
         }
         log.debug("Fetching trades for orderId: {}", orderId);
         List<com.zerodhatech.models.Trade> allTrades = new ArrayList<>();
-        Arrays.stream(orderId.split("\\s*,\\s*"))
+        Arrays.stream(orderId.split(CSV_SPLIT))
               .filter(id -> id != null && !id.trim().isEmpty())
               .forEach(id -> {
                   List<com.zerodhatech.models.Trade> orderTrades = kiteGateway.getOrderTrades(id);
@@ -825,7 +860,7 @@ public class PositionUtil {
                 trace.record("FILLED %d/%d avg=%s via LIMIT (%s, confirmed after cancel)", filledByLimit, qty, limitAvg, reason);
             }
             return new ExecResult(orderId, filledByLimit, qty, limitAvg, filledByLimit >= qty,
-                    filledByLimit > qty ? "OVERFILL" : ORDER_COMPLETE);
+                    filledByLimit > qty ? OVERFILL : ORDER_COMPLETE);
         }
         trace.record("%s -> cancelled LIMIT (confirmed filled=%d), MARKET for remaining %d", reason, filledByLimit, remaining);
         ExecResult mkt = placeMarketCore(ins, txn, remaining, contextLabel);
@@ -842,7 +877,7 @@ public class PositionUtil {
         }
         boolean full  = combined >= qty;
         return new ExecResult(ids, combined, qty, avg, full,
-                combined > qty ? "OVERFILL" : (full ? ORDER_COMPLETE : (combined > 0 ? "PARTIAL" : "FAILED")));
+                combined > qty ? OVERFILL : (full ? ORDER_COMPLETE : (combined > 0 ? PARTIAL : FAILED)));
     }
 
     // ─── PATIENT execution (PATIENT_EXECUTION_PLAN.md §3) ──────────────────────────
@@ -921,7 +956,7 @@ public class PositionUtil {
         if (resp == null || resp.orderId == null) {
             log.error("PATIENT LIMIT placeOrder null twice — PLACE_FAILED (no MARKET fallback in patient mode)");
             trace.record("PATIENT LIMIT place failed twice -> PLACE_FAILED");
-            return new ExecResult("", 0, qty, 0.0, false, "PLACE_FAILED");
+            return new ExecResult("", 0, qty, 0.0, false, PLACE_FAILED);
         }
         log.info("PATIENT LIMIT @ {} placed orderId={} (anchor={} cap={})", params.price, resp.orderId, anchor0, cap);
         trace.record("PATIENT LIMIT @ %s placed orderId=%s", params.price, resp.orderId);
@@ -982,14 +1017,14 @@ public class PositionUtil {
             return cancelAndTopUp(resp.orderId, ins, txn, qty, contextLabel, "patient deadline");
         }
         if (orderStream != null) orderStream.cancel(resp.orderId);
-        String st = ar.status() != null ? ar.status() : "UNKNOWN";
+        String st = ar.status() != null ? ar.status() : UNKNOWN;
         if (isTerminal(st)) {
             boolean any = ar.filledQty() > 0;
             log.error("PATIENT {} order {} went terminal-unfilled ({}, filled {}/{}) before deadline handling",
                     ins, resp.orderId, st, ar.filledQty(), qty);
             trace.record("PATIENT terminal short of qty: %s filled %d/%d", st, ar.filledQty(), qty);
             return new ExecResult(any ? resp.orderId : "", ar.filledQty(), qty,
-                    any ? ar.avgFillPrice() : 0.0, false, any ? "PARTIAL" : st);
+                    any ? ar.avgFillPrice() : 0.0, false, any ? PARTIAL : st);
         }
         log.warn("PATIENT {} REST: LIMIT {} left resting @ {} with filled {}/{} (status={}) — "
                 + "PENDING machinery owns it from here", ins, resp.orderId, lastPx, ar.filledQty(), qty, st);
@@ -1073,14 +1108,14 @@ public class PositionUtil {
         if (resp == null || resp.orderId == null) {
             log.error("MARKET placeOrder returned null");
             trace.record("MARKET placeOrder returned null -> PLACE_FAILED");
-            return new ExecResult("", 0, qty, 0.0, false, "PLACE_FAILED");
+            return new ExecResult("", 0, qty, 0.0, false, PLACE_FAILED);
         }
         log.info("MARKET protection=1 placed: orderId={}", resp.orderId);
         trace.record("MARKET placed orderId=%s", resp.orderId);
 
         AttemptResult ar = confirmMarketFill(resp.orderId, qty, ins);
         boolean full = ar.filledQty() >= qty;
-        String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? "PARTIAL" : (ar.status() != null ? ar.status() : "FAILED"));
+        String term  = full ? ORDER_COMPLETE : (ar.filledQty() > 0 ? PARTIAL : (ar.status() != null ? ar.status() : FAILED));
         String ids   = (ar.filledQty() > 0 || !isTerminal(ar.status())) ? resp.orderId : "";
         trace.record("MARKET %s %d/%d avg=%s", term, ar.filledQty(), qty, ar.avgFillPrice());
         return new ExecResult(ids, ar.filledQty(), qty, ar.avgFillPrice(), full, term);
@@ -1114,10 +1149,10 @@ public class PositionUtil {
      */
     private AttemptResult confirmMarketFill(String orderId, int qty, String ins) {
         ExecTrace trace = EXEC_TRACE.get();
-        AttemptResult lastHist = new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
+        AttemptResult lastHist = new AttemptResult(orderId, 0, 0.0, UNKNOWN);
         for (int i = 0; i < MARKET_CONFIRM_POLLS; i++) {
             AttemptResult hist = peekOrderState(orderId);
-            if (hist.status() != null && !"UNKNOWN".equals(hist.status())) lastHist = hist;
+            if (hist.status() != null && !UNKNOWN.equals(hist.status())) lastHist = hist;
 
             List<com.zerodhatech.models.Trade> trades = kiteGateway.getOrderTrades(orderId);
             int traded = tradedQty(trades);
@@ -1160,7 +1195,7 @@ public class PositionUtil {
         if (er == null || er.aggregateOrderIds() == null || er.aggregateOrderIds().isBlank()) return false;
         String t = er.terminalStatus();
         return !ORDER_COMPLETE.equals(t) && !ORDER_REJECTED.equals(t) && !ORDER_CANCELLED.equals(t)
-                && !"FAILED".equals(t) && !"PLACE_FAILED".equals(t) && !"OVERFILL".equals(t) && !"PARTIAL".equals(t);
+                && !FAILED.equals(t) && !PLACE_FAILED.equals(t) && !OVERFILL.equals(t) && !PARTIAL.equals(t);
     }
 
     /** Public view of Kite terminal order states (COMPLETE / REJECTED / CANCELLED); null and UNKNOWN are non-terminal. */
@@ -1179,12 +1214,12 @@ public class PositionUtil {
      */
     public CloseOrderState readCloseOrderState(String orderIds) {
         List<com.zerodhatech.models.Trade> trades = getOrderTrades(orderIds);
-        String status = "UNKNOWN";
+        String status = UNKNOWN;
         boolean sawNonTerminal = false;
-        for (String id : orderIds.split("\\s*,\\s*")) {
+        for (String id : orderIds.split(CSV_SPLIT)) {
             if (id.isBlank()) continue;
             List<Order> hist = kiteGateway.getOrderHistory(id.trim());
-            String st = (hist == null || hist.isEmpty()) ? "UNKNOWN" : hist.get(hist.size() - 1).status;
+            String st = (hist == null || hist.isEmpty()) ? UNKNOWN : hist.get(hist.size() - 1).status;
             if (!isTerminal(st)) {
                 status = st;
                 sawNonTerminal = true;
@@ -1197,7 +1232,7 @@ public class PositionUtil {
 
     /** Requests cancellation of every slice of a close order; failures (already terminal) are logged and ignored. */
     public void cancelCloseOrders(String orderIds) {
-        for (String id : orderIds.split("\\s*,\\s*")) {
+        for (String id : orderIds.split(CSV_SPLIT)) {
             if (id.isBlank()) continue;
             try {
                 kiteGateway.cancelOrder(id.trim(), Constants.VARIETY_REGULAR);
@@ -1291,7 +1326,7 @@ public class PositionUtil {
     /** Single-shot status read (no retry loop) — used inside the LIMIT walk where the loop itself is the retry. */
     private AttemptResult peekOrderState(String orderId) {
         List<Order> history = kiteGateway.getOrderHistory(orderId);
-        if (history == null || history.isEmpty()) return new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
+        if (history == null || history.isEmpty()) return new AttemptResult(orderId, 0, 0.0, UNKNOWN);
         Order last = history.get(history.size() - 1);
         return new AttemptResult(orderId, parseIntSafe(last.filledQuantity), parseDoubleSafe(last.averagePrice), last.status);
     }
@@ -1311,7 +1346,7 @@ public class PositionUtil {
         List<BulkOrderResponse> bulk = placeAutoSliceOrder(ins, 0.0, txn, qty);
         if (bulk == null || bulk.isEmpty()) {
             trace.record("auto-slice returned no orders -> FAILED");
-            return new ExecResult("", 0, qty, 0.0, false, "FAILED");
+            return new ExecResult("", 0, qty, 0.0, false, FAILED);
         }
         StringBuilder ids = new StringBuilder();
         int totalFilled = 0;
@@ -1328,7 +1363,7 @@ public class PositionUtil {
         }
         double avg = totalFilled > 0 ? Math.round((weightedSum / totalFilled) * 100.0) / 100.0 : 0.0;
         boolean full = totalFilled == qty;
-        String term = full ? ORDER_COMPLETE : (totalFilled > 0 ? "PARTIAL" : "FAILED");
+        String term = full ? ORDER_COMPLETE : (totalFilled > 0 ? PARTIAL : FAILED);
         trace.record("autoslice %s %d/%d avg=%s", term, totalFilled, qty, avg);
         return new ExecResult(ids.toString(), totalFilled, qty, avg, full, term);
     }
@@ -1349,7 +1384,7 @@ public class PositionUtil {
         }
         if (last == null) {
             log.error("orderId={} getOrderHistory empty after retries", orderId);
-            return new AttemptResult(orderId, 0, 0.0, "UNKNOWN");
+            return new AttemptResult(orderId, 0, 0.0, UNKNOWN);
         }
         int filledQty = parseIntSafe(last.filledQuantity);
         double avgPrice = parseDoubleSafe(last.averagePrice);
@@ -1475,36 +1510,33 @@ public class PositionUtil {
     }
 
     /**
-     * Latest LIVE position of the given book with only its LIVE legs loaded. Every caller
-     * names its book explicitly — a bookless "latest LIVE" lookup no longer exists, so one
-     * book's close/flip/recenter/rollover can never grab the other book's position.
+     * The latest position holding LIVE legs of the given book, with only LIVE legs loaded
+     * (the other book's LIVE legs load too — callers select their own via LegScope.of and
+     * must never touch the rest). Row status is NOT consulted: one shared row can be LIVE,
+     * PARTIAL or PENDING_* on the other book's account while this book's legs are held at
+     * the broker and still need closing/rolling.
      */
     @Transactional
     public Position findLiveTradesWithLiveOrderBooks(String book) {
         Session session = entityManager.unwrap(Session.class);
-        session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusAndBookOrderByIdDesc(LIVE, book);
-        session.disableFilter("liveOrderBooks");
-        return trades;
+        session.enableFilter(LIVE_ORDER_BOOKS).setParameter("status", LIVE);
+        List<Position> trades = positionRepository.findByLegStatusAndLegBook(LIVE, book);
+        session.disableFilter(LIVE_ORDER_BOOKS);
+        return trades.isEmpty() ? null : trades.get(0);
     }
 
     /**
-     * Finds the given book's latest PARTIAL position (an open where only some legs filled)
-     * with only its still-LIVE orphan legs loaded, so the closing path can flatten exactly
-     * what is held at the broker.
+     * The latest PARTIAL position holding LIVE legs of the given book — an open where only
+     * some of the book's legs filled — with only the still-LIVE orphan legs loaded, so the
+     * closing path can flatten exactly what is held at the broker.
      */
     @Transactional
     public Position findPartialTradesWithLiveOrderBooks(String book) {
         Session session = entityManager.unwrap(Session.class);
-        session.enableFilter("liveOrderBooks").setParameter("status", LIVE);
-        Position trades = positionRepository.findFirstByStatusAndBookOrderByIdDesc(PARTIAL, book);
-        session.disableFilter("liveOrderBooks");
-        return trades;
-    }
-
-    @Transactional
-    public Position findLiveTradesWithAllOrderBooks(String book) {
-        return positionRepository.findFirstByStatusAndBookOrderByIdDesc(LIVE, book);
+        session.enableFilter(LIVE_ORDER_BOOKS).setParameter("status", LIVE);
+        List<Position> trades = positionRepository.findByLegStatusAndLegBook(LIVE, book);
+        session.disableFilter(LIVE_ORDER_BOOKS);
+        return trades.stream().filter(t -> PARTIAL.equals(t.getStatus())).findFirst().orElse(null);
     }
 
     private List<com.zerodhatech.models.Trade> fetchWithRetry(String orderId, String context) {

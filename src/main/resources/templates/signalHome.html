@@ -205,6 +205,9 @@
                     const legRows = liveLegs.map(l => `
                         <tr class="border-t border-gray-100">
                             <td class="px-3 py-1.5 font-mono text-[11px] text-gray-800">${l.exchangeSymbol || '—'}</td>
+                            <td class="px-3 py-1.5 text-center">${l.book === 'LONG_MONTHLY'
+                                ? '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-violet-50 text-violet-700">MONTHLY</span>'
+                                : '<span class="text-[10px] font-semibold px-1.5 py-0.5 rounded bg-blue-50 text-blue-700">WEEKLY</span>'}</td>
                             <td class="px-3 py-1.5 text-center text-[11px] font-semibold ${l.side === 'BUY' ? 'text-emerald-600' : 'text-rose-600'}">${l.side || '—'}</td>
                             <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-600">${l.quantity != null ? l.quantity : '—'}</td>
                             <td class="px-3 py-1.5 text-right font-mono text-[11px] text-gray-700">${this.fmtNum(l.side === 'BUY' ? l.buyFillPrice : l.sellFillPrice)}</td>
@@ -243,6 +246,7 @@
                                 <thead class="bg-gray-50 text-[10px] uppercase tracking-wide text-gray-400">
                                     <tr>
                                         <th class="px-3 py-1.5 text-left font-semibold">Symbol</th>
+                                        <th class="px-3 py-1.5 text-center font-semibold">Book</th>
                                         <th class="px-3 py-1.5 text-center font-semibold">Side</th>
                                         <th class="px-3 py-1.5 text-right font-semibold">Qty</th>
                                         <th class="px-3 py-1.5 text-right font-semibold">Entry Fill</th>
@@ -250,7 +254,7 @@
                                         <th class="px-3 py-1.5 text-right font-semibold">Margin</th>
                                     </tr>
                                 </thead>
-                                <tbody>${legRows || '<tr><td colspan="6" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No live legs</td></tr>'}</tbody>
+                                <tbody>${legRows || '<tr><td colspan="7" class="px-3 py-3 text-center text-gray-400 italic text-[11px]">No live legs</td></tr>'}</tbody>
                             </table>
                         </div>
                     </div>`;

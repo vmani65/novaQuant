@@ -1,7 +1,7 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
-import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 import java.time.LocalDateTime;
@@ -10,9 +10,11 @@ import java.time.format.DateTimeFormatter;
 import java.time.format.DateTimeParseException;
 import java.util.List;
 
+import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.entity.TradeCapital;
 import path.to._40c.nqCore.repo.TradeCapitalRepository;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.util.LegScope;
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
@@ -44,23 +46,28 @@ public class TradeCapitalService {
     }
 
     /**
-     * Computes highest / average / lowest of (peakMargin / lots) across trades closed in the last 30 days
-     * and writes them onto the entity's transient fields. Skips trades with null peakMargin,
-     * null/zero lots, or unparseable close datetime. Leaves transients null if no qualifying trades.
-     * SYNTH_WEEKLY only: these are NRML margin-per-lot statistics; a LONG_MONTHLY row's
-     * peakMargin means premium outlay (an order of magnitude smaller) and would poison the mean.
+     * Computes highest / average / lowest weekly margin-per-lot across trades closed in the
+     * last 30 days and writes them onto the entity's transient fields. These are NRML
+     * margin-per-lot statistics of the SYNTH_WEEKLY regime only — a LONG_MONTHLY leg's
+     * margin means premium outlay (an order of magnitude smaller) and would poison the mean,
+     * which is why the shared row tracks weeklyMarginPerLot separately from the cumulative
+     * peakMargin. Legacy rows pre-dating that column fall back to peakMargin/lots, valid
+     * there because a legacy row belongs to exactly one book (monthly legacy rows are
+     * excluded by requiring a weekly leg). Skips rows with no usable value, null/zero lots,
+     * or unparseable close datetime. Leaves transients null if no qualifying trades.
      */
     private void populateNrmlCostStats(TradeCapital capital) {
         LocalDateTime cutoff = LocalDateTime.now(ZoneId.of(ZONE_ID)).minusDays(30);
         DateTimeFormatter fmt = DateTimeFormatter.ofPattern(DATE_FORMAT);
         List<Integer> perLotValues = positionRepository.findByPeakMarginNotNull().stream()
-                .filter(t -> !LONG_MONTHLY.equals(t.getBook()))
-                .filter(t -> t.getLots() != null && t.getLots() > 0 && t.getClosedAt() != null)
+                .filter(t -> t.getClosedAt() != null)
                 .filter(t -> {
                     try { return LocalDateTime.parse(t.getClosedAt(), fmt).isAfter(cutoff); }
                     catch (DateTimeParseException e) { return false; }
                 })
-                .map(t -> (int)(t.getPeakMargin() / t.getLots()))
+                .map(TradeCapitalService::weeklyMarginPerLot)
+                .filter(v -> v != null && v > 0)
+                .map(Double::intValue)
                 .toList();
         if (perLotValues.isEmpty()) return;
         int sum = 0, min = Integer.MAX_VALUE, max = Integer.MIN_VALUE;
@@ -72,6 +79,19 @@ public class TradeCapitalService {
         capital.setHighestNrmlCostPerLot(max);
         capital.setAverageNrmlCostPerLot(sum / perLotValues.size());
         capital.setLowestNrmlCostPerLot(min);
+    }
+
+    /**
+     * The row's weekly margin-per-lot: the tracked weeklyMarginPerLot when present, else the
+     * legacy peakMargin/lots — but only for rows that actually hold a weekly leg, so legacy
+     * LONG_MONTHLY rows (premium outlay, not margin) never enter the stats.
+     */
+    private static Double weeklyMarginPerLot(Position t) {
+        if (t.getWeeklyMarginPerLot() != null) return t.getWeeklyMarginPerLot();
+        boolean hasWeeklyLeg = t.getLegs() != null && t.getLegs().stream()
+                .anyMatch(l -> SYNTH_WEEKLY.equals(LegScope.bookOf(l)));
+        if (!hasWeeklyLeg || t.getPeakMargin() == null || t.getLots() == null || t.getLots() <= 0) return null;
+        return t.getPeakMargin() / t.getLots();
     }
 
     @Transactional

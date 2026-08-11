@@ -1,8 +1,8 @@
 package path.to._40c.nqCore.service;
 
+import static path.to._40c.nqCore.util.Constants.CE;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
-import static path.to._40c.nqCore.util.Constants.PENDING_CLOSE;
 import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
@@ -21,9 +21,11 @@ import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.stereotype.Service;
 
+import path.to._40c.nqCore.controller.SignalController.Action;
 import path.to._40c.nqCore.controller.SignalController.Signal;
 import path.to._40c.nqCore.entity.Position;
 import path.to._40c.nqCore.repo.PositionRepository;
+import path.to._40c.nqCore.util.LegScope;
 
 /**
  * Fans every accepted signal out to the two execution books, SYNTH_WEEKLY first then
@@ -31,10 +33,21 @@ import path.to._40c.nqCore.repo.PositionRepository;
  * exception inside one book's execution is logged and swallowed so it can never block
  * the other book. Book toggles gate NEW positions only — a disabled book with an open
  * position still receives exits and flip-closes until its natural close (then dormant).
+ *
+ * One POSITION per signal: the fan-out creates a single Position and passes the same
+ * instance to both books, each appending its own legs. Post-trade enrichment
+ * (afterOpen/afterClose) runs ONCE per row at the END of the fan-out — never inside a
+ * book branch, where the async enrichment would race the other book's save of the same
+ * row and could be clobbered by a stale in-memory copy.
  */
 @Service
 @Slf4j
 public class SignalService {
+
+	/** One book's contribution to a signal: the row it closed (if any) and the row it opened onto (if any). */
+	private record BookResult(Position closed, Position opened) {
+		private static final BookResult NONE = new BookResult(null, null);
+	}
 	private final PositionOpenService openingService;
 	private final PositionCloseService closingService;
 	private final PositionRolloverService rollOverService;
@@ -83,88 +96,106 @@ public class SignalService {
 	/**
 	 * Flip fan-out. An enabled book flips (close current + open opposite); a disabled
 	 * book expresses the flip as close-only, managing any open position to its natural
-	 * close without opening a new one.
+	 * close without opening a new one. Both books close legs on the OLD signal's row and
+	 * open legs onto the ONE new row created here; post-trade runs once per row at the end.
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant overallStart = Instant.now();
 	   weeklySymbolService.syncTradedContract();
+	   Position newTrade = new Position(signal);
 	   Instant weeklyStart = Instant.now();
-	   runIsolated(SYNTH_WEEKLY, "flip", () -> {
-	       if (bookConfigService.isEnabled(SYNTH_WEEKLY)) flipWeekly(signalPrice, type, signal);
-	       else closeOnlyForDisabledBook(SYNTH_WEEKLY, signalPrice, signal);
-	       return null;
-	   });
+	   BookResult weekly = runIsolated(SYNTH_WEEKLY, "flip", () ->
+	       bookConfigService.isEnabled(SYNTH_WEEKLY)
+	           ? flipWeekly(signalPrice, type, signal, newTrade)
+	           : new BookResult(closeOnlyForDisabledBook(SYNTH_WEEKLY, signalPrice, signal), null));
 	   long weeklyMs = Duration.between(weeklyStart, Instant.now()).toMillis();
 	   Instant monthlyStart = Instant.now();
-	   runIsolated(LONG_MONTHLY, "flip", () -> {
-	       if (bookConfigService.isEnabled(LONG_MONTHLY)) flipMonthly(signalPrice, type, signal);
-	       else closeOnlyForDisabledBook(LONG_MONTHLY, signalPrice, signal);
-	       return null;
-	   });
+	   BookResult monthly = runIsolated(LONG_MONTHLY, "flip", () ->
+	       bookConfigService.isEnabled(LONG_MONTHLY)
+	           ? flipMonthly(signalPrice, type, signal, newTrade)
+	           : new BookResult(closeOnlyForDisabledBook(LONG_MONTHLY, signalPrice, signal), null));
 	   long monthlyMs = Duration.between(monthlyStart, Instant.now()).toMillis();
 	   log.info("[PERFORMANCE] flip OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
 	           weeklyMs, monthlyMs, Duration.between(overallStart, Instant.now()).toMillis());
+	   runPostTrade(weekly, monthly);
 	   return true;
 	}
 
 	/**
 	 * Entry fan-out. Only enabled books open; each book first flattens its own orphan
 	 * legs from an earlier PARTIAL open so the fresh open never stacks on top of
-	 * untracked broker positions of that book.
+	 * untracked broker positions of that book. Both books append their legs to the ONE
+	 * row created here; post-trade runs once per row at the end.
 	 */
 	public boolean handleTradeOpen(String signalPrice, String type, Signal signal) {
 	   Instant overallStart = Instant.now();
+	   Position newTrade = new Position(signal);
 	   Instant weeklyStart = Instant.now();
-	   runIsolated(SYNTH_WEEKLY, "open", () -> {
+	   BookResult weekly = runIsolated(SYNTH_WEEKLY, "open", () -> {
 	       if (!bookConfigService.isEnabled(SYNTH_WEEKLY)) {
 	           log.info("SYNTH_WEEKLY disabled — skipping open");
-	           return null;
+	           return BookResult.NONE;
 	       }
 	       Instant start = Instant.now();
 	       Position orphanClosed = closingService.closeWeeklyOrphanIfAny(signalPrice, signal);
-	       Position liveTrade = openingService.openWeeklyTrade(signalPrice, type, new Position(signal));
+	       Position liveTrade = openingService.openWeeklyTrade(signalPrice, type, newTrade);
 	       log.info("[PERFORMANCE] open SYNTH_WEEKLY | exec={}ms", Duration.between(start, Instant.now()).toMillis());
-	       postTradeService.afterOpen(liveTrade);
-	       if (orphanClosed != null) {
-	           postTradeService.afterClose(orphanClosed);
-	       }
-	       return null;
+	       return new BookResult(orphanClosed, liveTrade);
 	   });
 	   long weeklyMs = Duration.between(weeklyStart, Instant.now()).toMillis();
 	   Instant monthlyStart = Instant.now();
-	   runIsolated(LONG_MONTHLY, "open", () -> {
+	   BookResult monthly = runIsolated(LONG_MONTHLY, "open", () -> {
 	       if (!bookConfigService.isEnabled(LONG_MONTHLY)) {
 	           log.info("LONG_MONTHLY disabled — skipping open");
-	           return null;
+	           return BookResult.NONE;
 	       }
 	       Instant start = Instant.now();
 	       monthlySymbolService.syncTradedContract();
 	       Position orphanClosed = closingService.closeMonthlyOrphanIfAny(signalPrice, signal);
-	       Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, new Position(signal));
+	       Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, newTrade);
 	       log.info("[PERFORMANCE] open LONG_MONTHLY | exec={}ms", Duration.between(start, Instant.now()).toMillis());
-	       postTradeService.afterOpen(liveTrade);
-	       if (orphanClosed != null) {
-	           postTradeService.afterClose(orphanClosed);
-	       }
-	       return null;
+	       return new BookResult(orphanClosed, liveTrade);
 	   });
 	   long monthlyMs = Duration.between(monthlyStart, Instant.now()).toMillis();
 	   log.info("[PERFORMANCE] open OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
 	           weeklyMs, monthlyMs, Duration.between(overallStart, Instant.now()).toMillis());
+	   runPostTrade(weekly, monthly);
 	   return true;
 	}
 
 	/**
 	 * Close fan-out. Closes run regardless of the toggle (a disabled book's open position
-	 * is still managed to natural close). The 9:15 AM longExit delegation to nQTicker's
-	 * open buffer is WEEKLY-ONLY: LONG_MONTHLY always closes inline at signal time, while
-	 * the weekly close may be deferred to the /api/execute-close callback. Rollover-symbol
-	 * promotion runs after the order legs and before afterClose to avoid SQLite BUSY from
-	 * concurrent writes (same ordering as the single-book version).
+	 * is still managed to natural close). A 9:15 AM longExit is delegated WHOLE — both
+	 * books — to nQTicker's open buffer: nothing closes at signal time, the signal's row
+	 * stays fully LIVE, and the /api/execute-close callback runs the same both-book
+	 * fan-out with nQTicker's live price, so both books record the SAME exit spot
+	 * (the AFL 9:15 bar price is stale by the time the exit actually trades). If arming
+	 * the buffer fails, both books close inline on the signal price immediately.
 	 */
 	public boolean handleTradeClose(String signalPrice, String type, Signal signal) {
 	   Instant start = Instant.now();
-	   Position weeklyClosed = runIsolated(SYNTH_WEEKLY, "close", () -> closeWeeklyForSignal(signalPrice, signal, start));
+	   if (Action.LONG_EXIT.getValue().equals(signal.action) && isOpenBufferTime()) {
+	       if (armNqTickerBuffer(signalPrice)) {
+	           log.info("9:15 AM long exit delegated to nQTicker open buffer for both books | openPrice={} | {}ms",
+	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
+	           return true;
+	       }
+	       log.warn("nQTicker arm-buffer call failed — closing both books immediately");
+	   }
+	   closeBothBooks(signalPrice, signal);
+	   return true;
+	}
+
+	/**
+	 * The both-book close fan-out shared by the signal path and the open-buffer callback:
+	 * weekly then monthly, error-isolated. Rollover-symbol promotion runs after the order
+	 * legs and before the once-per-row post-trade pass to avoid SQLite BUSY from
+	 * concurrent writes.
+	 */
+	private void closeBothBooks(String signalPrice, Signal signal) {
+	   Instant start = Instant.now();
+	   Position weeklyClosed = runIsolated(SYNTH_WEEKLY, "close", () ->
+	           closingService.closeWeeklyTrade(signalPrice, signal, true));
 	   long weeklyMs = Duration.between(start, Instant.now()).toMillis();
 	   log.info("[PERFORMANCE] close SYNTH_WEEKLY | exec={}ms", weeklyMs);
 	   Instant monthlyStart = Instant.now();
@@ -175,37 +206,56 @@ public class SignalService {
 	   log.info("[PERFORMANCE] close OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
 	           weeklyMs, monthlyMs, Duration.between(start, Instant.now()).toMillis());
 	   weeklySymbolService.syncTradedContract();
-	   postTradeService.afterClose(weeklyClosed);
-	   postTradeService.afterClose(monthlyClosed);
-	   return true;
+	   runPostTrade(new BookResult(weeklyClosed, null), new BookResult(monthlyClosed, null));
 	}
 
-	/** Called by /api/execute-close — nQTicker open-buffer callback (weekly-only delegation). */
+	/**
+	 * The once-per-row post-trade pass, run at the END of every fan-out: afterClose for each
+	 * DISTINCT closed row (both books normally closed legs on the same signal's row — it must
+	 * be enriched and accounted exactly once), then afterOpen for each distinct opened row.
+	 * PostTradeService re-fetches by id, so a stale earlier-book copy of a shared row can
+	 * never clobber the later book's writes.
+	 */
+	private void runPostTrade(BookResult weekly, BookResult monthly) {
+	   java.util.LinkedHashMap<Long, Position> closed = new java.util.LinkedHashMap<>();
+	   java.util.LinkedHashMap<Long, Position> opened = new java.util.LinkedHashMap<>();
+	   for (BookResult r : java.util.Arrays.asList(weekly, monthly)) {
+	       if (r == null) continue;
+	       if (r.closed() != null && r.closed().getId() != null) closed.put(r.closed().getId(), r.closed());
+	       if (r.opened() != null && r.opened().getId() != null) opened.put(r.opened().getId(), r.opened());
+	   }
+	   closed.values().forEach(postTradeService::afterClose);
+	   opened.values().forEach(postTradeService::afterOpen);
+	}
+
+	/**
+	 * Called by /api/execute-close — the nQTicker open-buffer callback. Runs the same
+	 * both-book close fan-out as handleTradeClose, so BOTH books exit on nQTicker's
+	 * live price rather than the stale 9:15 bar signal price.
+	 */
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
-	   Signal signal = new Signal("open-buffer", "longExit", "CE", "", signalPrice);
-	   Position closedTrade = closingService.closeWeeklyTrade(signalPrice, signal, true);
+	   Signal signal = new Signal("open-buffer", Action.LONG_EXIT.getValue(), CE, "", signalPrice);
+	   closeBothBooks(signalPrice, signal);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
-	   weeklySymbolService.syncTradedContract();
-	   postTradeService.afterClose(closedTrade);
 	}
 
 	/**
 	 * SYNTH_WEEKLY flip: open prep runs concurrently with the close (prep ~100ms, close
-	 * ~400-600ms) so the future is ready by the time we join(). A close that ends
-	 * PENDING_CLOSE (its order still working at the broker) is settled before the opposite
+	 * ~400-600ms) so the future is ready by the time we join(). A close that leaves a weekly
+	 * leg PENDING_CLOSE (its order still working at the broker) is settled before the opposite
 	 * entry is placed — closeWeeklyOrphanIfAny first resolves the pending (cancelling the
 	 * working order) and then flattens whatever the broker still holds, so the new entry can
-	 * never stack on top of an unconfirmed close of the same strike.
+	 * never stack on top of an unconfirmed close of the same strike. The new weekly legs land
+	 * on the signal's shared row (newTrade); post-trade runs at the fan-out's end.
 	 */
-	private void flipWeekly(String signalPrice, String type, Signal signal) {
+	private BookResult flipWeekly(String signalPrice, String type, Signal signal, Position newTrade) {
 	   Instant start = Instant.now();
-	   Position trade = new Position(signal);
 	   CompletableFuture<PositionOpenService.OpenPrep> openPrepFuture =
-	       CompletableFuture.supplyAsync(() -> openingService.prepareWeeklyOpen(signalPrice, type, trade));
+	       CompletableFuture.supplyAsync(() -> openingService.prepareWeeklyOpen(signalPrice, type, newTrade));
 	   Position closedTrade = closingService.closeWeeklyTrade(signalPrice, signal, false);
-	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
-	       log.warn("flip: close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());
+	   if (closedTrade != null && LegScope.hasPendingCloseLegs(closedTrade, SYNTH_WEEKLY)) {
+	       log.warn("flip: weekly close on trade id={} left a PENDING_CLOSE leg — settling it before the opposite entry", closedTrade.getId());
 	       closedTrade = closingService.closeWeeklyOrphanIfAny(signalPrice, signal);
 	   }
 	   Instant closeEnd = Instant.now();
@@ -217,73 +267,57 @@ public class SignalService {
 	       log.error("Open-leg pre-fetch failed — falling back to inline open: {}", e.getMessage());
 	   }
 	   Position liveTrade = (prep != null)
-	       ? openingService.openTrade(signalPrice, type, trade, prep)
-	       : openingService.openWeeklyTrade(signalPrice, type, trade);
+	       ? openingService.openTrade(signalPrice, type, newTrade, prep)
+	       : openingService.openWeeklyTrade(signalPrice, type, newTrade);
 	   long openMs = Duration.between(closeEnd, Instant.now()).toMillis();
 	   log.info("[PERFORMANCE] flip SYNTH_WEEKLY | close={}ms | open={}ms | total={}ms", closeMs, openMs, closeMs + openMs);
-	   postTradeService.afterOpen(liveTrade);
-	   postTradeService.afterClose(closedTrade);
+	   return new BookResult(closedTrade, liveTrade);
 	}
 
 	/**
 	 * LONG_MONTHLY flip: sequential close-then-open — a single bought leg's build+quote
 	 * is cheap, so the weekly path's async prep is not worth the moving parts here.
-	 * Same PENDING_CLOSE settle-before-re-entry rule as the weekly flip.
+	 * Same PENDING_CLOSE settle-before-re-entry rule as the weekly flip; the new monthly
+	 * leg lands on the signal's shared row (newTrade).
 	 *
 	 * When the interleaved flip is available (its flag + live patient mode,
 	 * PATIENT_EXECUTION_PLAN.md §4), MonthlyFlipService replaces this body with the sliced
 	 * close-confirm-open loop; a null outcome (unexpected position shape) falls back here.
 	 */
-	private void flipMonthly(String signalPrice, String type, Signal signal) {
+	private BookResult flipMonthly(String signalPrice, String type, Signal signal, Position newTrade) {
 	   Instant start = Instant.now();
 	   monthlySymbolService.syncTradedContract();
 	   if (monthlyFlipService.interleaveAvailable()) {
-	       MonthlyFlipService.FlipOutcome outcome = monthlyFlipService.flip(signalPrice, type, signal);
+	       MonthlyFlipService.FlipOutcome outcome = monthlyFlipService.flip(signalPrice, type, signal, newTrade);
 	       if (outcome != null) {
 	           log.info("[PERFORMANCE] flip LONG_MONTHLY (interleaved) | total={}ms",
 	                   Duration.between(start, Instant.now()).toMillis());
-	           postTradeService.afterOpen(outcome.opened());
-	           postTradeService.afterClose(outcome.closed());
-	           return;
+	           return new BookResult(outcome.closed(), outcome.opened());
 	       }
 	       log.warn("interleaved flip declined this position shape — legacy monthly flip path");
 	   }
 	   Position closedTrade = closingService.closeMonthlyTrade(signalPrice, signal, false);
-	   if (closedTrade != null && PENDING_CLOSE.equals(closedTrade.getStatus())) {
-	       log.warn("flip: monthly close of trade id={} is PENDING_CLOSE — settling it before the opposite entry", closedTrade.getId());
+	   if (closedTrade != null && LegScope.hasPendingCloseLegs(closedTrade, LONG_MONTHLY)) {
+	       log.warn("flip: monthly close on trade id={} left a PENDING_CLOSE leg — settling it before the opposite entry", closedTrade.getId());
 	       closedTrade = closingService.closeMonthlyOrphanIfAny(signalPrice, signal);
 	   }
 	   Instant closeEnd = Instant.now();
-	   Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, new Position(signal));
+	   Position liveTrade = openingService.openMonthlyTrade(signalPrice, type, newTrade);
 	   log.info("[PERFORMANCE] flip LONG_MONTHLY | close={}ms | open={}ms",
 	           Duration.between(start, closeEnd).toMillis(), Duration.between(closeEnd, Instant.now()).toMillis());
-	   postTradeService.afterOpen(liveTrade);
-	   postTradeService.afterClose(closedTrade);
+	   return new BookResult(closedTrade, liveTrade);
 	}
 
-	/** Disabled-book flip semantics: close any open position (natural close), never open. */
-	private void closeOnlyForDisabledBook(String book, String signalPrice, Signal signal) {
+	/** Disabled-book flip semantics: close the book's legs (natural close), never open. */
+	private Position closeOnlyForDisabledBook(String book, String signalPrice, Signal signal) {
 	   Position closed = SYNTH_WEEKLY.equals(book)
 	       ? closingService.closeWeeklyTrade(signalPrice, signal, true)
 	       : closingService.closeMonthlyTrade(signalPrice, signal, true);
 	   if (closed != null) {
-	       log.info("{} disabled — flip expressed as close-only; trade id={} managed to natural close, book now dormant",
+	       log.info("{} disabled — flip expressed as close-only; trade id={} legs managed to natural close, book now dormant",
 	               book, closed.getId());
-	       postTradeService.afterClose(closed);
 	   }
-	}
-
-	/** Weekly close with the 9:15 open-buffer delegation. Returns null when delegated. */
-	private Position closeWeeklyForSignal(String signalPrice, Signal signal, Instant start) {
-	   if ("longExit".equals(signal.action) && isOpenBufferTime()) {
-	       if (armNqTickerBuffer(signalPrice)) {
-	           log.info("9:15 AM long exit delegated to nQTicker open buffer | openPrice={} | {}ms",
-	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
-	           return null;
-	       }
-	       log.warn("nQTicker arm-buffer call failed — falling back to immediate close");
-	   }
-	   return closingService.closeWeeklyTrade(signalPrice, signal, true);
+	   return closed;
 	}
 
 	/**
@@ -292,7 +326,7 @@ public class SignalService {
 	 * signal stream. Books run strictly sequentially — this is a straight call, not
 	 * an async hop.
 	 */
-	private Position runIsolated(String book, String action, Supplier<Position> task) {
+	private <T> T runIsolated(String book, String action, Supplier<T> task) {
 	   try {
 	       return task.get();
 	   } catch (Exception e) {

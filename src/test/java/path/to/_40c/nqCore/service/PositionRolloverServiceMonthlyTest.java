@@ -77,18 +77,18 @@ class PositionRolloverServiceMonthlyTest {
         heldLeg = new WeeklyLeg();
         heldLeg.setInstrument(OLD_INS);
         heldLeg.setExchangeSymbol("NFO:" + OLD_INS);
+        heldLeg.setBook(LONG_MONTHLY);
         heldLeg.setSide(BUY);
         heldLeg.setQuantity(QTY);
         heldLeg.setLots(2);
         heldLeg.setStatus(LIVE);
 
         monthly = new Position();
-        monthly.setBook(LONG_MONTHLY);
         monthly.setDirection(LONG);
         monthly.setStatus(LIVE);
         monthly.setEntrySpot(24500.0);
-        monthly.setBaselineSpot(24500.0);
-        monthly.setBankedPoints(0.0);
+        monthly.setMonthlyBaselineSpot(24500.0);
+        monthly.setMonthlyBankedPoints(0.0);
         monthly.setLegs(List.of(heldLeg));
         when(util.findLiveTradesWithLiveOrderBooks(LONG_MONTHLY)).thenReturn(monthly);
         when(util.getQuote(any(String[].class))).thenReturn(Map.of(
@@ -108,9 +108,10 @@ class PositionRolloverServiceMonthlyTest {
 
         service.rollOverMonthly("24800");
 
-        // segment = 24800 - 24500 = +300 pts, banked once, baseline reset
-        assertThat(monthly.getBankedPoints()).isEqualTo(300.0);
-        assertThat(monthly.getBaselineSpot()).isEqualTo(24800.0);
+        // segment = 24800 - 24500 = +300 pts, banked once into the MONTHLY chain, its baseline reset
+        assertThat(monthly.getMonthlyBankedPoints()).isEqualTo(300.0);
+        assertThat(monthly.getMonthlyBaselineSpot()).isEqualTo(24800.0);
+        assertThat(monthly.getBaselineSpot()).as("weekly chain untouched by a monthly roll").isNull();
         assertThat(monthly.getEntrySpot()).as("entrySpot immutable").isEqualTo(24500.0);
         // closed leg stamped on the futures-equivalent scale: 130 × 0.5 × 300
         assertThat(heldLeg.getStatus()).isEqualTo(CLOSED);
@@ -135,7 +136,7 @@ class PositionRolloverServiceMonthlyTest {
         verify(compute, never()).buildMonthlyInstrument(anyString(), any(Position.class));
         verify(util, never()).placeAggressiveOrder(any(), anyString(), anyString(), anyInt(), anyString());
         assertThat(heldLeg.getStatus()).isEqualTo(LIVE);
-        assertThat(monthly.getBankedPoints()).isEqualTo(0.0);
+        assertThat(monthly.getMonthlyBankedPoints()).isEqualTo(0.0);
         verify(postTrade, never()).afterOpen(any());
     }
 
@@ -151,8 +152,8 @@ class PositionRolloverServiceMonthlyTest {
         service.rollOverMonthly("24800");
 
         verify(util, never()).placeAggressiveOrder(any(), eq(NEW_INS), anyString(), anyInt(), anyString());
-        assertThat(monthly.getBankedPoints()).as("segment must not be banked on an aborted roll").isEqualTo(0.0);
-        assertThat(monthly.getBaselineSpot()).isEqualTo(24500.0);
+        assertThat(monthly.getMonthlyBankedPoints()).as("segment must not be banked on an aborted roll").isEqualTo(0.0);
+        assertThat(monthly.getMonthlyBaselineSpot()).isEqualTo(24500.0);
         verify(postTrade, never()).afterOpen(any());
     }
 
@@ -160,6 +161,7 @@ class PositionRolloverServiceMonthlyTest {
         LegOrder w = new LegOrder();
         w.setInstrument(instrument);
         w.setExchangeSymbol("NFO:" + instrument);
+        w.setBook(LONG_MONTHLY);
         w.setSide(BUY);
         w.setLots(lots);
         w.setMoneyness("ATM");

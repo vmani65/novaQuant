@@ -13,6 +13,18 @@ public class Constants {
 	public static final String PENDING_CLOSE = "PENDING_CLOSE";
 	public static final String PENDING_OPEN = "PENDING_OPEN";
 	
+	/** Order-execution terminal states beyond Kite's ORDER_COMPLETE/CANCELLED/REJECTED. */
+	public static final String UNKNOWN = "UNKNOWN";
+	public static final String PLACE_FAILED = "PLACE_FAILED";
+	public static final String OVERFILL = "OVERFILL";
+
+	/** Order tag distinguishing position-opening from position-closing orders (log prefix + spread alerts). */
+	public static final String ENTRY = "ENTRY";
+	public static final String EXIT = "EXIT";
+
+	/** Hibernate filter name shared by the Position entity mapping and PositionUtil's session filters. */
+	public static final String LIVE_ORDER_BOOKS = "liveOrderBooks";
+
 	public static final String BUY = "BUY";
 	public static final String SELL = "SELL";
 	

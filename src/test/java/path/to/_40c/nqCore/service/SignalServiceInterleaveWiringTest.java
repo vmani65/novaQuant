@@ -52,13 +52,15 @@ class SignalServiceInterleaveWiringTest {
     void interleaveReplacesLegacyFlip() {
         Position closed = new Position();
         Position opened = new Position();
+        org.springframework.test.util.ReflectionTestUtils.setField(closed, "id", 101L);
+        org.springframework.test.util.ReflectionTestUtils.setField(opened, "id", 102L);
         when(flipService.interleaveAvailable()).thenReturn(true);
-        when(flipService.flip(anyString(), anyString(), any(Signal.class)))
+        when(flipService.flip(anyString(), anyString(), any(Signal.class), any(Position.class)))
                 .thenReturn(new FlipOutcome(closed, opened));
 
         service.handleFlip("24600", "PE", signal());
 
-        verify(flipService).flip(eq("24600"), eq("PE"), any(Signal.class));
+        verify(flipService).flip(eq("24600"), eq("PE"), any(Signal.class), any(Position.class));
         verify(closing, never()).closeMonthlyTrade(anyString(), any(Signal.class), eq(false));
         verify(opening, never()).openMonthlyTrade(anyString(), anyString(), any(Position.class));
         verify(postTrade).afterOpen(opened);
@@ -69,7 +71,7 @@ class SignalServiceInterleaveWiringTest {
     @DisplayName("interleave declines (null outcome): legacy monthly flip runs")
     void declinedInterleaveFallsBackToLegacy() {
         when(flipService.interleaveAvailable()).thenReturn(true);
-        when(flipService.flip(anyString(), anyString(), any(Signal.class))).thenReturn(null);
+        when(flipService.flip(anyString(), anyString(), any(Signal.class), any(Position.class))).thenReturn(null);
         when(opening.openMonthlyTrade(anyString(), anyString(), any(Position.class))).thenReturn(new Position());
 
         service.handleFlip("24600", "PE", signal());
@@ -86,7 +88,7 @@ class SignalServiceInterleaveWiringTest {
 
         service.handleFlip("24600", "PE", signal());
 
-        verify(flipService, never()).flip(anyString(), anyString(), any(Signal.class));
+        verify(flipService, never()).flip(anyString(), anyString(), any(Signal.class), any(Position.class));
         verify(closing).closeMonthlyTrade(eq("24600"), any(Signal.class), eq(false));
     }
 

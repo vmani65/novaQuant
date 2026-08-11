@@ -8,9 +8,10 @@ import java.util.List;
 import java.util.stream.Collectors;
 import org.springframework.stereotype.Service;
 import path.to._40c.nqCore.entity.Position;
+import path.to._40c.nqCore.entity.WeeklyLeg;
 import path.to._40c.nqCore.pojo.EquityCurve;
 import path.to._40c.nqCore.repo.PositionRepository;
-import path.to._40c.nqCore.util.Constants;
+import path.to._40c.nqCore.util.LegScope;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
 
@@ -28,9 +29,12 @@ public class EquityCurveService {
     }
 
     /**
-     * book filter: "All" combines both books (the account-level curve that ties to the
-     * broker ledger); SYNTH_WEEKLY / LONG_MONTHLY isolate one book's trades. Legacy rows
-     * with a null book count as SYNTH_WEEKLY, matching the startup backfill.
+     * book filter: "All" is the account-level curve that ties to the broker ledger — one
+     * point per signal off the row's capital chain. SYNTH_WEEKLY / LONG_MONTHLY isolate one
+     * book: rows are selected by holding that book's legs, and since the capital chain is
+     * signal-level (not per book), the isolated curve is a SYNTHETIC cumulative chain of the
+     * book's own leg P&L (fills minus that book's charges), seeded at the first row's
+     * startingCapital. Legacy single-book rows chart identically under both schemes.
      */
     public EquityCurve getEquityCurveData(String strategy, String book) {
         List<Position> trades;
@@ -41,9 +45,11 @@ public class EquityCurveService {
             trades = positionRepository.findByStrategyNameOrderByOpenedAtAsc(strategy);
         }
         if (book != null && !"All".equalsIgnoreCase(book)) {
-            trades = trades.stream()
-                    .filter(t -> book.equals(t.getBook() != null ? t.getBook() : Constants.SYNTH_WEEKLY))
+            List<Position> bookTrades = trades.stream()
+                    .filter(t -> t.getLegs() != null && t.getLegs().stream()
+                            .anyMatch(l -> book.equals(LegScope.bookOf(l)) && !LegScope.neverTraded(l)))
                     .collect(Collectors.toList());
+            return buildBookEquityCurve(bookTrades, book);
         }
 
         return buildEquityCurve(trades);
@@ -82,6 +88,65 @@ public class EquityCurveService {
             outcomes.add(trade.getResult() != null ? trade.getResult() : "");
             points.add(trade.getPointsPnl() != null ? trade.getPointsPnl() : 0.0);
             charges.add(trade.getTotalCharges() != null ? trade.getTotalCharges() : 0.0);
+        }
+
+        double currentEquity = equityValues.isEmpty() ? startingEquity
+                : equityValues.get(equityValues.size() - 1);
+        return new EquityCurve(startingEquity, currentEquity, dates, equityValues, startingCapitals, lotSizes, outcomes, points, charges);
+    }
+
+    /**
+     * Single-book curve: same array contract as the account curve (the UI derives per-trade
+     * P&L as equity[i] − startingCapitals[i]), but each step is the book's OWN leg P&L —
+     * Σ(book legs' actualPnl) − Σ(book legs' open+close charges) — accumulated from the
+     * first qualifying row's startingCapital. Rows must be accounted (endingCapital set) so
+     * only settled signals chart, matching the account curve's inclusion rule.
+     */
+    private EquityCurve buildBookEquityCurve(List<Position> trades, String book) {
+        List<String> dates            = new ArrayList<>();
+        List<Double> equityValues     = new ArrayList<>();
+        List<Double> startingCapitals = new ArrayList<>();
+        List<Integer> lotSizes        = new ArrayList<>();
+        List<String> outcomes         = new ArrayList<>();
+        List<Double> points           = new ArrayList<>();
+        List<Double> charges          = new ArrayList<>();
+
+        List<Position> sorted = trades.stream()
+            .filter(t -> t.getEndingCapital() != null && t.getOpenedAt() != null)
+            .sorted(Comparator.comparing(t -> {
+                try { return LocalDateTime.parse(t.getOpenedAt(), PARSE_FMT); }
+                catch (Exception e) { return LocalDateTime.MIN; }
+            }))
+            .collect(Collectors.toList());
+
+        double startingEquity = 0.0;
+        if (!sorted.isEmpty()) {
+            Position first = sorted.get(0);
+            startingEquity = first.getStartingCapital() != null ? first.getStartingCapital() : 0.0;
+        }
+
+        double running = startingEquity;
+        for (Position trade : sorted) {
+            List<WeeklyLeg> bookLegs = LegScope.of(trade, book).stream()
+                    .filter(l -> !LegScope.neverTraded(l)).toList();
+            double legPnl = bookLegs.stream()
+                    .filter(l -> l.getActualPnl() != null)
+                    .mapToDouble(WeeklyLeg::getActualPnl).sum();
+            double legCharges = bookLegs.stream()
+                    .mapToDouble(l -> (l.getOpenCharges() != null ? l.getOpenCharges() : 0.0)
+                            + (l.getCloseCharges() != null ? l.getCloseCharges() : 0.0)).sum();
+            int legLots = bookLegs.stream()
+                    .filter(l -> l.getLots() != null)
+                    .mapToInt(WeeklyLeg::getLots).max().orElse(0);
+
+            dates.add(formatDate(trade.getOpenedAt()));
+            startingCapitals.add(running);
+            running += legPnl - legCharges;
+            equityValues.add(running);
+            lotSizes.add(legLots);
+            outcomes.add(trade.getResult() != null ? trade.getResult() : "");
+            points.add(trade.getPointsPnl() != null ? trade.getPointsPnl() : 0.0);
+            charges.add(legCharges);
         }
 
         double currentEquity = equityValues.isEmpty() ? startingEquity

@@ -121,6 +121,7 @@ class PositionCloseServicePendingCloseTest {
         w.setQuantity(QTY);
         w.setLots(10);
         w.setStatus(LIVE);
+        w.setOpenOrderId(instrument + "-OPEN-1");
         return w;
     }
 

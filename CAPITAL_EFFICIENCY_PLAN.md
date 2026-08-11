@@ -360,7 +360,8 @@ each book maps to exactly one calendar (SYNTH_WEEKLY→WEEKLY, LONG_MONTHLY→MO
 >   item 14 DECIDED: single-leg PARTIAL keeps orphan-flatten in v1 (revisit with live data);
 >   item 17 (nqTicker monthly subscription) is external — still owed in the nqTicker app.
 > - Owner decisions (§7.4) locked 2026-08-07: LONG_MONTHLY = 2-lot increments; FULL auto-roll;
->   recenter NONE; 9:15 open-buffer weekly-only. Evaluation window ≥1 month stands.
+>   recenter NONE; 9:15 open-buffer weekly-only (REVERSED 2026-08-11 → both books, see §7.4).
+>   Evaluation window ≥1 month stands.
 > - Next: mock,test click-through → explicit "promote" → signals.db backup → deploy (§7.0 protocol).
 
 > **ROLLOVER SYMMETRY RESTRUCTURE 2026-08-10 (owner-ordered, built on the same branch):**
@@ -471,6 +472,8 @@ without a mock,test pass AND explicit owner approval. Current state:
   (delta≈1, the Madan construction) before first live trade.
 - **Recenter policy for LONG_MONTHLY**: recommended NONE (gamma convexity is the point;
   re-striking sells it off). Confirm.
-- **9:15 open-buffer (nQTicker longExit delegation)**: recommended weekly-only; LONG_MONTHLY
-  closes inline. Confirm.
+- **9:15 open-buffer (nQTicker longExit delegation)**: ~~recommended weekly-only; LONG_MONTHLY
+  closes inline~~ — REVERSED by owner 2026-08-11 after the first live 9:15 exit recorded
+  divergent exit spots (weekly 24621.0 via buffer vs monthly 24601.5 off the stale AFL bar
+  price). Both books now delegate; /api/execute-close closes both at nQTicker's live price.
 - **Evaluation window**: ≥1 month parallel run before any capital-migration discussion.

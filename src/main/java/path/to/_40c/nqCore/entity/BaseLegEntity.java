@@ -12,6 +12,17 @@ import lombok.ToString;
 @ToString
 public abstract class BaseLegEntity extends BaseEntity {
 
+    /**
+     * Execution book that owns this leg: SYNTH_WEEKLY or LONG_MONTHLY. The leg is the
+     * per-book unit under the one-position-per-signal model — every book-scoped operation
+     * (close, rollover, recenter, flip) selects legs by this column. Instrument prefix can
+     * never be the discriminator: in monthly-expiry week both books hold the identical
+     * contract. Stamped at build time by ComputeUtil's instrument builders; legacy null
+     * rows are backfilled from the old POSITION.BOOK at startup (LegBookBackfill).
+     */
+    @Column(name = "BOOK", length = 15)
+    protected String book;
+
     @Column(name = "EXCHANGE_SYMBOL")
     protected String exchangeSymbol;
 

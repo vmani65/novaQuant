@@ -72,7 +72,6 @@ class PositionRolloverServiceWeeklyTest {
         heldCe = leg(OLD_CE, BUY);
         heldPe = leg(OLD_PE, SELL);
         weekly = new Position();
-        weekly.setBook(SYNTH_WEEKLY);
         weekly.setDirection(LONG);
         weekly.setStatus(LIVE);
         weekly.setEntrySpot(24500.0);
@@ -128,6 +127,7 @@ class PositionRolloverServiceWeeklyTest {
         WeeklyLeg l = new WeeklyLeg();
         l.setInstrument(instrument);
         l.setExchangeSymbol("NFO:" + instrument);
+        l.setBook(SYNTH_WEEKLY);
         l.setSide(side);
         l.setQuantity(QTY);
         l.setLots(10);
@@ -139,6 +139,7 @@ class PositionRolloverServiceWeeklyTest {
         LegOrder w = new LegOrder();
         w.setInstrument(instrument);
         w.setExchangeSymbol("NFO:" + instrument);
+        w.setBook(SYNTH_WEEKLY);
         w.setSide(side);
         w.setLots(10);
         w.setMoneyness("ATM");

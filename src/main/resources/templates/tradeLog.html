@@ -367,6 +367,7 @@
             return `
                 <tr class="border-b border-gray-100 hover:bg-white transition-colors">
                     <td class="py-2 pl-3 pr-2 font-mono text-[11px] text-gray-800 truncate" title="${c.exchangeSymbol || ''}">${c.exchangeSymbol || '—'}</td>
+                    <td class="py-2 px-2 text-center">${bookBadge(c.book || 'SYNTH_WEEKLY')}</td>
                     <td class="py-2 px-2 text-center">${statusBadge(c.status)}</td>
                     <td class="py-2 px-2 text-center">${txnBadge(c.side)}</td>
                     <td class="py-2 px-2 text-right font-mono text-[11px] text-gray-700">${c.buyFillPrice != null ? '₹' + fmt(c.buyFillPrice) : '—'}</td>
@@ -391,16 +392,17 @@
                 <div class="border-l-4 ${accentBorder} ml-8 mr-0">
                     <table class="w-full text-xs border-collapse table-fixed">
                         <colgroup>
-                            <col style="width:14%">
+                            <col style="width:12%">
+                            <col style="width:6%">
                             <col style="width:7%">
                             <col style="width:5%">
                             <col style="width:7%">
                             <col style="width:7%">
-                            <col style="width:7%">
+                            <col style="width:6%">
                             <col style="width:7%">
                             <col style="width:7%">
                             <col style="width:6%">
-                            <col style="width:7%">
+                            <col style="width:6%">
                             <col style="width:5%">
                             <col style="width:6%">
                             <col style="width:6%">
@@ -409,12 +411,13 @@
                         </colgroup>
                         <thead>
                             <tr class="${headerBg} border-b border-gray-200">
-                                <th colspan="15" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
+                                <th colspan="16" class="py-1.5 pl-3 text-left text-[10px] font-bold ${headerColor} uppercase tracking-widest">
                                     ${legs.length} legs
                                 </th>
                             </tr>
                             <tr class="bg-gray-50 border-b border-gray-200">
                                 <th class="py-1.5 pl-3 pr-2 text-left text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Symbol</th>
+                                <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Book</th>
                                 <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Status</th>
                                 <th class="py-1.5 px-2 text-center text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Txn</th>
                                 <th class="py-1.5 px-2 text-right text-[10px] font-semibold text-gray-400 uppercase tracking-wide">Bought</th>
@@ -438,35 +441,18 @@
         </tr>`;
     }
 
-    // One signal, expressed by each enabled book, opens one position PER BOOK — so a
-    // flip day with both books on writes two rows per signal. The log groups those
-    // rows under one signal-level parent (grouped by strategy + signalAt, the OPEN
-    // signal's timestamp); a signal with a single position renders exactly as before.
+    // One signal = one position row (both books' legs hang off it), so the log renders
+    // one row per trade — the old client-side signal grouping is gone because the
+    // grouping is now structural in the data model.
     function renderTrades(trades) {
         const tbody = document.getElementById('tradeBody');
         if (!trades || trades.length === 0) {
             tbody.innerHTML = `<tr><td colspan="16" class="text-center py-10 text-gray-400 text-xs">No trades found</td></tr>`;
             return;
         }
-
-        const groups = [];
-        const byKey = new Map();
-        trades.forEach(t => {
-            const key = t.signalAt && String(t.signalAt).trim()
-                ? (t.strategyName || '') + '|' + t.signalAt
-                : 'solo-' + t.id;
-            if (byKey.has(key)) byKey.get(key).push(t);
-            else { const g = [t]; byKey.set(key, g); groups.push(g); }
-        });
-
-        tbody.innerHTML = groups.map((g, i) =>
-            g.length === 1 ? positionRowHtml(g[0], '', '') : signalGroupHtml(g, 'g' + i)
-        ).join('');
-
-        const grouped = groups.some(g => g.length > 1);
-        document.getElementById('tradeCount').textContent = grouped
-            ? `${groups.length} signal${groups.length !== 1 ? 's' : ''} · ${trades.length} positions`
-            : `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
+        tbody.innerHTML = trades.map(t => positionRowHtml(t, '', '')).join('');
+        document.getElementById('tradeCount').textContent =
+            `${trades.length} trade${trades.length !== 1 ? 's' : ''}`;
         renderSummary(trades);
     }
 
@@ -494,76 +480,15 @@
                 <td class="px-4 py-3 text-right font-mono ${pnlClass(t.actualPnl)}">${t.actualPnl != null ? '₹' + fmt(t.actualPnl) : '—'}</td>
                 <td class="px-4 py-3 text-right font-mono text-gray-500">${t.pnlCapturePct || '—'}</td>
                 <td class="px-4 py-3 text-right font-mono text-gray-500">${t.totalCharges != null ? '₹' + fmt(t.totalCharges) : '—'}</td>
-                <td class="px-4 py-3">${bookBadge(t.book)}</td>
+                <td class="px-4 py-3"><div class="flex gap-1">${booksOf(t).map(bookBadge).join('')}</div></td>
                 <td class="px-4 py-3 text-gray-500 text-[11px]">${t.strategyName || '—'}</td>
             </tr>
             ${childRows}`;
     }
 
-    /**
-     * Signal parent row: rupee columns are SUMS across the group's positions (the
-     * account-level view of the signal); spot/points columns show the shared value
-     * when every position agrees and an em dash when they diverge (e.g. weekly
-     * banked recenter points vs monthly) — never a misleading blend.
-     */
-    function signalGroupHtml(group, sigId) {
-        const first = group[0];
-        const same = sel => { const v = sel(group[0]); return group.every(t => String(sel(t)) === String(v)) ? v : null; };
-        const sum = sel => { const vals = group.map(sel).filter(v => v != null); return vals.length ? vals.reduce((a, b) => a + b, 0) : null; };
-        const allClosed = group.every(t => t.closedAt);
-        const lastClosed = allClosed ? group.map(t => t.closedAt).sort().slice(-1)[0] : null;
-        const dir = same(t => t.direction);
-        const result = same(t => t.result);
-        const entry = same(t => t.entrySpot);
-        const exit = same(t => t.exitSpot);
-        const points = same(t => t.pointsPnl);
-        const expected = sum(t => t.expectedPnl);
-        const actual = sum(t => t.actualPnl);
-        const charges = sum(t => t.totalCharges);
-        const statusCell = group.map(t => `
-            <div class="flex items-center gap-1.5 whitespace-nowrap">
-                <span class="text-[9px] font-bold w-3 ${t.book === 'LONG_MONTHLY' ? 'text-violet-500' : 'text-blue-500'}">${t.book === 'LONG_MONTHLY' ? 'M' : 'W'}</span>${statusBadge(t.status)}
-            </div>`).join('');
-        const posRows = group.map(t => positionRowHtml(t, 'sig-child bg-slate-50/70', `data-sig="${sigId}"`)).join('');
-
-        return `
-            <tr class="trade-row sig-row border-b border-gray-200 bg-indigo-50/50" data-sig="${sigId}" onclick="toggleSignal(this)">
-                <td class="px-4 py-3 text-center"><svg class="chevron w-3.5 h-3.5 text-indigo-400 transition-transform duration-150" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><polyline points="9 18 15 12 9 6"/></svg></td>
-                <td class="px-4 py-3 font-mono text-gray-500 text-[11px] whitespace-nowrap">${group.map(t => '#' + t.id).join(' · ')}</td>
-                <td class="px-4 py-3 font-mono text-gray-700 text-[11px] whitespace-nowrap">${first.openedAt || '—'}</td>
-                <td class="px-4 py-3 font-mono text-gray-400 text-[11px] whitespace-nowrap">${lastClosed || '—'}</td>
-                <td class="px-4 py-3">${dir ? directionBadge(dir) : '—'}</td>
-                <td class="px-4 py-3"><div class="flex flex-col gap-1">${statusCell}</div></td>
-                <td class="px-4 py-3">${result ? outcomeBadge(result) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-700">${entry != null ? fmt(entry) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-700">${exit != null ? fmt(exit) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-500">${points != null ? fmt(points) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-500">${expected != null ? '₹' + fmt(expected) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono ${pnlClass(actual)}">${actual != null ? '₹' + fmt(actual) : '—'}</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-400">—</td>
-                <td class="px-4 py-3 text-right font-mono text-gray-500">${charges != null ? '₹' + fmt(charges) : '—'}</td>
-                <td class="px-4 py-3"><div class="flex gap-1">${group.map(t => bookBadge(t.book)).join('')}</div></td>
-                <td class="px-4 py-3 text-gray-500 text-[11px]">${first.strategyName || '—'}</td>
-            </tr>
-            ${posRows}`;
-    }
-
-    function toggleSignal(rowEl) {
-        const sigId = rowEl.dataset.sig;
-        const posRows = document.querySelectorAll(`tr.sig-child[data-sig="${sigId}"]`);
-        if (!posRows.length) return;
-        const isOpen = posRows[0].classList.contains('open');
-        posRows.forEach(r => {
-            r.classList.toggle('open', !isOpen);
-            if (isOpen) {
-                document.querySelectorAll(`tr[data-parent="${r.dataset.tradeId}"]`)
-                    .forEach(l => l.classList.remove('open'));
-                const chev = r.querySelector('.chevron');
-                if (chev) chev.style.transform = '';
-            }
-        });
-        const chevron = rowEl.querySelector('.chevron');
-        if (chevron) chevron.style.transform = isOpen ? '' : 'rotate(90deg)';
+    // The books that traded this signal; legacy rows with no leg books count as WEEKLY.
+    function booksOf(t) {
+        return t.books && t.books.length ? t.books : ['SYNTH_WEEKLY'];
     }
 
     function renderSummary(trades) {
@@ -611,13 +536,14 @@
         applyFilters();
     }
 
-    // Status and book filter independently; legacy rows with no book count as WEEKLY.
+    // Status and book filter independently; the book filter matches any trade whose
+    // legs include the selected book (a shared row shows under both books).
     function applyFilters() {
         let filtered = activeFilter === 'ALL' ? allTrades
             : activeFilter === 'LIVE' ? allTrades.filter(t => t.status === 'LIVE' || t.status === 'PARTIAL' || t.status === 'PENDING_CLOSE')
             : allTrades.filter(t => t.status === activeFilter);
         if (activeBook !== 'ALL') {
-            filtered = filtered.filter(t => (t.book || 'SYNTH_WEEKLY') === activeBook);
+            filtered = filtered.filter(t => booksOf(t).includes(activeBook));
         }
         renderTrades(filtered);
     }

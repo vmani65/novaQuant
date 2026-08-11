@@ -15,13 +15,13 @@ import path.to._40c.nqCore.service.MonthlySymbolCache;
 import path.to._40c.nqCore.service.WeeklySymbolCache;
 
 import static path.to._40c.nqCore.util.Constants.DATE_FORMAT;
-import static path.to._40c.nqCore.util.Constants.FAILED;
 import static path.to._40c.nqCore.util.Constants.LONG;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.LOSS;
 import static path.to._40c.nqCore.util.Constants.NFO_COLON;
 import static path.to._40c.nqCore.util.Constants.NIFTY;
 import static path.to._40c.nqCore.util.Constants.SHORT;
+import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.WIN;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 import static path.to._40c.nqCore.util.Constants.INPUT_FORMATS;
@@ -75,7 +75,7 @@ public class ComputeUtil {
             throw new IllegalStateException("SYNTH_WEEKLY has no weekly symbol configured — save weekly symbols first");
         String symbolPrefix = weeklyCfg.getThisWeekSymbol();
         List<LegOrder> orders = templates.stream()
-                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
+                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade, SYNTH_WEEKLY))
                 .collect(Collectors.toList());
         log.info("Built weekly leg orders: size={}, details={}", orders.size(), orders);
         return orders;
@@ -102,7 +102,7 @@ public class ComputeUtil {
             throw new IllegalStateException("LONG_MONTHLY has no monthly symbol configured — save monthly symbols first");
         String symbolPrefix = monthlyCfg.getThisWeekSymbol();
         List<LegOrder> orders = templates.stream()
-                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade))
+                .map(tpl -> buildLegOrder(tpl, atm, symbolPrefix, trade, LONG_MONTHLY))
                 .collect(Collectors.toList());
         log.info("Built monthly leg orders: size={}, details={}", orders.size(), orders);
         return orders;
@@ -131,10 +131,11 @@ public class ComputeUtil {
         return strikePrice;
     }
 
-    private LegOrder buildLegOrder(LegTemplate tpl, int atm, String symbolPrefix, Position position) {
+    private LegOrder buildLegOrder(LegTemplate tpl, int atm, String symbolPrefix, Position position, String book) {
         LegOrder w = new LegOrder();
         String optionSuffix = tpl.getOptionType();
         int strike = atm + tpl.getOffsetPts();
+        w.setBook(book);
         w.setExchangeSymbol(NFO_COLON + NIFTY + symbolPrefix + strike + optionSuffix);
         w.setInstrument(NIFTY + symbolPrefix + strike + optionSuffix);
         w.setSide(tpl.getSide());
@@ -152,26 +153,33 @@ public class ComputeUtil {
     }
 
 	/**
-	 * Sets pointsPnl = bankedPoints (from all prior recenter + rollover segments) + the current
-	 * (final) segment's points: (exit - baseline) for LONG, (baseline - exit) for SHORT, where
-	 * baseline is the strike-center of the legs being closed. Sets result WIN/LOSS by sign.
-	 * Falls back to entrySpot if baselineSpot is absent (legacy rows pre-dating the baseline split).
+	 * Sets pointsPnl = banked points (from all prior recenter + rollover segments) + the current
+	 * (final) segment's points: (exit - baseline) for LONG, (baseline - exit) for SHORT. The
+	 * chain is per book — the SYNTH_WEEKLY chain (baselineSpot/bankedPoints) when weekly legs
+	 * traded, else the LONG_MONTHLY chain — and both telescope to the same total spot move, so
+	 * pointsPnl is the signal's spot move regardless of which chain computed it. Falls back to
+	 * entrySpot if the baseline is absent (legacy rows pre-dating the baseline split).
 	 * Orphan-origin trades (a PARTIAL open whose surviving legs were later flattened) are skipped:
 	 * synthetic points assume a complete CE+PE pair, so pointsPnl stays null and calcPnL derives
 	 * the WIN/LOSS result from actual leg PnL instead.
 	 *
-	 * LONG_MONTHLY records pointsPnl (the spot move is still the reference) but leaves result
-	 * null here: a bought option's rupee outcome diverges from the spot sign (theta can turn a
-	 * small spot-points winner into a rupee loser), so calcPnL derives WIN/LOSS from net actual
-	 * PnL instead — spot-points sign stays authoritative only for the delta-1 synthetic.
+	 * result is WIN/LOSS by points sign only when weekly legs traded (the delta-1 synthetic
+	 * tracks spot). A monthly-only signal leaves result null here: a bought option's rupee
+	 * outcome diverges from the spot sign (theta can turn a small spot-points winner into a
+	 * rupee loser), so calcPnL derives WIN/LOSS from net actual PnL instead.
 	 */
 	public void calcTradeOutcome(Position trade) {
 		if(trade != null) {
-			if (trade.getLegs().stream().anyMatch(ComputeUtil::neverTraded)) {
+			if (trade.getLegs().stream().anyMatch(LegScope::neverTraded)) {
 				log.info("Orphan-origin trade id={} — synthetic points skipped; result derives from leg PnL in calcPnL", trade.getId());
 				return;
 			}
-			double baseline = trade.getBaselineSpot() != null ? trade.getBaselineSpot()
+			boolean weeklyTraded = trade.getLegs().stream().anyMatch(l -> SYNTH_WEEKLY.equals(LegScope.bookOf(l)));
+			Double chainBaseline = weeklyTraded ? trade.getBaselineSpot()
+					: (trade.getMonthlyBaselineSpot() != null ? trade.getMonthlyBaselineSpot() : trade.getBaselineSpot());
+			Double chainBanked = weeklyTraded ? trade.getBankedPoints()
+					: (trade.getMonthlyBankedPoints() != null ? trade.getMonthlyBankedPoints() : trade.getBankedPoints());
+			double baseline = chainBaseline != null ? chainBaseline
 					: (trade.getEntrySpot() != null ? trade.getEntrySpot() : 0.0);
 			BigDecimal basePrice = BigDecimal.valueOf(baseline);
 			BigDecimal exitPrice = BigDecimal.valueOf(trade.getExitSpot());
@@ -184,11 +192,11 @@ public class ComputeUtil {
 				if(basePrice.compareTo(exitPrice) < 0 || basePrice.compareTo(exitPrice) > 0)
 					segmentPoints = basePrice.subtract(exitPrice).doubleValue();
 			}
-			double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
+			double banked = chainBanked != null ? chainBanked : 0.0;
 			double totalPoints = banked + segmentPoints;
 			trade.setPointsPnl(totalPoints);
-			if (LONG_MONTHLY.equals(trade.getBook())) {
-				log.info("LONG_MONTHLY trade id={} — pointsPnl={} recorded; WIN/LOSS derives from rupee PnL in calcPnL",
+			if (!weeklyTraded) {
+				log.info("Monthly-only trade id={} — pointsPnl={} recorded; WIN/LOSS derives from rupee PnL in calcPnL",
 						trade.getId(), totalPoints);
 				return;
 			}
@@ -197,10 +205,14 @@ public class ComputeUtil {
 	}
 
 	/**
-	 * Groups legs by moneyness (each group is one CE+PE pair across all segments at that
-	 * strike offset), computes per-leg actualPnl = qty × (sold − bought), aggregates pair-level
-	 * actual/expected PnL and brokerage, then sets trade-level brokerage, expectedPnl,
-	 * actualPnl (= total actual − brokerage), pnlCapturePct, and lots.
+	 * Runs per BOOK over the shared row, then sums: within each book, groups that book's legs
+	 * by moneyness (each group is one CE+PE pair across all segments at that strike offset —
+	 * per book, because a weekly ATM leg and a monthly ATM leg must never pair), computes
+	 * per-leg actualPnl = qty × (sold − bought), aggregates pair-level actual/expected PnL and
+	 * brokerage, then sets trade-level brokerage, expectedPnl, actualPnl (= total actual −
+	 * brokerage), pnlCapturePct, and lots as CROSS-BOOK CUMULATIVE totals — the signal's
+	 * numbers, per the one-position-per-signal model. Each book's expected-PnL denominator
+	 * uses its OWN banked chain and factor (monthly 0.5 futures-equivalent, weekly 1.0).
 	 *
 	 * Per-leg expectedPnl = qty × the spot points of the leg's own segment — the full move
 	 * available to its CE+PE pair (synthetic delta ≈ 1). Recenter/rollover stamp it when they
@@ -224,15 +236,8 @@ public class ComputeUtil {
 	 */
 	public void calcPnL(Position trade) {
 		if (trade == null) return;
-		boolean orphanOrigin = trade.getLegs().stream().anyMatch(ComputeUtil::neverTraded);
+		boolean orphanOrigin = trade.getLegs().stream().anyMatch(LegScope::neverTraded);
 		if (trade.getPointsPnl() == null && !orphanOrigin) return;
-
-		Map<String, List<WeeklyLeg>> pairs = trade.getLegs().stream()
-				.collect(Collectors.groupingBy(WeeklyLeg::getMoneyness));
-
-		double banked = trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0;
-		Double finalSegmentPoints = trade.getPointsPnl() != null ? trade.getPointsPnl() - banked : null;
-		double expectedQtyFactor = LONG_MONTHLY.equals(trade.getBook()) ? 0.5 : 1.0;
 
 		double totalBrokerage  = 0.0;
 		double totalExpectedPnL = 0.0;
@@ -241,35 +246,51 @@ public class ComputeUtil {
 		boolean anyFullPair    = false;
 		boolean anyLegComputed = false;
 
-		for (List<WeeklyLeg> pairLegs : pairs.values()) {
-			List<WeeklyLeg> traded = pairLegs.stream().filter(w -> !neverTraded(w)).toList();
-			if (traded.isEmpty()) continue;
-			boolean allPresent = traded.stream().allMatch(w ->
-					w.getSellFillPrice() != null && w.getBuyFillPrice() != null &&
-					w.getQuantity()  != null && w.getLots()     != null &&
-					w.getOpenCharges()  != null && w.getCloseCharges() != null);
-			if (!allPresent) continue;
+		for (String book : List.of(SYNTH_WEEKLY, LONG_MONTHLY)) {
+			List<WeeklyLeg> bookLegs = LegScope.of(trade, book);
+			if (bookLegs.isEmpty()) continue;
 
-			boolean fullPair = traded.size() == pairLegs.size() && finalSegmentPoints != null;
-			traded.forEach(w -> {
-				double actualLegPnL = rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()));
-				w.setActualPnl(actualLegPnL);
-				if (fullPair) {
-					if (w.getExpectedPnl() == null) {
-						w.setExpectedPnl(rnd(w.getQuantity() * expectedQtyFactor * finalSegmentPoints));
+			double banked = LONG_MONTHLY.equals(book)
+					? (trade.getMonthlyBankedPoints() != null ? trade.getMonthlyBankedPoints()
+							: (trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0))
+					: (trade.getBankedPoints() != null ? trade.getBankedPoints() : 0.0);
+			Double finalSegmentPoints = trade.getPointsPnl() != null ? trade.getPointsPnl() - banked : null;
+			double expectedQtyFactor = LONG_MONTHLY.equals(book) ? 0.5 : 1.0;
+
+			Map<String, List<WeeklyLeg>> pairs = bookLegs.stream()
+					.collect(Collectors.groupingBy(WeeklyLeg::getMoneyness));
+
+			for (List<WeeklyLeg> pairLegs : pairs.values()) {
+				List<WeeklyLeg> traded = pairLegs.stream().filter(w -> !LegScope.neverTraded(w)).toList();
+				if (traded.isEmpty()) continue;
+				boolean allPresent = traded.stream().allMatch(w ->
+						w.getSellFillPrice() != null && w.getBuyFillPrice() != null &&
+						w.getQuantity()  != null && w.getLots()     != null &&
+						w.getOpenCharges()  != null && w.getCloseCharges() != null);
+				if (!allPresent) continue;
+
+				boolean fullPair = traded.size() == pairLegs.size() && finalSegmentPoints != null;
+				final Double segmentForBook = finalSegmentPoints;
+				traded.forEach(w -> {
+					double actualLegPnL = rnd(w.getQuantity() * (w.getSellFillPrice() - w.getBuyFillPrice()));
+					w.setActualPnl(actualLegPnL);
+					if (fullPair) {
+						if (w.getExpectedPnl() == null) {
+							w.setExpectedPnl(rnd(w.getQuantity() * expectedQtyFactor * segmentForBook));
+						}
+						w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
 					}
-					w.setPnlCapturePct(formatPnLPercent(actualLegPnL, w.getExpectedPnl()));
-				}
-			});
-			anyLegComputed = true;
+				});
+				anyLegComputed = true;
 
-			totalActualPnL += traded.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
-			totalBrokerage += traded.stream()
-					.mapToDouble(w -> w.getOpenCharges() + w.getCloseCharges()).sum();
-			totalLots      += traded.get(0).getLots();
-			if (fullPair) {
-				totalExpectedPnL += rnd(traded.get(0).getQuantity() * expectedQtyFactor * trade.getPointsPnl());
-				anyFullPair = true;
+				totalActualPnL += traded.stream().mapToDouble(WeeklyLeg::getActualPnl).sum();
+				totalBrokerage += traded.stream()
+						.mapToDouble(w -> w.getOpenCharges() + w.getCloseCharges()).sum();
+				totalLots      += traded.get(0).getLots();
+				if (fullPair) {
+					totalExpectedPnL += rnd(traded.get(0).getQuantity() * expectedQtyFactor * trade.getPointsPnl());
+					anyFullPair = true;
+				}
 			}
 		}
 
@@ -281,19 +302,6 @@ public class ComputeUtil {
 		if (trade.getResult() == null && anyLegComputed) {
 			trade.setResult(trade.getActualPnl() > 0 ? WIN : LOSS);
 		}
-	}
-
-	/**
-	 * A leg that never existed at the broker: FAILED at open with no fills on either side.
-	 * Its presence marks an orphan-origin (PARTIAL) trade. Fill prices are the discriminator,
-	 * not the order id — since the PENDING_CLOSE work an id may be recorded for an order that
-	 * was placed but never filled (possibly-live orders stay traceable for reconciliation).
-	 * Distinct from a leg whose CLOSE failed — that one has an open-side fill price and still
-	 * represents a real broker position.
-	 */
-	private static boolean neverTraded(WeeklyLeg w) {
-		return FAILED.equals(w.getStatus())
-				&& w.getBuyFillPrice() == null && w.getSellFillPrice() == null;
 	}
 
 	/**
@@ -349,19 +357,25 @@ public class ComputeUtil {
 	}
 
 	/**
-	 * The capital chain (starting/endingCapital, currentCapital) is account-level and flows
-	 * from every book's closes. The sizing fields (possibleLots, currentRiskPerLot) are
-	 * weekly-margin-regime math — definedRiskPerLot means NRML margin per synthetic lot —
-	 * so LONG_MONTHLY closes (a monthly "lot" costs ~premium, an order of magnitude less)
-	 * leave them untouched, and an unset/zero definedRiskPerLot skips them instead of
-	 * poisoning possibleLots via Infinity-cast or an unboxing NPE.
+	 * ONE capital-chain step per signal: startingCapital/endingCapital stamp the row with the
+	 * account capital before and after the signal's CUMULATIVE actualPnl (all books), and
+	 * currentCapital advances once. Runs only when the row is terminal (PostTradeService
+	 * gates on LegScope.isTerminal), so a signal with an unconfirmed leg never half-stamps.
+	 * The sizing fields (possibleLots, currentRiskPerLot) are weekly-margin-regime math —
+	 * definedRiskPerLot means NRML margin per synthetic lot — so they update only when the
+	 * signal traded weekly legs, sized by the WEEKLY lots (a monthly "lot" costs ~premium,
+	 * an order of magnitude less), and an unset/zero definedRiskPerLot skips them instead
+	 * of poisoning possibleLots via Infinity-cast or an unboxing NPE.
 	 */
 	public void recalculateCapital(Position closedTrade) {
 		TradeCapital capital = tradeCapital.getTradeCapital();
 		closedTrade.setStartingCapital(capital.getCurrentCapital());
 		closedTrade.setEndingCapital(capital.getCurrentCapital() + closedTrade.getActualPnl());
 		capital.setCurrentCapital(closedTrade.getEndingCapital());
-		if (LONG_MONTHLY.equals(closedTrade.getBook())) {
+		int weeklyLots = LegScope.of(closedTrade, SYNTH_WEEKLY).stream()
+				.filter(w -> !LegScope.neverTraded(w) && w.getLots() != null)
+				.mapToInt(WeeklyLeg::getLots).max().orElse(0);
+		if (weeklyLots <= 0) {
 			tradeCapital.save(capital);
 			return;
 		}
@@ -371,9 +385,8 @@ public class ComputeUtil {
 			tradeCapital.save(capital);
 			return;
 		}
-		int currentLots = closedTrade.getLots();
 		int possibleLots = (int) (capital.getCurrentCapital() / riskPerLot);
-		capital.setPossibleLots(possibleLots > currentLots ? possibleLots : 0);
+		capital.setPossibleLots(possibleLots > weeklyLots ? possibleLots : 0);
 		capital.setCurrentRiskPerLot((int)(closedTrade.getEndingCapital() / riskPerLot));
 		tradeCapital.save(capital);
 	}
