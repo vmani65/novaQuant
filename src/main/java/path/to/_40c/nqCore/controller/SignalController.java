@@ -14,10 +14,14 @@ import java.util.concurrent.ConcurrentHashMap;
 import java.util.HashMap;
 import java.util.Map;
 import java.time.Instant;
+import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.Duration;
 
+import org.springframework.beans.factory.annotation.Value;
+
 import static path.to._40c.nqCore.util.Constants.IST_FORMATTER;
+import static path.to._40c.nqCore.util.Constants.OUTPUT_FORMAT;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
 
 @RestController
@@ -29,6 +33,20 @@ public class SignalController {
     private static final Duration CACHE_TTL = Duration.ofDays(60);
     private final java.util.concurrent.atomic.AtomicInteger duplicatesSinceLastLog = new java.util.concurrent.atomic.AtomicInteger();
     private final Map<String, LastProcessed> previousByStrategy = new ConcurrentHashMap<>();
+
+    /**
+     * Staleness gate (2026-08-12 incident): a restart wipes the in-memory dedup cache, and
+     * AmiBroker re-transmits its LAST signal continuously — so a fresh app can accept a
+     * signal from a previous session (a 17-hour-old flip was accepted at 08:47 and only
+     * missing Kite auth kept its orders off the broker). Signals older than this many
+     * minutes are rejected before sequence validation, leaving prev untouched so the
+     * sequence gate keeps protecting the actual position. Legitimate signals arrive within
+     * ~3 minutes of their bar time (bar-START bucketing adds at most 15 more). Zero or
+     * negative disables the gate (mock click-throughs with hand-typed times may need that).
+     */
+    @Value("${signal.staleness.max-age-minutes:45}")
+    private long maxSignalAgeMinutes;
+
     private final SignalService signalService;
     private final ComputeUtil util;
     
@@ -69,6 +87,7 @@ public class SignalController {
 
     private void handleSignal(Action action, String signalType, String currentPrice, String strategyName, String time) {
         if (isDuplicate(strategyName, action.getValue(), signalType, time)) return;
+        if (isStale(action.getValue(), signalType, currentPrice, strategyName, time)) return;
         if (!isValidSequence(action, strategyName, LegType.fromString(signalType), currentPrice)) return;
         
         LastProcessed prev = previousByStrategy.get(strategyName);
@@ -83,6 +102,32 @@ public class SignalController {
         if (success) {
             updatePrevious(strategyName, action.getValue(), signalType, time, currentPrice);
         }
+    }
+
+    /**
+     * True when the signal's bar time is older than the configured threshold — a replayed or
+     * previously-undelivered signal that must not execute against today's market. Runs AFTER
+     * isDuplicate (which caches every key on first sight), so a stale key warns exactly once
+     * and its re-transmissions are absorbed as ordinary duplicates. FAIL-OPEN: a time that
+     * does not parse as OUTPUT_FORMAT (toStd stores unknown formats as-is) is treated as
+     * fresh, so no exotic-but-legitimate signal is ever rejected by this gate. Future-dated
+     * times (clock skew) are fresh by definition.
+     */
+    private boolean isStale(String action, String signalType, String currentPrice, String strategyName, String time) {
+        if (maxSignalAgeMinutes <= 0) return false;
+        try {
+            LocalDateTime barTime = LocalDateTime.parse(time, OUTPUT_FORMAT);
+            long ageMinutes = Duration.between(barTime, LocalDateTime.now(ZoneId.of(ZONE_ID))).toMinutes();
+            if (ageMinutes > maxSignalAgeMinutes) {
+                log.warn("STALE SIGNAL REJECTED | action={} | signalType={} | time={} | age={}min (max {}min) | "
+                        + "strategyName={} | currentPrice={} — replayed/undelivered signal, not executing; prev unchanged",
+                        action, signalType, time, ageMinutes, maxSignalAgeMinutes, strategyName, currentPrice);
+                return true;
+            }
+        } catch (Exception e) {
+            log.info("Staleness gate: unparseable signal time '{}' — failing open (accepted)", time);
+        }
+        return false;
     }
 
     private boolean isValidSequence(Action action, String strategyName, LegType legType, String currentPrice) {

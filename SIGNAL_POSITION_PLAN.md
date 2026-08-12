@@ -109,9 +109,15 @@ close failure (weekly CLOSED + monthly PENDING_CLOSE → capital deferred); shar
 roll on ONE row (weekly trigger moves only weekly-booked legs); orphan flatten touches only its
 book's legs; capital stamped once per signal; equity curve one point; LegBookBackfill.
 
-## Build status — 2026-08-10 (NOT deployed)
+## Build status — DEPLOYED TO PROD 2026-08-12 01:15 IST
 
-BUILT AND VERIFIED, awaiting owner approval to deploy. 184/184 tests green (was 161; new:
+Deployed by owner order with the same-tree riders (both-books 9:15 buffer, patient execution
+ON, rollover PENDING/save fix, tag-based lost-place recovery). 193/193 tests at deploy;
+`mvn -Pproduction` 187/187. Migration ran live: 4 columns added, 178 legs backfilled, LIVE
+legacy pair 84/85 untouched, capital chain intact. Backups: signals.db.bak-20260812-011450-predeploy
++ nqCore-2026.06.jar.bak-20260812-011450-predeploy — rollback requires restoring BOTH (rows
+written by this build have no POSITION.BOOK, unreadable to the old jar). Original build note
+(2026-08-10): 184/184 tests green (was 161; new:
 LegScopeTest, PostTradeServiceSharedRowTest, EquityCurveServiceBookTest, shared-row fan-out
 tests, interleave weekly-leg test). mock,test smoke on signals_test.db: LegBookBackfill
 stamped 33 legacy legs; a two-book flip opened ONE row with 3 booked legs and shared
