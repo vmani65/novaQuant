@@ -7,7 +7,7 @@
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.0</version>
+        <version>4.1.1</version>
         <relativePath/>
     </parent>
 
@@ -17,7 +17,7 @@
     <packaging>jar</packaging>
 
     <name>nqCore</name>
-    <description>Spring Boot 4.1.0 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
+    <description>Spring Boot 4.1.1 + Thymeleaf + JPA (SQLite) — nqCore Application</description>
 
     <properties>
         <java.version>25</java.version>
