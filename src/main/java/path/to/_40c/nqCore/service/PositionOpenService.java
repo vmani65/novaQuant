@@ -142,7 +142,8 @@ public class PositionOpenService {
 
     private Position placeAndSave(Position trade, List<LegOrder> legOrder, Map<String, Quote> quotes) {
     	if (quotes.isEmpty()) {
-    	    log.error("Quote map is empty — aborting trade open for this book's instruments");
+    	    log.error("Quote map is empty — aborting trade open for this book's instruments "
+    	            + "(auth missing, Kite error, or unknown/expired instruments)");
     	    trade.setLegs(legOrder.stream().map(pojo -> {
     	        WeeklyLeg b = new WeeklyLeg();
     	        b.setBook(pojo.getBook());

@@ -1,7 +1,6 @@
 package path.to._40c.nqCore.service;
 
 import static path.to._40c.nqCore.util.Constants.CE;
-import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
 import static path.to._40c.nqCore.util.Constants.ZONE_ID;
@@ -12,13 +11,16 @@ import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.LocalDate;
 import java.time.LocalTime;
 import java.time.ZoneId;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.function.Supplier;
 
 import lombok.extern.slf4j.Slf4j;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Service;
 
 import path.to._40c.nqCore.controller.SignalController.Action;
@@ -60,6 +62,10 @@ public class SignalService {
 
 	private final HttpClient httpClient = HttpClient.newHttpClient();
 
+	/** A 9:15 longExit handed to nQTicker's open buffer, awaiting the /api/execute-close callback. */
+	private record ArmedBuffer(String openPrice, LocalDate armedOn) {}
+	private final AtomicReference<ArmedBuffer> armedBuffer = new AtomicReference<>();
+
 	@Value("${nq.ticker.url:http://localhost:9192}")
 	private String nqTickerUrl;
 
@@ -80,16 +86,14 @@ public class SignalService {
 	}
 
 	/**
-	 * Latest LIVE position across ALL books, falling back to the latest row overall.
-	 * Used only to seed SignalController's per-strategy last-signal state at startup:
-	 * both books execute the same signal stream, so the newest row of either book
-	 * carries the newest lastSignalAction/lastSignalLeg for the strategy.
+	 * Latest row overall, by id — used only to seed SignalController's per-strategy
+	 * last-signal state at startup. Every accepted signal creates a row, so the newest
+	 * row always carries the newest lastSignalAction/lastSignalLeg regardless of its
+	 * status. Never prefer a LIVE row here: an older row stuck LIVE (e.g. legs orphaned
+	 * by a missed expiry) would shadow the true latest state and make the sequence
+	 * validator reject the next entry while the book is flat.
 	 */
 	public Position getLastTrade() {
-	    Position liveTrade = positionRepository.findFirstByStatusOrderByIdDesc(LIVE);
-	    if (liveTrade != null) {
-	        return liveTrade;
-	    }
 	    return positionRepository.findFirstByOrderByIdDesc();
 	}
 
@@ -101,7 +105,7 @@ public class SignalService {
 	 */
 	public boolean handleFlip(String signalPrice, String type, Signal signal) {
 	   Instant overallStart = Instant.now();
-	   weeklySymbolService.syncTradedContract();
+	   safeWeeklySymbolSync("flip");
 	   Position newTrade = new Position(signal);
 	   Instant weeklyStart = Instant.now();
 	   BookResult weekly = runIsolated(SYNTH_WEEKLY, "flip", () ->
@@ -176,6 +180,7 @@ public class SignalService {
 	   Instant start = Instant.now();
 	   if (Action.LONG_EXIT.getValue().equals(signal.action) && isOpenBufferTime()) {
 	       if (armNqTickerBuffer(signalPrice)) {
+	           armedBuffer.set(new ArmedBuffer(signalPrice, LocalDate.now(ZoneId.of(ZONE_ID))));
 	           log.info("9:15 AM long exit delegated to nQTicker open buffer for both books | openPrice={} | {}ms",
 	                   signalPrice, Duration.between(start, Instant.now()).toMillis());
 	           return true;
@@ -205,8 +210,21 @@ public class SignalService {
 	   log.info("[PERFORMANCE] close LONG_MONTHLY | exec={}ms", monthlyMs);
 	   log.info("[PERFORMANCE] close OVERALL | SYNTH_WEEKLY={}ms | LONG_MONTHLY={}ms | total={}ms",
 	           weeklyMs, monthlyMs, Duration.between(start, Instant.now()).toMillis());
-	   weeklySymbolService.syncTradedContract();
+	   safeWeeklySymbolSync("close");
 	   runPostTrade(new BookResult(weeklyClosed, null), new BookResult(monthlyClosed, null));
+	}
+
+	/**
+	 * Weekly symbol promotion, isolated: it sits on the signal path between order legs
+	 * and the post-trade accounting pass, so a symbol-table failure must never propagate
+	 * — a throw here would skip afterClose/afterOpen for rows that DID trade.
+	 */
+	private void safeWeeklySymbolSync(String where) {
+	   try {
+	       weeklySymbolService.syncTradedContract();
+	   } catch (Exception e) {
+	       log.error("[BOOK-ISOLATED] weekly symbol sync failed during {} — continuing: {}", where, e.getMessage(), e);
+	   }
 	}
 
 	/**
@@ -235,9 +253,31 @@ public class SignalService {
 	 */
 	public void executeCloseImmediate(String signalPrice) {
 	   Instant start = Instant.now();
+	   armedBuffer.set(null);
 	   Signal signal = new Signal("open-buffer", Action.LONG_EXIT.getValue(), CE, "", signalPrice);
 	   closeBothBooks(signalPrice, signal);
 	   log.info("execute-close completed in {}ms", Duration.between(start, Instant.now()).toMillis());
+	}
+
+	/**
+	 * Safety net for the 9:15 open buffer. nQTicker's 09:28:59 deadline is evaluated on
+	 * ticks and its process self-terminates at 09:40, so a stalled feed can swallow the
+	 * /api/execute-close callback entirely — the position would sit open while the signal
+	 * state has already advanced past the exit. If the buffer armed today and the callback
+	 * never arrived, close both books inline on the armed signal price. getAndSet makes
+	 * consumption one-shot, so a late callback racing this timer finds nothing live and
+	 * no-ops.
+	 */
+	@Scheduled(cron = "0 31 9 * * MON-FRI", zone = ZONE_ID)
+	public void openBufferFallback() {
+	   ArmedBuffer armed = armedBuffer.getAndSet(null);
+	   if (armed == null || !LocalDate.now(ZoneId.of(ZONE_ID)).equals(armed.armedOn())) {
+	       return;
+	   }
+	   log.warn("Open buffer armed at 9:15 but /api/execute-close never arrived — fallback closing both books | openPrice={}",
+	           armed.openPrice());
+	   Signal signal = new Signal("open-buffer-fallback", Action.LONG_EXIT.getValue(), CE, "", armed.openPrice());
+	   closeBothBooks(armed.openPrice(), signal);
 	}
 
 	/**
@@ -367,6 +407,10 @@ public class SignalService {
 	   Instant start = Instant.now();
 	   try {
 	       weeklySymbolService.syncTradedContract();
+	       if (!bookConfigService.isEnabled(SYNTH_WEEKLY)) {
+	           log.info("SYNTH_WEEKLY disabled — symbol sync done, position roll skipped (disabled book opens nothing)");
+	           return true;
+	       }
 	       rollOverService.rollOverWeekly(signalPrice);
 	   } catch (Exception e) {
 	       log.error("[BOOK-ISOLATED] SYNTH_WEEKLY rollover failed: {}", e.getMessage(), e);
@@ -386,6 +430,10 @@ public class SignalService {
 	   Instant start = Instant.now();
 	   try {
 	       monthlySymbolService.syncTradedContract();
+	       if (!bookConfigService.isEnabled(LONG_MONTHLY)) {
+	           log.info("LONG_MONTHLY disabled — symbol sync done, position roll skipped (disabled book opens nothing)");
+	           return true;
+	       }
 	       rollOverService.rollOverMonthly(signalPrice);
 	   } catch (Exception e) {
 	       log.error("[BOOK-ISOLATED] LONG_MONTHLY rollover failed: {}", e.getMessage(), e);

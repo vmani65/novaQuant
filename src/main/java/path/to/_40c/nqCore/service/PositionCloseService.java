@@ -131,8 +131,8 @@ public class PositionCloseService {
         String[] liveIns = bookLegs.stream().map(WeeklyLeg::getExchangeSymbol).toArray(String[]::new);
         Map<String, Quote> quotes = positionUtil.getQuote(liveIns);
         if (quotes.isEmpty()) {
-            log.error("Quote map is empty — aborting {} close (auth missing or Kite error); "
-                    + "legs stay LIVE for the next attempt", book);
+            log.error("Quote map is empty — aborting {} close (auth missing, Kite error, or unknown/expired "
+                    + "instruments); legs stay LIVE for the next attempt", book);
             return null;
         }
         List<CompletableFuture<Void>> futs = bookLegs.stream()

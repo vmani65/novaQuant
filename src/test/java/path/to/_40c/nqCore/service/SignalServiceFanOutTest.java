@@ -11,6 +11,7 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.assertj.core.api.Assertions.assertThat;
 import static path.to._40c.nqCore.util.Constants.CE;
+import static path.to._40c.nqCore.util.Constants.CLOSED;
 import static path.to._40c.nqCore.util.Constants.LIVE;
 import static path.to._40c.nqCore.util.Constants.LONG_MONTHLY;
 import static path.to._40c.nqCore.util.Constants.SYNTH_WEEKLY;
@@ -46,6 +47,7 @@ class SignalServiceFanOutTest {
     private BookConfigService bookConfig;
     private WeeklySymbolService weeklySymbolService;
     private MonthlySymbolService monthlySymbolService;
+    private PositionRepository positionRepository;
     private SignalService service;
 
     private final Position weeklyLive = livePosition(1L);
@@ -60,9 +62,10 @@ class SignalServiceFanOutTest {
         bookConfig = mock(BookConfigService.class);
         weeklySymbolService = mock(WeeklySymbolService.class);
         monthlySymbolService = mock(MonthlySymbolService.class);
+        positionRepository = mock(PositionRepository.class);
         // interleaveAvailable() defaults to false on the mock, so fan-out tests exercise the legacy paths.
         service = new SignalService(openingService, closingService, rollOverService, postTradeService,
-                mock(PositionRepository.class), weeklySymbolService, bookConfig, monthlySymbolService,
+                positionRepository, weeklySymbolService, bookConfig, monthlySymbolService,
                 mock(MonthlyFlipService.class));
 
         when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(true);
@@ -292,6 +295,97 @@ class SignalServiceFanOutTest {
 
         verify(closingService).closeMonthlyTrade(eq("24621"), any(Signal.class), eq(true));
         verify(postTradeService).afterClose(monthlyLive);
+    }
+
+    @Test
+    @DisplayName("startup seed is the newest row by id — an older row stuck LIVE must never shadow it")
+    void lastTradeIsNewestRowNotNewestLive() {
+        Position newest = livePosition(100L);
+        newest.setStatus(CLOSED);
+        when(positionRepository.findFirstByOrderByIdDesc()).thenReturn(newest);
+
+        assertThat(service.getLastTrade()).isSameAs(newest);
+        verify(positionRepository, never()).findFirstByStatusOrderByIdDesc(anyString());
+    }
+
+    @Test
+    @DisplayName("weekly rollover trigger on a disabled book: symbol sync still runs, the position roll is skipped")
+    void weeklyRolloverSkipsPositionRollWhenDisabled() {
+        when(bookConfig.isEnabled(SYNTH_WEEKLY)).thenReturn(false);
+
+        assertThat(service.handleWeeklyRollOver("24500")).isTrue();
+
+        verify(weeklySymbolService).syncTradedContract();
+        verify(rollOverService, never()).rollOverWeekly(anyString());
+    }
+
+    @Test
+    @DisplayName("monthly rollover trigger on a disabled book: symbol sync still runs, the position roll is skipped")
+    void monthlyRolloverSkipsPositionRollWhenDisabled() {
+        when(bookConfig.isEnabled(LONG_MONTHLY)).thenReturn(false);
+
+        assertThat(service.handleMonthlyRollOver("24500")).isTrue();
+
+        verify(monthlySymbolService).syncTradedContract();
+        verify(rollOverService, never()).rollOverMonthly(anyString());
+    }
+
+    @Test
+    @DisplayName("a weekly symbol-sync failure on the close path never blocks post-trade accounting")
+    void symbolSyncFailureNeverBlocksCloseAccounting() {
+        org.mockito.Mockito.doThrow(new RuntimeException("sqlite busy"))
+                .when(weeklySymbolService).syncTradedContract();
+        when(closingService.closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(monthlyLive);
+
+        boolean ok = service.handleTradeClose("24500", "PE", signal("shortExit"));
+
+        assertThat(ok).isTrue();
+        verify(postTradeService).afterClose(monthlyLive);
+    }
+
+    @Test
+    @DisplayName("open-buffer fallback with nothing armed does nothing")
+    void openBufferFallbackIdleWhenNothingArmed() {
+        service.openBufferFallback();
+
+        verify(closingService, never()).closeWeeklyTrade(anyString(), any(Signal.class), anyBoolean());
+        verify(closingService, never()).closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean());
+    }
+
+    @Test
+    @DisplayName("open-buffer fallback closes both books when today's arm was never called back — and is one-shot")
+    void openBufferFallbackClosesBothBooksOnce() throws Exception {
+        armBuffer("24621", java.time.LocalDate.now(java.time.ZoneId.of(path.to._40c.nqCore.util.Constants.ZONE_ID)));
+        when(closingService.closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean())).thenReturn(monthlyLive);
+
+        service.openBufferFallback();
+        service.openBufferFallback();
+
+        verify(closingService, org.mockito.Mockito.times(1)).closeWeeklyTrade(eq("24621"), any(Signal.class), eq(true));
+        verify(closingService, org.mockito.Mockito.times(1)).closeMonthlyTrade(eq("24621"), any(Signal.class), eq(true));
+    }
+
+    @Test
+    @DisplayName("open-buffer fallback ignores a stale arm from a previous day")
+    void openBufferFallbackIgnoresStaleArm() throws Exception {
+        armBuffer("24621", java.time.LocalDate.now(java.time.ZoneId.of(path.to._40c.nqCore.util.Constants.ZONE_ID)).minusDays(1));
+
+        service.openBufferFallback();
+
+        verify(closingService, never()).closeWeeklyTrade(anyString(), any(Signal.class), anyBoolean());
+        verify(closingService, never()).closeMonthlyTrade(anyString(), any(Signal.class), anyBoolean());
+    }
+
+    /** Arms the private one-shot buffer state the way a delegated 9:15 longExit would. */
+    private void armBuffer(String price, java.time.LocalDate day) throws Exception {
+        Class<?> cls = Class.forName("path.to._40c.nqCore.service.SignalService$ArmedBuffer");
+        java.lang.reflect.Constructor<?> ctor = cls.getDeclaredConstructor(String.class, java.time.LocalDate.class);
+        ctor.setAccessible(true);
+        Object armed = ctor.newInstance(price, day);
+        @SuppressWarnings("unchecked")
+        java.util.concurrent.atomic.AtomicReference<Object> ref = (java.util.concurrent.atomic.AtomicReference<Object>)
+                org.springframework.test.util.ReflectionTestUtils.getField(service, "armedBuffer");
+        ref.set(armed);
     }
 
     private static Signal signal(String action) {

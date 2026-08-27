@@ -54,6 +54,7 @@ public class MonthlySymbolService extends SymbolService {
     private final KiteGateway kiteGateway;
     private final AtomicReference<List<Instrument>> chain = new AtomicReference<>(List.of());
     private final AtomicReference<LocalDate> chainLoadedOn = new AtomicReference<>();
+    private final AtomicReference<java.time.Instant> chainFetchAttemptedAt = new AtomicReference<>();
 
     public MonthlySymbolService(SymbolConfigRepository repo, MonthlySymbolCache cache, KiteGateway kiteGateway) {
         super(repo, cache, MONTHLY_ID, MONTHLY, "Monthly");
@@ -158,10 +159,20 @@ public class MonthlySymbolService extends SymbolService {
         }
     }
 
-    /** NIFTY index option rows of the cached dump, refreshed once per IST day. */
+    /**
+     * NIFTY index option rows of the cached dump, refreshed once per IST day. A failed
+     * refresh (auth not done yet) is not retried for 60s: one sync pass calls this once
+     * per expiry, and without the throttle a pre-auth pass logs ~15 identical fetch
+     * errors in a single second. Later passes (post-auth) refresh normally.
+     */
     private List<Instrument> niftyOptionChain() {
         LocalDate today = LocalDate.now(ZoneId.of(ZONE_ID));
         if (!today.equals(chainLoadedOn.get()) || chain.get().isEmpty()) {
+            java.time.Instant lastAttempt = chainFetchAttemptedAt.get();
+            if (lastAttempt != null && java.time.Duration.between(lastAttempt, java.time.Instant.now()).getSeconds() < 60) {
+                return chain.get();
+            }
+            chainFetchAttemptedAt.set(java.time.Instant.now());
             List<Instrument> dump = kiteGateway.getInstruments(NFO);
             List<Instrument> nifty = dump.stream()
                     .filter(i -> NIFTY.equals(i.name))
